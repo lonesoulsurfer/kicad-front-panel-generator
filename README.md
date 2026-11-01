@@ -6,7 +6,9 @@ Every pot, jack, switch, LED and screen on the board gets a hole in the right pl
 
 You don't need to trace parts onto a User layer, export to Fusion or Inkscape and back, or redraw the panel by hand.
 
-![The Panel Generator window](docs/images/window.png)
+![A finished panel in KiCad's 3D viewer](docs/images/finished_3d.png)
+
+*The front panel for my Game of Life synth: holes, labels and artwork all made with Panel Generator, shown in KiCad's 3D viewer.*
 
 ## What you need
 
@@ -25,6 +27,8 @@ You don't need to trace parts onto a User layer, export to Fusion or Inkscape an
 ### 1. Pick your PCB
 
 Save your KiCad board, then open Panel Generator, click **Browse…** and choose the `.kicad_pcb` file you just saved. Once it's loaded, the preview shows a front panel the exact shape of your PCB, with holes cut out for all the parts that need them, such as pots, LEDs, audio sockets, switches and screens.
+
+![The preview after loading a PCB](docs/images/step1_preview.png)
 
 Panel Generator only reads the saved file, so save in KiCad again whenever you move a part. The preview updates by itself when you do. Boards you've used before are in the dropdown, so next time you can pick one from there instead of browsing.
 
@@ -54,13 +58,13 @@ Tick **Add labels from the PCB** and a label section opens. Each pot, jack and s
 - Set the **text size** and **font**, and turn **bold** and **ALL CAPS** on or off.
 - Click **Edit labels…** to see every label in a list, where you can change the text or remove any you don't want.
 
+![Labels added from the PCB, in a custom font](docs/images/step3_labels.png)
+
 ### 4. Add your own artwork (optional)
 
 Labels only do text. For anything else (borders, logos, boxes, white-on-black text, your own fonts), tick **Add my artwork to the silkscreen** and click **Create artwork file**.
 
 This saves an Inkscape file in the `Front Panel` folder and opens it. The Inkscape page is an exact 1:1 copy of your panel, and every hole is drawn in red so you can see where things go. You can also line your designs up with the red holes using Inkscape's **Align and Distribute**.
-
-![Drawing artwork in Inkscape](docs/images/inkscape.png)
 
 - Draw on the **Artwork** layer. Don't move or resize the page.
 - **Black** prints on the panel as silkscreen.
@@ -69,6 +73,8 @@ This saves an Inkscape file in the `Front Panel` folder and opens it. The Inksca
 
 The red holes aren't printed. They're redrawn from the PCB every time you generate, so they always match the board.
 
+![Inkscape artwork in the preview](docs/images/step4_artwork.png)
+
 ### 5. Generate the panel
 
 When the preview looks right, click **Generate panel**. This makes the panel file (`<your board>_panel.kicad_pcb`) in a `Front Panel` folder next to your PCB, and opens it in KiCad so you can check it, including in the 3D viewer.
@@ -76,6 +82,8 @@ When the preview looks right, click **Generate panel**. This makes the panel fil
 Your settings are saved with each board. If you change the PCB, the settings or the artwork later, the status line next to the buttons tells you the panel is out of date. Click **Generate panel** again to update it.
 
 Close the panel in KiCad before you generate again, so the file can be replaced.
+
+![The generated panel open in KiCad](docs/images/step5_kicad.png)
 
 ### 6. Make gerbers
 
@@ -94,7 +102,7 @@ Order it as a normal 1.6 mm PCB. Black solder mask with white silkscreen is the 
 
 ## Try it
 
-[`examples/demo_synth`](examples/demo_synth) has the board in the screenshots above, made with KiCad's standard footprints. Open it in Panel Generator to try it out.
+[`examples/demo_synth`](examples/demo_synth) is a small synth board (4 pots, 2 jacks, an LED and 8 keys) made with KiCad's standard footprints. Open it in Panel Generator to try everything out before using your own board.
 
 ## Want more detail?
 
