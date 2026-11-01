@@ -24,43 +24,71 @@ You don't need to trace parts onto a User layer, export to Fusion or Inkscape an
 
 ### 1. Pick your PCB
 
-Save your board in KiCad, then click **Browse…** and choose its `.kicad_pcb`. The preview straight away shows a panel the shape of your PCB, with every hole already in place.
+Save your KiCad board, then open Panel Generator, click **Browse…** and choose the `.kicad_pcb` file you just saved. Once it's loaded, the preview shows a front panel the exact shape of your PCB, with holes cut out for all the parts that need them, such as pots, LEDs, audio sockets, switches and screens.
+
+Panel Generator only reads the saved file, so save in KiCad again whenever you move a part. The preview updates by itself when you do. Boards you've used before are in the dropdown, so next time you can pick one from there instead of browsing.
 
 ### 2. Set the size, corners and case holes
 
-Make the panel bigger than the PCB, round the corners, and add screw holes to fix it to your case. Each change shows up in the preview as you make it. Use the mouse wheel to zoom, and hover over a hole to see what part it's for and its size.
+By default the panel is the same size as your PCB. Use the settings on the left to change it:
 
-The coloured outlines tell you what to look at:
+- **Make the panel bigger than the PCB by**: adds a border all the way round (tick *Different amount on each side* to set each side separately).
+- **Rounded corners**: sets the corner radius.
+- **Case mounting holes**: screw holes to fix the panel to your case, in the corners or in the corners and the middle of each side. Set the hole size and how far its centre sits from the edge. The line underneath tells you how much panel is left between the hole and the edge. Pick **Slots** instead of round holes if you want some play to line the panel up.
 
-- **Orange:** a hole is too close to the edge or to another hole.
-- **Red:** a real problem.
-- **Orange box:** a part that looks like it needs a hole but doesn't have one. If it really doesn't need one (a tactile switch behind the panel, say), click it in the preview and it won't be flagged again.
+Every change shows in the preview straight away. Use the **mouse wheel** to zoom in, **drag** to move around, and **Fit** to see the whole panel again. Hover over any hole to see which part it's for and how big it is.
+
+The colours in the preview tell you what to check:
+
+- **Orange outline:** a hole is very close to the panel edge or to another hole, so the panel there may be too thin.
+- **Red outline:** a real problem, such as two holes overlapping.
+- **Orange dashed box:** a part that looks like it might need a hole but doesn't have one. If it really doesn't (a tactile switch hidden behind the panel, say), click it in the preview and it won't be flagged again. If it does, see the [technical guide](docs/TECHNICAL.md) for how to add one.
+
+The **Result** box under the preview lists anything that needs your attention, in plain words.
 
 ### 3. Add labels (optional)
 
-Tick **Add labels from the PCB**. Each pot, jack and switch gets its name from the PCB (a `Label` field if you added one, otherwise the Value, e.g. `Cutoff`) above or below its hole. Choose the size, gap, font, bold and ALL CAPS. Click **Edit labels…** to change or remove any of them.
+Tick **Add labels from the PCB** and a label section opens. Each pot, jack and switch gets a name printed next to its hole on the panel's silkscreen. The name comes from the PCB: a `Label` field if you've added one to the part, otherwise its Value (for example, a pot with the Value `Cutoff` is labelled CUTOFF).
+
+- Choose whether labels go **above** or **below** the holes, and the **gap** between label and hole.
+- Set the **text size** and **font**, and turn **bold** and **ALL CAPS** on or off.
+- Click **Edit labels…** to see every label in a list, where you can change the text or remove any you don't want.
 
 ### 4. Add your own artwork (optional)
 
-For borders, logos, boxes or white-on-black text, tick **Add my artwork to the silkscreen** and click **Create artwork file**. Inkscape opens with a 1:1 copy of your panel. The holes are drawn in red, so you can line things up with them.
+Labels only do text. For anything else (borders, logos, boxes, white-on-black text, your own fonts), tick **Add my artwork to the silkscreen** and click **Create artwork file**.
+
+This saves an Inkscape file in the `Front Panel` folder and opens it. The Inkscape page is an exact 1:1 copy of your panel, and every hole is drawn in red so you can see where things go. You can also line your designs up with the red holes using Inkscape's **Align and Distribute**.
 
 ![Drawing artwork in Inkscape](docs/images/inkscape.png)
 
-Draw on the **Artwork** layer and save. **Black** prints on the panel. **White** cuts out of black. The preview updates by itself.
+- Draw on the **Artwork** layer. Don't move or resize the page.
+- **Black** prints on the panel as silkscreen.
+- **White** cuts out of black, so white text on a black bar comes out as text cut into the bar.
+- **Save** in Inkscape. Panel Generator picks the file up automatically and the preview updates with your artwork. Change it and save again as often as you like.
+
+The red holes aren't printed. They're redrawn from the PCB every time you generate, so they always match the board.
 
 ### 5. Generate the panel
 
-Click **Generate panel**. This writes the panel into a `Front Panel` folder next to your PCB and opens it in KiCad. If you change the PCB or the artwork later, just generate again; the status line tells you when the panel is out of date.
+When the preview looks right, click **Generate panel**. This makes the panel file (`<your board>_panel.kicad_pcb`) in a `Front Panel` folder next to your PCB, and opens it in KiCad so you can check it, including in the 3D viewer.
+
+Your settings are saved with each board. If you change the PCB, the settings or the artwork later, the status line next to the buttons tells you the panel is out of date. Click **Generate panel** again to update it.
+
+Close the panel in KiCad before you generate again, so the file can be replaced.
 
 ### 6. Make gerbers
 
-Click **Make gerbers**. You get a zip next to the panel, ready to upload to JLCPCB, PCBWay and similar fabs. Order it as a normal 1.6 mm PCB. A black mask with white silkscreen is the classic look.
+Click **Make gerbers**. Panel Generator uses KiCad to make the gerber and drill files, checks the panel, and puts everything in one zip in the `Front Panel` folder. Upload that zip to JLCPCB, PCBWay or a similar fab.
+
+Order it as a normal 1.6 mm PCB. Black solder mask with white silkscreen is the classic synth panel look.
 
 ## Eurorack
 
-1. Start a new PCB and place a template from `Eurorack.pretty` (for example `Eurorack_8HP`) at 0 degrees.
-2. Lay out your parts inside the PCB outline it gives you.
-3. Open the PCB in Panel Generator. It sees the template and builds a standard 128.5 mm panel of the right width, with rail holes (4 from 10HP up). It also warns you if a part runs into a rail.
+1. Start a new PCB in KiCad. Press **A**, search for the size you want from `Eurorack.pretty` (for example `Eurorack_8HP`), and place it at 0 degrees.
+2. The template draws the PCB outline for you, plus the panel outline and the top and bottom rail areas, so you can see where parts can't go. Lay out your pots, jacks and LEDs inside the PCB outline.
+3. Save, and open the PCB in Panel Generator. It finds the template and builds a standard 128.5 mm tall Eurorack panel of the right width for that HP, with the rail holes in the standard places (2 holes up to 9HP, 4 holes from 10HP up). You can make the rail holes slots instead.
+4. If any part runs into a rail area, it's shown in red so you can move it before you order.
 
 ![A Eurorack panel](docs/images/eurorack.png)
 
