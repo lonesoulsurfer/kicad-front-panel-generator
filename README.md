@@ -66,6 +66,8 @@ Labels only do text. For anything else (borders, logos, boxes, white-on-black te
 
 This saves an Inkscape file in the `Front Panel` folder and opens it. The Inkscape page is an exact 1:1 copy of your panel, and every hole is drawn in red so you can see where things go. You can also line your designs up with the red holes using Inkscape's **Align and Distribute**.
 
+![The artwork file when it first opens in Inkscape](docs/images/step4_inkscape.png)
+
 - Draw on the **Artwork** layer. Don't move or resize the page.
 - **Black** prints on the panel as silkscreen.
 - **White** cuts out of black, so white text on a black bar comes out as text cut into the bar.
