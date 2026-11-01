@@ -1,0 +1,55 @@
+name: Build Windows app
+
+# Push a tag like v0.18.0 to build and publish a release.
+# "Run workflow" on the Actions tab makes a test build (download it from the run's Artifacts).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller==6.11.1
+
+      - name: Check the engine works on the example board
+        run: python panelgen.py examples/eurorack/Eurorack_8HP_test.kicad_pcb -o ci_check.kicad_pcb
+
+      - name: Build PanelGenerator.exe
+        run: pyinstaller --noconfirm --clean --windowed --name PanelGenerator --collect-data sv_ttk --hidden-import panelgen panelgen_gui.pyw
+
+      - name: Put the release folder together
+        shell: pwsh
+        run: |
+          $out = "dist/PanelGenerator"
+          Copy-Item panel_rules.json, README.md, LICENSE $out
+          Copy-Item -Recurse PanelParts.pretty, Eurorack.pretty, examples $out
+          $ver = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { "test-$($env:GITHUB_SHA.Substring(0,7))" }
+          Compress-Archive -Path $out -DestinationPath "PanelGenerator-$ver-windows.zip"
+          "ZIP=PanelGenerator-$ver-windows.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PanelGenerator-windows
+          path: ${{ env.ZIP }}
+
+      - name: Publish the release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ZIP }}
+          prerelease: true
+          generate_release_notes: true

@@ -1,0 +1,22 @@
+{
+  "_comment": "Cutout rules. First rule whose 'match' glob matches the footprint lib id wins. Sizes in mm, in the footprint's own frame (as it looks at 0 degrees). 'clearance' is added to each dimension (wiggle room). centre: body_circle = largest circle on F.Fab, else on F.SilkS; origin = footprint origin; npth:<drill> = NPTH pad with that drill. merge: true lets touching cutouts join into one slot. A 'match' may be a list of globs. shape 'none' = a known part that never goes through the panel (no cutout, and no 'no cutout' warning). centre npth_centre = middle of the footprint's mounting holes.",
+  "panel_hole_for_npth": 2.2,
+  "rules": [
+    {"name": "MX switch", "match": "*Cherry_MX*", "centre": "npth:4", "shape": "square", "size": 19.05, "clearance": 0.5, "merge": true},
+    {"name": "Pot", "match": ["*Potentiometer*", "easyeda:R09*"], "centre": "body_circle", "shape": "circle", "size": 7.5},
+    {"name": "Rotary encoder", "match": "*Rotary_Encoder*", "centre": "body_circle", "shape": "circle", "size": 7.5},
+    {"name": "Toggle switch", "match": "*Toggle*", "centre": "origin", "shape": "circle", "size": 5.2},
+    {"name": "LED 3mm", "match": "*LED_D3.0mm*", "centre": "body_circle", "shape": "circle", "size": 3.2},
+    {"name": "LED 5mm", "match": ["*LED_D5.0mm*", "*LED 5MM*"], "centre": "body_circle", "shape": "circle", "size": 5.2},
+    {"name": "Jack (PCB)", "match": ["*PJ398SM*", "*PJ301M*"], "centre": "body_circle", "shape": "circle", "size": 6.2},
+    {"name": "Jack (PCB)", "match": "*THONKICONN*", "centre": "origin", "shape": "circle", "size": 6.2},
+    {"name": "TFT 2.8in (50x80 module)", "match": "*TFT_2.8in_ILI9341*", "centre": "fab_box", "shape": "rect", "size": [50.0, 69.5], "clearance": 1.0, "npth_holes": true},
+    {"name": "TFT 2.8in", "match": "*ILI9341*", "centre": "fab_box", "shape": "rect", "size": [41.0, 56.0], "npth_holes": true},
+    {"name": "TFT 2.4in", "match": "*ST7789V*2.4*", "centre": "fab_box", "shape": "rect", "size": [49.0, 37.0], "clearance": 0.5, "npth_holes": true},
+    {"name": "Alps SKRC switch", "match": "*SW_Alps_SKRC*", "centre": "origin", "shape": "circle", "size": 6.6},
+    {"name": "TFT 3.5in ST7796S", "match": "*TFT_3.5*ST7796*", "centre": "npth_centre", "shape": "rect", "size": [58.0, 87.0], "npth_holes": true},
+    {"name": "Jack PJ-320D (horizontal, no cutout)", "match": "*PJ-320D*", "centre": "origin", "shape": "none"},
+    {"name": "Tactile switch 3x6 (behind panel)", "match": "*SW_Tactile_3x6*", "centre": "origin", "shape": "none"},
+    {"name": "Mounting hole", "match": "*:MountingHole*", "centre": "origin", "shape": "circle", "size": 2.2}
+  ]
+}
