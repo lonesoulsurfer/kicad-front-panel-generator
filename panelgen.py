@@ -976,6 +976,17 @@ def guess_label(fp):
         return re.sub(r'(?<=[A-Za-z])\d+$', '', r), 'Reference'
     return '', ''
 
+def skipped_label(fp):
+    """When guess_label finds nothing: (the text it passed over, why), so the window can say so."""
+    v = fp.props.get('Value', '').strip()
+    if v and v != '~':
+        why = ('is a component value' if COMPONENT_VALUE.match(v) else 'is a generic name' if GENERIC_VALUE.match(v)
+               else 'looks like a part name')
+        return v, why
+    if fp.ref.strip():
+        return fp.ref.strip(), 'is a standard reference'
+    return '', ''
+
 KICAD_EM = 1.4      # KiCad draws TrueType text with an em square 1.4 x the text size (outline_font.h)
 _font_files = {}
 
@@ -1059,8 +1070,12 @@ def make_labels(pcb, cutouts, groups, outline, a, edits, log, no_hole=()):
         guess, src = guess_label(fp)
         text = e['text'] if e.get('text') is not None else guess
         row = dict(fid=fid, ref=fp.ref + (' (panel)' if fid.startswith('manual:') else ' (no hole)' if fid in ob_px else ''), guess=guess, source=src, text=text, hide=bool(e.get('hide')),
+                   skipped=skipped_label(fp) if not guess else ('', ''),
                    pos=e.get('pos', ''), dx=e.get('dx', 0.0), dy=e.get('dy', 0.0))
         rows.append(row)
+        if not text.strip() and not row['hide'] and row['skipped'][0]:
+            log.append(f"CHECK no label for {fp.ref}: \"{row['skipped'][0]}\" {row['skipped'][1]}, so it isn't used. "
+                       f"Type one in Edit labels, or add a Label field to the part in KiCad")
         if row['hide'] or not text.strip():
             continue
         if a.label_caps == 'on':

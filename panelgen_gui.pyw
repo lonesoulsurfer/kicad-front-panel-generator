@@ -1162,16 +1162,16 @@ class LabelEditor(tk.Toplevel):
     def __init__(self, app):
         super().__init__(app)
         self.app = app
-        self.title('Edit labels'); self.geometry('720x520'); self.transient(app)
+        self.title('Edit labels'); self.geometry('960x520'); self.transient(app)
         f = ttk.Frame(self, padding=12); f.pack(fill='both', expand=True)
         ttk.Label(f, text='Labels', style='Head.TLabel').pack(anchor='w')
         ttk.Label(f, text='Click the tick to show or hide a label  ·  double-click the text to change it  ·  click Position to '
                           'switch above/below  ·  labels you move in KiCad keep their place: click Moved to put one back',
-                  style='Dim.TLabel', wraplength=690, justify='left').pack(anchor='w', pady=(2, 8))
+                  style='Dim.TLabel', wraplength=930, justify='left').pack(anchor='w', pady=(2, 8))
         tf = ttk.Frame(f); tf.pack(fill='both', expand=True)
         t = self.tree = ttk.Treeview(tf, columns=self.COLS, show='headings', selectmode='browse')
-        for col, txt, w, anchor in (('show', 'Show', 50, 'center'), ('part', 'Part', 80, 'w'), ('text', 'Label text', 200, 'w'),
-                                    ('pos', 'Position', 90, 'center'), ('moved', 'Moved', 90, 'center'), ('src', 'Text came from', 140, 'w')):
+        for col, txt, w, anchor in (('show', 'Show', 50, 'center'), ('part', 'Part', 120, 'w'), ('text', 'Label text', 220, 'w'),
+                                    ('pos', 'Position', 90, 'center'), ('moved', 'Moved', 90, 'center'), ('src', 'Text came from', 330, 'w')):
             t.heading(col, text=txt); t.column(col, width=w, anchor=anchor, stretch=(col == 'text'))
         sb = ttk.Scrollbar(tf, command=t.yview); t.configure(yscrollcommand=sb.set)
         sb.pack(side='right', fill='y'); t.pack(fill='both', expand=True)
@@ -1193,6 +1193,9 @@ class LabelEditor(tk.Toplevel):
             pos = {'': 'auto', 'above': 'above', 'below': 'below'}[r['pos'] or '']
             text = r['text'] if r['text'].strip() else '(no text - double-click to add)'
             src = 'you' if r['text'] != r['guess'] else (r['source'] or '-')
+            sk = r.get('skipped') or ('', '')
+            if src == '-' and sk[0]:
+                src = f'not used: "{sk[0]}" {sk[1]}'
             t.insert('', 'end', iid=r['fid'], values=('☐' if r['hide'] else '☑', r['ref'], text, pos, moved, src))
         if sel and t.exists(sel[0]):
             t.selection_set(sel[0])
