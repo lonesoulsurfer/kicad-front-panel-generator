@@ -72,6 +72,8 @@ This saves an Inkscape file in the `Front Panel` folder and opens it. The Inksca
 - **Black** prints on the panel as silkscreen.
 - **White** cuts out of black, so white text on a black bar comes out as text cut into the bar.
 - **Save** in Inkscape. Panel Generator picks the file up automatically and the preview updates with your artwork. Change it and save again as often as you like.
+- **Moved something on the PCB?** The red holes in the artwork file update by themselves when you save the PCB. Inkscape doesn't notice, so when Panel Generator says *Guides updated*, save your artwork in Inkscape and then use **File → Revert** to see the new positions.
+- Draw on the **Artwork** layer, not the red one. Clicking a red hole to line something up can switch Inkscape to the red layer; anything you draw there is moved to its own layer before the red holes are redrawn, and you'll get a note about it.
 
 The red holes aren't printed. They're redrawn from the PCB every time you generate, so they always match the board.
 

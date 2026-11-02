@@ -832,6 +832,8 @@ def write_svg(path, x1, y1, x2, y2, shapes, labels=(), a=None):
     pe = parts.index('</g>', pi) + 1
     panel_layer = parts[pi:pe]; del parts[pi:pe]
     parts += panel_layer + ['</svg>']
+    guide = re.compile(r'^<(rect|circle|ellipse|path|polygon|polyline|line|text|g)\b(?![^>]*inkscape:groupmode="layer")')
+    parts = [guide.sub(lambda m: f'<{m.group(1)} class="{GUIDE_CLASS}"', p, count=1) if i > 3 else p for i, p in enumerate(parts)]
     open(path, 'w', encoding='utf-8').write('\n'.join(parts))
 
 def artwork_path_for(out_path):
@@ -1233,6 +1235,63 @@ def svg_element_span(text, el_id, tag='g'):
         pos = n.end()
     return m.start(), pos
 
+GUIDE_CLASS = 'panelgen-guide'
+
+def rescue_from_guides(art, log):
+    """Things you drew or pasted on a guide layer (easy to do: clicking a red cutout to line something up makes that
+    layer the current one) would be lost when the layer is rebuilt. Move them to a layer of their own instead.
+    Returns the SVG text, changed or not."""
+    import xml.etree.ElementTree as ET
+    head = re.search(r'<svg\b[^>]*>', art)
+    if not head:
+        return art
+    ns_decl = ' '.join(re.findall(r'xmlns(?::\w+)?="[^"]*"', head.group(0)))
+    for pfx, uri in (('', 'http://www.w3.org/2000/svg'), ('inkscape', 'http://www.inkscape.org/namespaces/inkscape'),
+                     ('sodipodi', 'http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd'), ('xlink', 'http://www.w3.org/1999/xlink')):
+        ET.register_namespace(pfx, uri)
+    rescued, n = [], 0
+    for lid in GUIDE_LAYERS:
+        span = svg_element_span(art, lid)
+        if not span:
+            continue
+        try:
+            root = ET.fromstring(f'<wrap {ns_decl}>{art[span[0]:span[1]]}</wrap>')
+        except ET.ParseError:
+            continue
+        layer = root[0]
+        def mine(el):                       # Panel Generator's own: tagged, or (older files) no style of its own
+            return GUIDE_CLASS in (el.get('class') or '') or (el.get('style') is None and el.get('class') is None)
+        def walk(el):
+            out = []
+            for ch in list(el):
+                tag = ch.tag.split('}')[-1]
+                if tag in ('title', 'desc', 'defs', 'metadata'):
+                    continue
+                if not mine(ch):
+                    out.append(ch)
+                elif tag == 'g':
+                    out += walk(ch)
+            return out
+        found = walk(layer)
+        if found:
+            n += len(found)
+            tf = layer.get('transform')
+            body = ''.join(ET.tostring(el, encoding='unicode') for el in found)
+            body = re.sub(r'\sxmlns(?::\w+)?="[^"]*"', '', body)
+            rescued.append(f'<g transform="{tf}">{body}</g>' if tf else body)
+    if not n:
+        return art
+    import time
+    lid = 'rescued-' + time.strftime('%Y%m%d-%H%M%S')
+    layer = (f'<g inkscape:groupmode="layer" id="{lid}" inkscape:label="Moved off the guide layers {time.strftime("%d %b %H:%M")}">'
+             + ''.join(rescued) + '</g>\n')
+    a_span = svg_element_span(art, 'artwork')
+    at = a_span[1] if a_span else art.rfind('</svg>')
+    log.append(f"CHECK {n} thing{'s' if n > 1 else ''} you drew on a guide layer (the red cutouts, labels or markers) "
+               f"would have been wiped when it was rebuilt, so {'they were' if n > 1 else 'it was'} moved to a new layer, "
+               f"'Moved off the guide layers'. It's printed like any other layer - check it in Inkscape")
+    return art[:at] + '\n' + layer + art[at:]
+
 def refresh_artwork_guides(art_svg, template_svg, log):
     """Bring the red cutout layer, the labels guide and the page size in the artwork file up to date with the panel.
     Your drawing isn't touched: its coordinates are the panel's own, so it stays lined up."""
@@ -1240,7 +1299,7 @@ def refresh_artwork_guides(art_svg, template_svg, log):
         art, tpl = open(art_svg, encoding='utf-8').read(), open(template_svg, encoding='utf-8').read()
     except OSError:
         return
-    new = art
+    new = rescue_from_guides(art, log)
     for lid in ('labels', 'markers', 'panel'):   # labels and part-marker guides, then the red cutouts on top
         t_span, a_span = svg_element_span(tpl, lid), svg_element_span(new, lid)
         fresh = tpl[t_span[0]:t_span[1]] if t_span else ''
@@ -1276,6 +1335,8 @@ def refresh_artwork_guides(art_svg, template_svg, log):
     if new != art:
         open(art_svg, 'w', encoding='utf-8').write(new)
         log.append(f"art   updated the cutout and label guides in {os.path.basename(art_svg)} (your artwork wasn't touched)")
+        return True
+    return False
 
 def fracture(poly):
     """KiCad polygons can't have holes: cut a polygon with holes into pieces that have none (same area)."""
@@ -1335,7 +1396,12 @@ def import_artwork(svg_path, outline, log, cache_dir, dpi=600):
         log.append("NOTE  the page in the artwork file is the panel's old size. The preview already uses the new size; "
                    "Generate updates the file too (then File > Revert in Inkscape if it's open)")
     px1, py1, px2, py2 = outline.bounds                      # always render the panel as it is now, whatever the file's page
-    key = hashlib.sha1(raw + f'{dpi}:all-but-guides:{px1:.3f},{py1:.3f},{px2:.3f},{py2:.3f}'.encode()).hexdigest()
+    drawn = text
+    for lid in GUIDE_LAYERS:
+        sp = svg_element_span(drawn, lid)
+        if sp:
+            drawn = drawn[:sp[0]] + drawn[sp[1]:]
+    key = hashlib.sha1(drawn.encode() + f'{dpi}:all-but-guides:{px1:.3f},{py1:.3f},{px2:.3f},{py2:.3f}'.encode()).hexdigest()
     cache = os.path.join(cache_dir, '.artwork_cache.json') if cache_dir else None
     if cache and os.path.exists(cache):
         try:
@@ -1794,7 +1860,7 @@ def main(argv=None, preview=None):
                    f"{sum(1 for r in label_rows if not r['hide'] and not r['text'].strip())} with no text)")
     a._markers = part_markers(pcb, set(cfg.get('_none_ids', set())) | set(ignore_uncut), outline)
     # the template and the artwork file's guides first, so the artwork is rendered on the panel's current page
-    if preview is None and (a.svg or a.make_artwork_file or (a.artwork == 'on' and os.path.exists(artwork_path_for(out_path)))):
+    if preview is None and (a.svg or a.make_artwork_file or os.path.exists(artwork_path_for(out_path))):
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         svg_path = re.sub(r'\.kicad_pcb$', '', out_path) + '_template.svg'
         write_svg(svg_path, x1, y1, x2, y2, groups, placed, a)
@@ -1809,6 +1875,14 @@ def main(argv=None, preview=None):
                 import shutil
                 shutil.copyfile(svg_path, art_svg)
                 log.append(f"art   started {art_svg} - open it in Inkscape and draw on the 'Artwork' layer")
+    if preview is not None and not a.artwork_file and os.path.exists(artwork_path_for(out_path)):
+        import tempfile
+        fd, tmp = tempfile.mkstemp(suffix='.svg'); os.close(fd)
+        try:
+            write_svg(tmp, x1, y1, x2, y2, groups, placed, a)
+            refresh_artwork_guides(artwork_path_for(out_path), tmp, log)
+        finally:
+            os.remove(tmp)
     art = []
     if a.artwork == 'on':
         art_svg = a.artwork_file or artwork_path_for(out_path)

@@ -110,6 +110,7 @@ class App(tk.Tk):
         self.editor = None
         self.mode, self.pv, self.after_id, self.loading = None, None, None, False
         self.stamp = None
+        self.guides_at = None        # when the guides in the artwork file were last brought up to date
         self.result_is_preview = True
         self.build()
         for k, var in v.items():
@@ -470,6 +471,9 @@ class App(tk.Tk):
             if not self.w_art_make.winfo_manager():
                 self.w_art_make.pack(side='left', padx=(0, 6), before=self.w_art_dir)
             self.w_art_open.pack_forget()
+        if self.guides_at and os.path.exists(f):
+            txt += (f"\n⟳ Guides updated {self.guides_at} (the PCB or a setting changed). If the file is open in Inkscape: "
+                    "save your artwork, then File → Revert to see them.")
         if not ink:
             txt += "\nInkscape wasn't found - install it from inkscape.org (it's needed to read the artwork)."
         self.art_status.config(text=txt)
@@ -583,6 +587,7 @@ class App(tk.Tk):
 
     def board_changed(self):
         board = self.board.get()
+        self.guides_at = None
         self.show_boards()
         if not board or not os.path.exists(board):
             self.mode = None; self.renumber(); self.update_preview(); return
@@ -751,6 +756,7 @@ class App(tk.Tk):
                 self.show_result(text, [], 2, preview=True)
             return
         self.pv = pv
+        self.note_guides(pv['log'])
         if 'label_edits' in pv:
             self.ui['label_edits'] = dict(pv['label_edits'])
         new_mode = 'eurorack' if pv['eurorack'] else 'fit'
@@ -773,6 +779,16 @@ class App(tk.Tk):
             self.editor.refresh()
         if self.result_is_preview:
             self.show_result('\n'.join(pv['log']), [], code, preview=True)
+
+    def note_guides(self, lines):
+        """The engine updated the guide layers in the artwork file: say so, and don't treat that save as a change."""
+        if any(l.strip().startswith('art   updated') for l in lines):
+            import time
+            self.guides_at = time.strftime('%H:%M')
+            b = self.board.get()
+            if b:
+                self.stamp = (mtime(b), mtime(panel_paths(b)[0]), mtime(self.art_file()))
+            self.art_state()
 
     def set_chip(self, pv):
         if not pv:
@@ -953,6 +969,7 @@ class App(tk.Tk):
             self.config(cursor='')
         self.result_is_preview = False
         self.show_result(text, notes, code)
+        self.note_guides(text.splitlines())
         errs = [l.strip()[5:].strip() for l in text.splitlines() if l.strip().startswith('ERROR')]
         if errs:
             messagebox.showwarning('Panel Generator',
