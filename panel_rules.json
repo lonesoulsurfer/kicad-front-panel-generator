@@ -14,7 +14,7 @@
     {"name": "TFT 2.8in", "match": "*ILI9341*", "centre": "fab_box", "shape": "rect", "size": [41.0, 56.0], "npth_holes": true},
     {"name": "TFT 2.4in", "match": "*ST7789V*2.4*", "centre": "fab_box", "shape": "rect", "size": [49.0, 37.0], "clearance": 0.5, "npth_holes": true},
     {"name": "Alps SKRC switch", "match": "*SW_Alps_SKRC*", "centre": "origin", "shape": "circle", "size": 6.6},
-    {"name": "TFT 3.5in ST7796S", "match": "*TFT_3.5*ST7796*", "centre": "npth_centre", "shape": "rect", "size": [56.0, 85.5], "npth_holes": true},
+    {"name": "TFT 3.5in ST7796S", "match": "*TFT_3.5*ST7796*", "centre": "npth_centre", "shape": "rect", "size": [56.5, 85.8], "npth_holes": true},
     {"name": "Jack PJ-320D (horizontal, no cutout)", "match": "*PJ-320D*", "centre": "origin", "shape": "none"},
     {"name": "Tactile switch 3x6 (behind panel)", "match": "*SW_Tactile_3x6*", "centre": "origin", "shape": "none"},
     {"name": "Mounting hole", "match": "*:MountingHole*", "centre": "origin", "shape": "circle", "size": 2.2}
