@@ -1071,7 +1071,8 @@ def make_labels(pcb, cutouts, groups, outline, a, edits, log, no_hole=()):
         text = e['text'] if e.get('text') is not None else guess
         row = dict(fid=fid, ref=fp.ref + (' (panel)' if fid.startswith('manual:') else ' (no hole)' if fid in ob_px else ''), guess=guess, source=src, text=text, hide=bool(e.get('hide')),
                    skipped=skipped_label(fp) if not guess else ('', ''),
-                   pos=e.get('pos', ''), dx=e.get('dx', 0.0), dy=e.get('dy', 0.0))
+                   pos=e.get('pos', ''), dx=e.get('dx', 0.0), dy=e.get('dy', 0.0),
+                   gap=e.get('gap') if isinstance(e.get('gap'), (int, float)) else None)
         rows.append(row)
         if not text.strip() and not row['hide'] and row['skipped'][0]:
             log.append(f"CHECK no label for {fp.ref}: \"{row['skipped'][0]}\" {row['skipped'][1]}, so it isn't used. "
@@ -1094,11 +1095,17 @@ def make_labels(pcb, cutouts, groups, outline, a, edits, log, no_hole=()):
             at_top, at_bottom = abs(ob[1] - gb[1]) < 0.05, abs(ob[3] - gb[3]) < 0.05
             if at_top != at_bottom:               # a key in a merged slot: label on its own side of the slot
                 pos = 'above' if at_top else 'below'
+        g_ = gap if row['gap'] is None else row['gap']
         ax = (ob[0] + ob[2]) / 2
-        ay = gb[1] - gap - h / 2 if pos == 'above' else gb[3] + gap + h / 2
+        ay = gb[1] - g_ - h / 2 if pos == 'above' else gb[3] + g_ + h / 2
+        if fid in ob_px:                          # a part running off the panel edge: that side's label sits inside the edge
+            if pos == 'above' and off_top:
+                ay = pb[1] + g_ + h / 2
+            elif pos == 'below' and off_bottom:
+                ay = pb[3] - g_ - h / 2
         if fid in ob_px and not e.get('pos'):     # no hole: the first of this side, the other side, or on the part
             w0 = text_width(text, h, bold, a.label_font)
-            other = gb[3] + gap + h / 2 if pos == 'above' else gb[1] - gap - h / 2
+            other = gb[3] + g_ + h / 2 if pos == 'above' else gb[1] - g_ - h / 2
             fits = lambda y: outline.contains(box(ax - w0 / 2, y - h / 2, ax + w0 / 2, y + h / 2)) and \
                 not any(box(ax - w0 / 2, y - h / 2, ax + w0 / 2, y + h / 2).intersects(g['geom']) for g in groups)
             ay = next((y for y in (ay, other, (gb[1] + gb[3]) / 2) if fits(y)), ay)

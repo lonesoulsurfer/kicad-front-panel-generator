@@ -1157,21 +1157,21 @@ class App(tk.Tk):
 
 class LabelEditor(tk.Toplevel):
     """Table of every label: show/hide, change the text, put it above or below, undo a move."""
-    COLS = ('show', 'part', 'text', 'pos', 'moved', 'src')
+    COLS = ('show', 'part', 'text', 'pos', 'gap', 'moved', 'src')
 
     def __init__(self, app):
         super().__init__(app)
         self.app = app
-        self.title('Edit labels'); self.geometry('960x520'); self.transient(app)
+        self.title('Edit labels'); self.geometry('1040x520'); self.transient(app)
         f = ttk.Frame(self, padding=12); f.pack(fill='both', expand=True)
         ttk.Label(f, text='Labels', style='Head.TLabel').pack(anchor='w')
         ttk.Label(f, text='Click the tick to show or hide a label  ·  double-click the text to change it  ·  click Position to '
-                          'switch above/below  ·  labels you move in KiCad keep their place: click Moved to put one back',
-                  style='Dim.TLabel', wraplength=930, justify='left').pack(anchor='w', pady=(2, 8))
+                          'switch above/below  ·  double-click Gap to set the gap for one label (blank = the main setting)  ·  labels you move in KiCad keep their place: click Moved to put one back',
+                  style='Dim.TLabel', wraplength=1010, justify='left').pack(anchor='w', pady=(2, 8))
         tf = ttk.Frame(f); tf.pack(fill='both', expand=True)
         t = self.tree = ttk.Treeview(tf, columns=self.COLS, show='headings', selectmode='browse')
         for col, txt, w, anchor in (('show', 'Show', 50, 'center'), ('part', 'Part', 120, 'w'), ('text', 'Label text', 220, 'w'),
-                                    ('pos', 'Position', 90, 'center'), ('moved', 'Moved', 90, 'center'), ('src', 'Text came from', 330, 'w')):
+                                    ('pos', 'Position', 90, 'center'), ('gap', 'Gap', 80, 'center'), ('moved', 'Moved', 90, 'center'), ('src', 'Text came from', 330, 'w')):
             t.heading(col, text=txt); t.column(col, width=w, anchor=anchor, stretch=(col == 'text'))
         sb = ttk.Scrollbar(tf, command=t.yview); t.configure(yscrollcommand=sb.set)
         sb.pack(side='right', fill='y'); t.pack(fill='both', expand=True)
@@ -1196,7 +1196,8 @@ class LabelEditor(tk.Toplevel):
             sk = r.get('skipped') or ('', '')
             if src == '-' and sk[0]:
                 src = f'not used: "{sk[0]}" {sk[1]}'
-            t.insert('', 'end', iid=r['fid'], values=('☐' if r['hide'] else '☑', r['ref'], text, pos, moved, src))
+            gap = f"{r['gap']:g} mm" if r.get('gap') is not None else 'auto'
+            t.insert('', 'end', iid=r['fid'], values=('☐' if r['hide'] else '☑', r['ref'], text, pos, gap, moved, src))
         if sel and t.exists(sel[0]):
             t.selection_set(sel[0])
 
@@ -1208,7 +1209,12 @@ class LabelEditor(tk.Toplevel):
     def edit(self, fid, **changes):
         e = dict(self.app.ui['label_edits'].get(fid, {}))
         for k, val in changes.items():
-            if val in (None, '', False, 0, 0.0) and k != 'text':
+            if k == 'gap':
+                if val is None:
+                    e.pop('gap', None)
+                else:
+                    e['gap'] = val
+            elif val in (None, '', False, 0, 0.0) and k != 'text':
                 e.pop(k, None)
             elif k == 'text' and val is None:
                 e.pop('text', None)
@@ -1231,27 +1237,35 @@ class LabelEditor(tk.Toplevel):
         elif col == '#4':
             nxt = {'': 'above', 'above': 'below', 'below': ''}[r['pos'] or '']
             self.edit(fid, pos=nxt)
-        elif col == '#5' and (r['dx'] or r['dy']):
+        elif col == '#6' and (r['dx'] or r['dy']):
             self.edit(fid, dx=0, dy=0)
 
     def dclick(self, ev):
         t = self.tree
         fid, col = t.identify_row(ev.y), t.identify_column(ev.x)
-        if not fid or col != '#3':
+        if not fid or col not in ('#3', '#5'):
             return
         r = self.rows()[fid]
-        x, y, w, h = t.bbox(fid, '#3')
+        x, y, w, h = t.bbox(fid, col)
         e = ttk.Entry(t); e.place(x=x, y=y, width=w, height=h)
-        e.insert(0, r['text']); e.select_range(0, 'end'); e.focus_set()
+        e.insert(0, r['text'] if col == '#3' else ('' if r.get('gap') is None else f"{r['gap']:g}"))
+        e.select_range(0, 'end'); e.focus_set()
         def done(_=None, save=True):
-            if save:
+            if save and col == '#3':
                 new = e.get()
                 self.edit(fid, text=None if new == r['guess'] else new)
+            elif save:
+                v = e.get().strip().replace('mm', '').strip()
+                try:
+                    self.edit(fid, gap=None if v in ('', 'auto') else max(-20.0, min(50.0, float(v))))
+                except ValueError:
+                    messagebox.showerror('Edit labels', f"'{v}' isn't a number. Type a gap in mm, or leave it blank "
+                                         "to use the main Gap setting.", parent=self)
             e.destroy()
         e.bind('<Return>', done); e.bind('<FocusOut>', done); e.bind('<Escape>', lambda _: done(save=False))
 
     def reset_all(self):
-        if messagebox.askyesno('Edit labels', 'Undo every label change - text, hidden, position and moves - for this board?', parent=self):
+        if messagebox.askyesno('Edit labels', 'Undo every label change - text, hidden, position, gap and moves - for this board?', parent=self):
             self.app.ui['label_edits'] = {}
             self.app.persist_ui(); self.app.update_preview()
 
