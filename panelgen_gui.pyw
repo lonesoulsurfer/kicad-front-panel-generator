@@ -929,7 +929,7 @@ class App(tk.Tk):
         self.hover.config(text='  ·  '.join(parts) + state)
 
     # ------------------------------------------------------------------ generate
-    def generate(self, restore=(), gerbers=False):
+    def generate(self, restore=(), gerbers=False, open_after=None):
         try:
             args = self.build_args(restore) + (['--gerbers'] if gerbers else [])
         except ValueError as e:
@@ -978,7 +978,7 @@ class App(tk.Tk):
                                                       "Upload that zip to your PCB maker. Show the folder now?"):
                 self.open_folder()
             return
-        if code in (0, 1) and self.vars['open'].get() and os.path.exists(panel):
+        if code in (0, 1) and (self.vars['open'].get() if open_after is None else open_after) and os.path.exists(panel):
             self.open_panel(panel)
 
     def show_result(self, text, notes, code, preview=False):
@@ -1084,10 +1084,30 @@ class App(tk.Tk):
     def open_saved_panel(self):
         b = self.board.get()
         panel = panel_paths(b)[0] if b else None
-        if panel and os.path.exists(panel):
-            self.open_panel(panel)
-        else:
-            messagebox.showinfo('Panel Generator', 'There is no panel yet - click Generate panel first.')
+        if not (panel and os.path.exists(panel)):
+            if messagebox.askyesno('Panel Generator', 'There is no panel yet. Generate it now and open it in KiCad?'):
+                self.generate(open_after=True)
+            return
+        if self.out_of_date():
+            ans = messagebox.askyesnocancel(
+                'Panel Generator',
+                "The panel is out of date - a setting, the PCB or the artwork has changed since it was generated.\n\n"
+                "Generate it first?\n\n"
+                "Yes - generate the panel, then open it\n"
+                "No - open the old panel as it is\n"
+                "Cancel - do nothing")
+            if ans is None:
+                return
+            if ans:
+                self.generate(open_after=True)
+                return
+        self.open_panel(panel)
+
+    def out_of_date(self):
+        """True when the saved panel was made from different settings, PCB or artwork than now."""
+        b = self.board.get()
+        rec = self.cfg.get('generated', {}).get(os.path.normpath(b)) if b else None
+        return bool(rec) and rec != self.fingerprint()
 
     def open_panel(self, panel):
         try:
