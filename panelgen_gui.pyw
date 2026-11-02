@@ -839,7 +839,7 @@ class App(tk.Tk):
                     c.tag_bind(i, '<Enter>', lambda e, t=mk['text']: self.hover.config(
                         text=f"{t or 'User.2 marker'}  ·  marker only - not cut or printed, it's a guide in the artwork file"))
                     c.tag_bind(i, '<Leave>', lambda e: self.hover.config(text='Hover over a cutout to see what it is.'))
-            if mk['text']:
+            if mk['text'] and mk['text'].split(' ')[0] not in {L['ref'] for L in pv.get('labels', [])}:
                 b = mk['geom'].bounds
                 c.create_text(X((b[0] + b[2]) / 2), Y(b[3]) + 2, text=mk['text'].split(' ')[0], anchor='n',
                               fill='#58a6ff', font=self.f_small)

@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.18.1"
+VERSION = "0.18.2"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -957,6 +957,10 @@ PART_NUMBER = re.compile(r'^[A-Z]{2,}[A-Z0-9-]*\d{2,}[A-Z0-9-]*$')              
 GENERIC_VALUE = re.compile(r'^(~|led|pot(entiometer)?|jack|switch|encoder|button|display|screen|tft|oled|lcd|'
                            r'audiojack\w*|conn\w*|sw|rotary\w*|r_pot\w*|toggle|push|spdt|dpdt)$', re.I)
 DESIGNATOR = re.compile(r'^[A-Z]{1,4}\d+[A-Z]?$')                                         # SW3, RV1, J2, TFT1
+# standard reference prefixes: 'RV1' is a designator, but 'AMT1' or 'FX1' is a name someone gave the part
+REF_PREFIXES = {'A', 'B', 'BT', 'BAT', 'BZ', 'C', 'CN', 'CON', 'CP', 'D', 'DS', 'DISP', 'E', 'ENC', 'F', 'FB', 'FL',
+                'H', 'HS', 'IC', 'J', 'JP', 'K', 'L', 'LCD', 'LED', 'LS', 'M', 'MH', 'MK', 'MOD', 'NT', 'OLED', 'P',
+                'POT', 'PS', 'Q', 'R', 'RN', 'RV', 'S', 'SW', 'T', 'TFT', 'TH', 'TP', 'U', 'VR', 'X', 'Y', 'Z'}
 
 def guess_label(fp):
     """(text, where it came from): a Label field, else a Value that reads like a name, else a named Reference."""
@@ -967,7 +971,8 @@ def guess_label(fp):
     if v and '_' not in v and not GENERIC_VALUE.match(v) and not COMPONENT_VALUE.match(v) and not PART_NUMBER.match(v):
         return v, 'Value'
     r = fp.ref.strip()
-    if r and not DESIGNATOR.match(r) and not any(ch in r for ch in '*?'):
+    prefix = re.sub(r'\d+[A-Z]?$', '', r)
+    if r and not any(ch in r for ch in '*?') and prefix and (not DESIGNATOR.match(r) or prefix not in REF_PREFIXES):
         return re.sub(r'(?<=[A-Za-z])\d+$', '', r), 'Reference'
     return '', ''
 
@@ -1028,8 +1033,9 @@ def text_width(text, h, bold=False, font=''):
         return max(1, len(text)) * h * KICAD_EM * 0.75          # unknown font: assume a wide-ish one
     return max(1, len(text)) * h * (0.9 if bold else 0.8)
 
-def make_labels(pcb, cutouts, groups, outline, a, edits, log):
-    """Labels for every part that has a cutout: (labels to place, table rows for the window)."""
+def make_labels(pcb, cutouts, groups, outline, a, edits, log, no_hole=()):
+    """Labels for every part that has a cutout, and for parts marked as needing none (edge jacks, a reset button
+    behind the panel): (labels to place, table rows for the window)."""
     fps = {fp.uuid: fp for fp in map(Footprint, kids(pcb, 'footprint')) if fp.uuid}
     fps.update({c['id']: c['fp'] for c in cutouts if c.get('fp')})      # parts placed on the panel itself
     own = {}
@@ -1037,6 +1043,14 @@ def make_labels(pcb, cutouts, groups, outline, a, edits, log):
         if c.get('shadow') or c['id'] not in fps or ':mount' in c.get('key', '') or c['rule'] == 'Mounting hole':
             continue
         own.setdefault(c['id'], []).append(c)
+    ob_px, pb = {}, outline.bounds
+    for fp in map(Footprint, kids(pcb, 'footprint')):
+        if fp.uuid in no_hole and fp.uuid not in own:
+            b = courtyard_box(fp) or (fp.x - 2, fp.y - 2, fp.x + 2, fp.y + 2)
+            if not box(*b).intersects(outline):
+                continue
+            own[fp.uuid], fps[fp.uuid] = [], fp
+            ob_px[fp.uuid] = (max(b[0], pb[0]), max(b[1], pb[1]), min(b[2], pb[2]), min(b[3], pb[3]), b[1] < pb[1], b[3] > pb[3])
     key_group = {k: g for g in groups for k in (g.get('member_keys') or []) if k}
     h, gap, bold = a.label_size, a.label_gap, a.label_bold == 'on'
     placed, rows = [], []
@@ -1044,23 +1058,35 @@ def make_labels(pcb, cutouts, groups, outline, a, edits, log):
         fp, e = fps[fid], edits.get(fid, {})
         guess, src = guess_label(fp)
         text = e['text'] if e.get('text') is not None else guess
-        row = dict(fid=fid, ref=fp.ref + (' (panel)' if fid.startswith('manual:') else ''), guess=guess, source=src, text=text, hide=bool(e.get('hide')),
+        row = dict(fid=fid, ref=fp.ref + (' (panel)' if fid.startswith('manual:') else ' (no hole)' if fid in ob_px else ''), guess=guess, source=src, text=text, hide=bool(e.get('hide')),
                    pos=e.get('pos', ''), dx=e.get('dx', 0.0), dy=e.get('dy', 0.0))
         rows.append(row)
         if row['hide'] or not text.strip():
             continue
         if a.label_caps == 'on':
             text = text.upper()
-        ob = unary_union([c['geom'] for c in cs]).bounds
-        grp = next((key_group[c['key']] for c in cs if c.get('key') in key_group), None)
-        gb = grp['geom'].bounds if grp else ob
         pos = e.get('pos') if e.get('pos') in ('above', 'below') else a.label_pos
+        if fid in ob_px:                          # no hole: label the part's outline, on the side inside the panel
+            *ob, off_top, off_bottom = ob_px[fid]
+            if not e.get('pos') and off_top != off_bottom:
+                pos = 'below' if off_top else 'above'
+            grp, gb = None, ob
+        else:
+            ob = unary_union([c['geom'] for c in cs]).bounds
+            grp = next((key_group[c['key']] for c in cs if c.get('key') in key_group), None)
+            gb = grp['geom'].bounds if grp else ob
         if grp and len(grp.get('member_keys') or []) > 1 and not e.get('pos'):
             at_top, at_bottom = abs(ob[1] - gb[1]) < 0.05, abs(ob[3] - gb[3]) < 0.05
             if at_top != at_bottom:               # a key in a merged slot: label on its own side of the slot
                 pos = 'above' if at_top else 'below'
         ax = (ob[0] + ob[2]) / 2
         ay = gb[1] - gap - h / 2 if pos == 'above' else gb[3] + gap + h / 2
+        if fid in ob_px and not e.get('pos'):     # no hole: the first of this side, the other side, or on the part
+            w0 = text_width(text, h, bold, a.label_font)
+            other = gb[3] + gap + h / 2 if pos == 'above' else gb[1] - gap - h / 2
+            fits = lambda y: outline.contains(box(ax - w0 / 2, y - h / 2, ax + w0 / 2, y + h / 2)) and \
+                not any(box(ax - w0 / 2, y - h / 2, ax + w0 / 2, y + h / 2).intersects(g['geom']) for g in groups)
+            ay = next((y for y in (ay, other, (gb[1] + gb[3]) / 2) if fits(y)), ay)
         x, y = ax + row['dx'], ay + row['dy']
         placed.append(dict(fid=fid, ref=fp.ref, text=text, x=round(x, 4), y=round(y, 4), auto=(round(ax, 4), round(ay, 4)),
                            h=h, w=text_width(text, h, bold, a.label_font), status='ok'))
@@ -1739,7 +1765,8 @@ def main(argv=None, preview=None):
     placed, label_rows = [], []
     if a.labels == 'on':
         n0 = len(log)
-        placed, label_rows = make_labels(pcb, cutouts + manual, groups, outline, a, label_edits, log)
+        placed, label_rows = make_labels(pcb, cutouts + manual, groups, outline, a, label_edits, log,
+                                         no_hole=set(cfg.get('_none_ids', set())) | set(ignore_uncut))
         problems += sum(1 for l in log[n0:] if l.startswith('WARN'))
         log.append(f"labels {len(placed)} on the silkscreen ({sum(1 for r in label_rows if r['hide'])} hidden, "
                    f"{sum(1 for r in label_rows if not r['hide'] and not r['text'].strip())} with no text)")

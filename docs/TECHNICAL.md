@@ -145,6 +145,8 @@ Tick **Add labels from the PCB** in the window (or `--labels on`) to print a lab
 - **Checks:** a WARN if a label runs into a cutout, goes off the panel or overlaps another label. For a font from your computer, the width is **measured from the font file**, so wide fonts (Space Madness, etc.) are checked properly. For KiCad's own font it's an estimate (about 0.8 x the text size per letter).
 - **Text size and other fonts:** KiCad draws a font from your computer 1.4 x bigger than its text size (its letters fill an em square of size x 1.4). So 3.5 mm in a wide font is much bigger than 3.5 mm in KiCad's font. The preview and the SVG template both show the true size.
 - Labels are also written into the SVG template, on a layer that isn't imported back (so they're never doubled up).
+- **Parts with no hole** (edge jacks, a reset button behind the panel, anything marked "no cutout needed") get a label too, listed as "(no hole)" in Edit labels. It goes on the side of the part that's inside the panel, or on the part itself if neither side fits.
+- **Label text** comes from a `Label` field, else the Value if it reads like a name (not `10K` or `100nF`), else the Reference if it isn't a standard one (`AMT1` gives `AMT`; `RV1` gives nothing).
 - **Panel-only parts** (jacks, charge port and so on, placed from PanelParts in the panel) get a label too. Add a field called `Label` to the part in the panel (e.g. `GATE IN`), or type the text in Edit labels, where they're listed as "P1 (panel)".
 - A font other than KiCad's own must be installed on the computer that opens the panel file. The gerbers contain the letter shapes, so the fab doesn't need the font.
 
