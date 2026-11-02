@@ -1285,12 +1285,13 @@ def rescue_from_guides(art, log):
     lid = 'rescued-' + time.strftime('%Y%m%d-%H%M%S')
     layer = (f'<g inkscape:groupmode="layer" id="{lid}" inkscape:label="Moved off the guide layers {time.strftime("%d %b %H:%M")}">'
              + ''.join(rescued) + '</g>\n')
-    a_span = svg_element_span(art, 'artwork')
-    at = a_span[1] if a_span else art.rfind('</svg>')
+    # on top of your own layers (just under the guides), as it was: white that cuts out of black must stay above it
+    guide_starts = [sp[0] for sp in (svg_element_span(art, g) for g in GUIDE_LAYERS) if sp]
+    at = min(guide_starts) if guide_starts else art.rfind('</svg>')
     log.append(f"CHECK {n} thing{'s' if n > 1 else ''} you drew on a guide layer (the red cutouts, labels or markers) "
                f"would have been wiped when it was rebuilt, so {'they were' if n > 1 else 'it was'} moved to a new layer, "
                f"'Moved off the guide layers'. It's printed like any other layer - check it in Inkscape")
-    return art[:at] + '\n' + layer + art[at:]
+    return art[:at] + layer + art[at:]
 
 def refresh_artwork_guides(art_svg, template_svg, log):
     """Bring the red cutout layer, the labels guide and the page size in the artwork file up to date with the panel.
