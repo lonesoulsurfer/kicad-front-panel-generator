@@ -1239,7 +1239,7 @@ GUIDE_CLASS = 'panelgen-guide'
 
 def rescue_from_guides(art, log):
     """Things you drew or pasted on a guide layer (easy to do: clicking a red cutout to line something up makes that
-    layer the current one) would be lost when the layer is rebuilt. Move them to a layer of their own instead.
+    layer the current one) would be lost when the layer is rebuilt. Move them onto your own top layer instead.
     Returns the SVG text, changed or not."""
     import xml.etree.ElementTree as ET
     head = re.search(r'<svg\b[^>]*>', art)
@@ -1281,17 +1281,31 @@ def rescue_from_guides(art, log):
             rescued.append(f'<g transform="{tf}">{body}</g>' if tf else body)
     if not n:
         return art
-    import time
-    lid = 'rescued-' + time.strftime('%Y%m%d-%H%M%S')
-    layer = (f'<g inkscape:groupmode="layer" id="{lid}" inkscape:label="Moved off the guide layers {time.strftime("%d %b %H:%M")}">'
-             + ''.join(rescued) + '</g>\n')
-    # on top of your own layers (just under the guides), as it was: white that cuts out of black must stay above it
-    guide_starts = [sp[0] for sp in (svg_element_span(art, g) for g in GUIDE_LAYERS) if sp]
-    at = min(guide_starts) if guide_starts else art.rfind('</svg>')
+    # into the top of your topmost visible layer (normally Artwork), so white that cuts out of black stays above it
+    layers = []
+    for m in re.finditer(r'<g\b[^>]*inkscape:groupmode="layer"[^>]*>', art):
+        lid = re.search(r'\bid="([^"]+)"', m.group(0))
+        if not lid or lid.group(1) in GUIDE_LAYERS:
+            continue
+        sp = svg_element_span(art, lid.group(1))
+        if sp and not any(o[0] < sp[0] < o[1] for o in layers) and not re.search(r'display\s*:\s*none', m.group(0)):
+            layers.append(sp)
+    body = ''.join(rescued)
+    if layers:
+        st, en = max(layers, key=lambda sp: sp[0])
+        el = art[st:en]
+        name = re.search(r'inkscape:label="([^"]*)"', el)
+        name = name.group(1) if name else 'your top layer'
+        el = re.sub(r'\s*/>$', '>' + body + '</g>', el) if el.rstrip().endswith('/>') else el[:el.rfind('</g>')] + body + '</g>'
+        art = art[:st] + el + art[en:]
+    else:
+        name = 'Artwork'
+        at = art.rfind('</svg>')
+        art = art[:at] + f'<g inkscape:groupmode="layer" id="artwork" inkscape:label="Artwork">{body}</g>\n' + art[at:]
     log.append(f"CHECK {n} thing{'s' if n > 1 else ''} you drew on a guide layer (the red cutouts, labels or markers) "
-               f"would have been wiped when it was rebuilt, so {'they were' if n > 1 else 'it was'} moved to a new layer, "
-               f"'Moved off the guide layers'. It's printed like any other layer - check it in Inkscape")
-    return art[:at] + layer + art[at:]
+               f"would have been wiped when it was rebuilt, so {'they were' if n > 1 else 'it was'} moved to the top of "
+               f"your '{name}' layer. If the file is open in Inkscape: File > Revert to see it there")
+    return art
 
 def refresh_artwork_guides(art_svg, template_svg, log):
     """Bring the red cutout layer, the labels guide and the page size in the artwork file up to date with the panel.

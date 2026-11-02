@@ -9,7 +9,7 @@
 - **Edge jacks: Above / Below puts the label inside the panel edge.** For a part that runs off the panel (a jack on the top edge), choosing the off-panel side puts the label just inside that edge; the gap is then measured from the edge.
 - **3.5" ST7796S screen window is now 85.8 × 56.5 mm** (was 87 × 58). The glass is 85.00 × 55.26 mm, so this leaves about 0.4 mm of play at each end, 0.6 mm at each side, and 1.0 mm of panel between the screen screws and the window (was 0.41 mm).
 - **Artwork guides follow the PCB.** Saving the PCB or changing a setting updates the red cutouts, label guides and part markers in the artwork file straight away, not only on Generate (and also when artwork is switched off). The window says *Guides updated* and to use File → Revert in Inkscape.
-- **Drawings on a guide layer are no longer lost.** Anything you drew or pasted on the red cutout, labels or markers layer is moved to a new *Moved off the guide layers* layer before the guides are rebuilt, with a CHECK in Result. The new layer goes on top of your own layers (where it was), so white that cuts out of black stays above the black. Guide shapes are now tagged so they can be told apart from yours.
+- **Drawings on a guide layer are no longer lost.** Anything you drew or pasted on the red cutout, labels or markers layer is moved onto the top of your topmost visible layer (normally Artwork) before the guides are rebuilt, with a CHECK in Result, so white that cuts out of black stays above the black and no extra layers appear. Guide shapes are now tagged so they can be told apart from yours.
 - Refreshing the guides no longer makes Inkscape render the artwork again (the cache ignores the guide layers).
 
 ## 0.18.1
