@@ -60,6 +60,10 @@ Tick **Add labels from the PCB** and a label section opens. Each pot, jack and s
 
 ![Labels added from the PCB, in a custom font](docs/images/step3_labels.png)
 
+**Move things by dragging them in the preview:** any label, the title or your own text. Right-click one for more (put it back, hide it, change or delete your text).
+
+**Need text that isn't on the PCB?** For example, what each key does. Click **Add text** above the preview, click where it goes and type it. You can drag it, and right-click it to change its size or delete it.
+
 ### 4. Let it make the artwork (optional)
 
 Don't want to open Inkscape? Tick **Make artwork for me** and Panel Generator draws the artwork from your panel:

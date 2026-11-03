@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.20.0
+
+- **Drag to move** in the preview: labels, the title, the maker name and your own text. Right-click for more (put it back, hide, change, delete).
+- **Add text:** your own text anywhere on the panel (e.g. what each key does), printed and checked like a label. Kept if you move, retype or delete it in KiCad.
+
 ## 0.19.0
 
 - **Artwork made for you** (new section, or `--auto-art on`): pot scales (ticks, 0-10 or centre zero over 300°), rings round buttons, outputs in filled boxes with the label cut out, a border, a title and a maker name, placed from the panel and checked against holes, labels and the edge. Styles: Minimal, Classic synth, Modular. Per-part scale and input/output in Edit labels. No Inkscape needed; the result also appears in the Inkscape file as a guide layer.

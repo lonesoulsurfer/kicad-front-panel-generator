@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.19.0"
+VERSION = "0.20.0"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -1053,7 +1053,7 @@ def text_width(text, h, bold=False, font=''):
         return max(1, len(text)) * h * KICAD_EM * 0.75          # unknown font: assume a wide-ish one
     return max(1, len(text)) * h * (0.9 if bold else 0.8)
 
-def make_labels(pcb, cutouts, groups, outline, a, edits, log, no_hole=(), clear=None):
+def make_labels(pcb, cutouts, groups, outline, a, edits, log, no_hole=(), clear=None, texts=(), pcb_labels=True):
     """Labels for every part that has a cutout, and for parts marked as needing none (edge jacks, a reset button
     behind the panel): (labels to place, table rows for the window)."""
     fps = {fp.uuid: fp for fp in map(Footprint, kids(pcb, 'footprint')) if fp.uuid}
@@ -1063,8 +1063,10 @@ def make_labels(pcb, cutouts, groups, outline, a, edits, log, no_hole=(), clear=
         if c.get('shadow') or c['id'] not in fps or ':mount' in c.get('key', '') or c['rule'] == 'Mounting hole':
             continue
         own.setdefault(c['id'], []).append(c)
+    if not pcb_labels:
+        own = {}
     ob_px, pb = {}, outline.bounds
-    for fp in map(Footprint, kids(pcb, 'footprint')):
+    for fp in map(Footprint, kids(pcb, 'footprint')) if pcb_labels else []:
         if fp.uuid in no_hole and fp.uuid not in own:
             b = courtyard_box(fp) or (fp.x - 2, fp.y - 2, fp.x + 2, fp.y + 2)
             if not box(*b).intersects(outline):
@@ -1134,6 +1136,14 @@ def make_labels(pcb, cutouts, groups, outline, a, edits, log, no_hole=(), clear=
         x, y = ax + row['dx'], ay + row['dy']
         placed.append(dict(fid=fid, ref=fp.ref, text=text, x=round(x, 4), y=round(y, 4), auto=(round(ax, 4), round(ay, 4)),
                            h=h, w=text_width(text, h, bold, a.label_font), status='ok'))
+    for t in texts:                               # text you added in the preview
+        if not str(t.get('text', '')).strip():
+            continue
+        tx = t['text'].upper() if a.label_caps == 'on' else t['text']
+        th = float(t.get('size') or h)
+        placed.append(dict(fid='text:' + t['id'], ref='your text', text=tx, x=round(t['x'], 4), y=round(t['y'], 4),
+                           auto=(round(t['x'], 4), round(t['y'], 4)), h=th, w=text_width(tx, th, bold, a.label_font),
+                           status='ok', own=True))
     # checks: over a cutout, off the panel, on top of another label (sizes are estimates)
     holes = [g['geom'] for g in groups]
     boxes = [box(L['x'] - L['w'] / 2, L['y'] - L['h'] / 2, L['x'] + L['w'] / 2, L['y'] + L['h'] / 2) for L in placed]
@@ -1158,7 +1168,7 @@ def label_items(placed, a, uuids):
         u = stable_uuid('label:' + L['fid'], 0); uuids.append(u); L['uuid'] = u
         txt = L['text'].replace('\\', '\\\\').replace('"', '\\"')
         out.append(f'\t(gr_text "{txt}" (at {fmt(L["x"])} {fmt(L["y"])} 0) (layer "F.SilkS") (uuid "{u}") '
-                   f'(effects (font {font}(size {fmt(a.label_size)} {fmt(a.label_size)}) (thickness {fmt(t)}){bold})))')
+                   f'(effects (font {font}(size {fmt(L["h"])} {fmt(L["h"])}) (thickness {fmt(L["h"] * (0.2 if a.label_bold == "on" else 0.15))}){bold})))')
     return out
 
 def label_changes_in_panel(tree, memory, edits, log):
@@ -1183,6 +1193,26 @@ def label_changes_in_panel(tree, memory, edits, log):
             log.append(f"label {info['ref']} changed to '{g[1]}' in the panel - kept")
     for fid in [f for f, e in edits.items() if not e]:
         edits.pop(fid)
+
+def text_changes_in_panel(tree, memory, texts, log):
+    """Your own texts moved, retyped or deleted in KiCad since the last run: kept."""
+    have = {kid(g, 'uuid')[1]: g for g in kids(tree, 'gr_text') if kid(g, 'uuid')}
+    by_id = {t['id']: t for t in texts}
+    for tid, info in memory.get('texts_generated', {}).items():
+        t = by_id.get(tid)
+        if t is None:
+            continue
+        g = have.get(info['uuid'])
+        if g is None:
+            texts.remove(t)
+            log.append(f"text  '{info['text']}' deleted in the panel - removed")
+            continue
+        at = kid(g, 'at')
+        if abs(at[1] - info['at'][0]) > 0.01 or abs(at[2] - info['at'][1]) > 0.01:
+            t['x'], t['y'] = round(at[1], 4), round(at[2], 4)
+            log.append(f"text  '{info['text']}' moved in the panel - kept where you put it")
+        if g[1] != info['text']:
+            t['text'] = g[1]
 
 # ---------------------------------------------------------------- artwork from Inkscape
 ART_LAYER_NAMES = ('artwork', 'silkscreen', 'silk')
@@ -1728,26 +1758,38 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log):
     border_in = (max(1.5, a.screw_inset + a.screw_dia / 2 + 1.0) if a.screws != 'none' else 1.5) + 0.6
     edge = border_in + 1.2 if a.art_border == 'on' else 2.0
     region = outline.buffer(-edge + 0.01)
-    def place(text, h, spots, what):
+    a._art_items = []
+    def place(text, h, spots, what, key):
         if not text.strip():
             return
         sh = text_shapes(text, 0, 0, h, a.title_font or font, a.title_bold == 'on' if what == 'title' else sbold)
         if not sh:
             return
         u = unary_union(sh); bx = u.bounds; w = bx[2] - bx[0]
-        for sx, sy in spots(w):
+        pin = (a._art_pos or {}).get(key)
+        def put(sx, sy):
             moved = [shapely_translate(p, sx, sy) for p in sh]
-            mu = unary_union(moved)
+            shapes.extend(moved)
+            a._art_items.append(dict(key=key, what=what, text=text, at=[round(sx, 3), round(sy, 3)], pinned=bool(pin),
+                                     box=unary_union(moved).bounds))
+            return unary_union(moved)
+        if pin:                                   # where you dragged it
+            mu = put(*pin)
+            if not region.contains(mu) or mu.intersects(taken):
+                log.append(f"WARN  the {what} '{text}' runs into a hole, a label or the edge where you put it - drag it somewhere clear")
+            return
+        for sx, sy in spots(w):
+            mu = unary_union([shapely_translate(p, sx, sy) for p in sh])
             if region.contains(mu) and not mu.intersects(taken):
-                shapes.extend(moved); return
-        log.append(f"WARN  no free space for the {what} '{text}' - make the panel bigger, the text smaller, or turn it off")
+                put(sx, sy); return
+        log.append(f"WARN  no free space for the {what} '{text}' - drag it in the preview, make the text smaller, or turn it off")
     m = edge + 0.4
     th = a.title_size
     place(a.art_title, th, lambda w: [((x1 + x2) / 2, y1 + m + th / 2), (x1 + m + w / 2, y1 + m + th / 2),
-                                      (x2 - m - w / 2, y1 + m + th / 2), ((x1 + x2) / 2, y2 - m - th / 2)], 'title')
+                                      (x2 - m - w / 2, y1 + m + th / 2), ((x1 + x2) / 2, y2 - m - th / 2)], 'title', 'title')
     ms = max(1.5, a.label_size * 0.8)
     place(a.art_maker, ms, lambda w: [(x2 - m - w / 2, y2 - m - ms / 2), (x1 + m + w / 2, y2 - m - ms / 2),
-                                      ((x1 + x2) / 2, y2 - m - ms / 2)], 'maker name')
+                                      ((x1 + x2) / 2, y2 - m - ms / 2)], 'maker name', 'maker')
 
     if dropped:
         log.append(f"NOTE  auto artwork: left out {dropped} scale mark{'s' if dropped > 1 else ''} that would hit a hole, a label "
@@ -1981,6 +2023,8 @@ def main(argv=None, preview=None):
     ui = json.loads(a.ui_state) if a.ui_state else {}
     ignore_uncut = ui.get('ignore', mem0.get('ignore_uncut', {}))
     label_edits = ui.get('label_edits', mem0.get('label_edits', {}))
+    texts = [dict(t) for t in ui.get('texts', mem0.get('texts', []))]
+    a._art_pos = dict(ui.get('art_pos', mem0.get('art_pos', {})))
     cfg = json.load(open(a.rules))
     cfg['grow'] = a.grow
     pcb_text, pcb = read_board(a.pcb)
@@ -2131,6 +2175,7 @@ def main(argv=None, preview=None):
                 log.append("NOTE  the panel outline was changed in KiCad - it is always rebuilt from the margins; "
                            "use --margin / --margin-top etc. to change the size")
         label_changes_in_panel(tree, memory, label_edits, log)
+        text_changes_in_panel(tree, memory, texts, log)
         keep_ids = [u for v in kept.values() for u in v['uuids']]
         last_ids = [u for v in memory.get('generated', {}).values() for u in v['uuids']] + memory.get('outline', []) + restored_ids
         existing_text, removed = strip_generated(t, tree, last_ids, keep_ids)
@@ -2153,15 +2198,16 @@ def main(argv=None, preview=None):
     a._art_edits = label_edits
     part_fps = {fp.uuid: fp for fp in map(Footprint, kids(pcb, 'footprint')) if fp.uuid}
     part_fps.update({c['id']: c['fp'] for c in cutouts + manual if c.get('fp')})
-    if a.labels == 'on':
+    if a.labels == 'on' or texts:
         n0 = len(log)
         placed, label_rows = make_labels(pcb, cutouts + manual, groups, outline, a, label_edits, log,
                                          no_hole=set(cfg.get('_none_ids', set())) | set(ignore_uncut),
-                                         clear=auto_label_clearance(cutouts + manual, part_fps, a))
+                                         clear=auto_label_clearance(cutouts + manual, part_fps, a),
+                                         texts=texts, pcb_labels=a.labels == 'on')
         problems += sum(1 for l in log[n0:] if l.startswith('WARN'))
         log.append(f"labels {len(placed)} on the silkscreen ({sum(1 for r in label_rows if r['hide'])} hidden, "
                    f"{sum(1 for r in label_rows if not r['hide'] and not r['text'].strip())} with no text)")
-    a._auto, knocked = [], set()
+    a._auto, knocked, a._art_items = [], set(), []
     if a.auto_art == 'on':
         n0 = len(log)
         a._auto, knocked = auto_artwork(cutouts + manual, part_fps, groups, outline, placed, a, label_edits, log)
@@ -2215,7 +2261,8 @@ def main(argv=None, preview=None):
                      eurorack=hp if tpl else None,
                      pcb_box=((x1 + ER_PCB_INSET, y1 + ER_RAIL, x2 - ER_PCB_INSET, y2 - ER_RAIL) if tpl else (bx1, by1, bx2, by2)),
                      rail_bad=rail_bad, uncut=uncut, labels=placed, label_rows=label_rows,
-                     label_edits=label_edits, ignore_uncut=ignore_uncut, artwork=art, markers=a._markers)
+                     label_edits=label_edits, ignore_uncut=ignore_uncut, artwork=art, markers=a._markers,
+                     art_items=a._art_items, texts=texts, art_pos=a._art_pos)
         return 1 if any(l.startswith('ERROR') for l in log) else 0
 
     uuids, items, generated = [], [], {}
@@ -2240,9 +2287,11 @@ def main(argv=None, preview=None):
     json.dump({'panelgen': VERSION, 'note': 'panelgen memory: what it generated last run, and what you deleted or edited. Keep next to the panel.',
                'outline': outline_ids, 'outline_box': [round(v, 4) for v in (x1, y1, x2, y2)],
                'generated': generated, 'suppressed': suppressed, 'kept': kept,
+               'texts_generated': {L['fid'][5:]: dict(uuid=L['uuid'], at=[L['x'], L['y']], text=L['text'])
+                                   for L in placed if L.get('own')},
                'labels_generated': {L['fid']: dict(uuid=L['uuid'], at=[L['x'], L['y']], auto=list(L['auto']), text=L['text'],
-                                                    ref=L['ref']) for L in placed},
-               'label_edits': label_edits, 'ignore_uncut': ignore_uncut,
+                                                    ref=L['ref']) for L in placed if not L.get('own')},
+               'label_edits': label_edits, 'ignore_uncut': ignore_uncut, 'texts': texts, 'art_pos': a._art_pos,
                'settings': dict(margin=a.margin, **{f'margin_{k}': v for k, v in m.items()},
                                 screws=a.screws, screw_dia=a.screw_dia, screw_inset=a.screw_inset, screw_slot=a.screw_slot, rail_slot=a.rail_slot,
                                 corner_radius=a.corner_radius, grow=a.grow, min_web=a.min_web,

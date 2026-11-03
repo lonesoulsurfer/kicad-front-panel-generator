@@ -119,7 +119,7 @@ class App(tk.Tk):
         v['labels_on'] = tk.BooleanVar(); v['label_pos'] = tk.StringVar(value='above')
         v['label_gap'] = tk.StringVar(value='1.5'); v['label_size'] = tk.StringVar(value='2')
         v['label_font'] = tk.StringVar(value=KICAD_FONT); v['label_bold'] = tk.BooleanVar(); v['label_caps'] = tk.BooleanVar()
-        self.ui = {'ignore': {}, 'label_edits': {}}      # parts you said need no cutout, and your label changes
+        self.ui = {'ignore': {}, 'label_edits': {}, 'texts': [], 'art_pos': {}}   # ignored parts, label changes, your texts, moved title
         self.editor = None
         self.mode, self.pv, self.after_id, self.loading = None, None, None, False
         self.stamp = None
@@ -380,6 +380,9 @@ class App(tk.Tk):
         self.chip = tk.Label(ph, text='', font=self.f_head, padx=8, pady=1); self.chip.pack(side='left', padx=10)
         rb = ttk.Button(ph, text='Refresh', command=self.update_preview); rb.pack(side='right')
         fb = ttk.Button(ph, text='Fit', command=self.fit_view, width=5); fb.pack(side='right', padx=(0, 6))
+        tb = ttk.Button(ph, text='Add text', command=self.start_add_text); tb.pack(side='right', padx=(0, 6))
+        Tip(tb, 'Click here, then click on the panel where the text goes. Drag any text, label or the title to move it; '
+                'right-click it for more.')
         Tip(fb, 'Show the whole panel again. Mouse wheel zooms in and out where the pointer is; drag to move around; '
                 'double-click also fits.')
         self.zoom_lbl = ttk.Label(ph, text='', style='Dim.TLabel'); self.zoom_lbl.pack(side='right', padx=6)
@@ -394,6 +397,8 @@ class App(tk.Tk):
         pc.bind('<Button-4>', self.wheel_zoom); pc.bind('<Button-5>', self.wheel_zoom)
         pc.bind('<ButtonPress-1>', self.press); pc.bind('<B1-Motion>', self.motion)
         pc.bind('<ButtonRelease-1>', self.release); pc.bind('<Double-Button-1>', lambda e: self.fit_view())
+        pc.bind('<Button-3>', self.context_menu); pc.bind('<Button-2>', self.context_menu)
+        self.adding = False
         self.hover = ttk.Label(right, text='Hover over a cutout to see what it is.', style='Dim.TLabel')
         self.hover.grid(row=2, column=0, sticky='w', pady=(3, 0))
         self.legend(right).grid(row=2, column=0, sticky='e', pady=(3, 0))
@@ -707,7 +712,8 @@ class App(tk.Tk):
             v['label_pos'].set(s['label_pos']); v['label_gap'].set(f"{s['label_gap']:g}"); v['label_size'].set(f"{s['label_size']:g}")
             v['label_font'].set(s['label_font'] or KICAD_FONT)
             v['label_bold'].set(s['label_bold'] == 'on'); v['label_caps'].set(s['label_caps'] == 'on')
-            self.ui = {'ignore': dict(mem.get('ignore_uncut', {})), 'label_edits': dict(mem.get('label_edits', {}))}
+            self.ui = {'ignore': dict(mem.get('ignore_uncut', {})), 'label_edits': dict(mem.get('label_edits', {})),
+                       'texts': [dict(t) for t in mem.get('texts', [])], 'art_pos': dict(mem.get('art_pos', {}))}
         finally:
             self.loading = False
         self.refresh_states()
@@ -975,13 +981,19 @@ class App(tk.Tk):
                 text=f"{r}  ·  no cutout - click if it doesn't need one, or see Result for how to add one"))
             c.tag_bind(i, '<Leave>', lambda e: self.hover.config(text='Hover over a cutout to see what it is.'))
         fam = pv.get('label_font') or tkfont.nametofont('TkDefaultFont').actual('family')
+        self.targets = []                 # things you can drag: (box in mm, kind, data), topmost last
+        for L in pv.get('labels', []):
+            self.targets.append(((L['x'] - L['w'] / 2, L['y'] - L['h'] / 2, L['x'] + L['w'] / 2, L['y'] + L['h'] / 2),
+                                 'text' if L.get('own') else 'label', L))
+        for it in pv.get('art_items', []):
+            self.targets.append((it['box'], 'art', it))
         for L in pv.get('labels', []):
             px = -max(5, round(L['h'] * self.pg.KICAD_EM * sc))     # KiCad's em square is 1.4 x the text size
             i = c.create_text(X(L['x']), Y(L['y']), text=L['text'], fill='#ffffff' if L['status'] == 'ok' else '#ffb347',
                               font=(fam, px, 'bold' if pv.get('label_bold') else 'normal'))
             c.tag_bind(i, '<Enter>', lambda e, L=L: self.hover.config(
                 text=f"{L['ref']}  ·  label '{L['text']}'" + ('  ·  runs into something (see Result)' if L['status'] != 'ok' else '')
-                     + '  ·  click to edit'))
+                     + ('  ·  drag to move, right-click to change or delete' if L.get('own') else '  ·  drag to move, click to edit')))
             c.tag_bind(i, '<Leave>', lambda e: self.hover.config(text='Hover over a cutout to see what it is.'))
             self.clicks[i] = lambda f=L['fid']: (self.edit_labels(), self.editor.focus_row(f))
         for ref, (bx1, by1, bx2, by2) in pv.get('rail_bad', []):
@@ -1006,11 +1018,39 @@ class App(tk.Tk):
         self.view = (new, e.x - (e.x - ox) * f, e.y - (e.y - oy) * f)
         self.draw()
 
+    def to_mm(self, e):
+        sc, ox, oy = self.cur_view
+        return (e.x - ox) / sc, (e.y - oy) / sc
+
+    def target_at(self, e):
+        if not getattr(self, 'cur_view', None) or not getattr(self, 'targets', None):
+            return None
+        x, y = self.to_mm(e)
+        pad = 4 / self.cur_view[0]                    # a few pixels of slack round small text
+        for b, kind, data in reversed(self.targets):
+            if b[0] - pad <= x <= b[2] + pad and b[1] - pad <= y <= b[3] + pad:
+                return b, kind, data
+        return None
+
     def press(self, e):
-        self.drag = (e.x, e.y, False)
+        t = None if self.adding else self.target_at(e)
+        self.drag = ('item', e.x, e.y, t, False) if t else (e.x, e.y, False)
 
     def motion(self, e):
         if not self.drag or not getattr(self, 'cur_view', None):
+            return
+        if self.drag[0] == 'item':
+            _, x0, y0, t, moved = self.drag
+            if not moved and abs(e.x - x0) + abs(e.y - y0) < 4:
+                return
+            sc, ox, oy = self.cur_view
+            b = t[0]
+            self.canvas.delete('dragbox')
+            self.canvas.create_rectangle(ox + b[0] * sc + e.x - x0, oy + b[1] * sc + e.y - y0,
+                                         ox + b[2] * sc + e.x - x0, oy + b[3] * sc + e.y - y0,
+                                         outline='#ffd28a', dash=(4, 2), width=2, tags='dragbox')
+            self.drag = ('item', x0, y0, t, True)
+            self.canvas.config(cursor='fleur')
             return
         x0, y0, moved = self.drag
         if not moved and abs(e.x - x0) + abs(e.y - y0) < 4:
@@ -1022,14 +1062,119 @@ class App(tk.Tk):
         self.draw()
 
     def release(self, e):
-        moved = self.drag and self.drag[2]
-        self.drag = None
-        self.canvas.config(cursor='')
+        if self.drag and self.drag[0] == 'item':
+            _, x0, y0, t, moved = self.drag
+            self.drag = None
+            self.canvas.config(cursor='')
+            self.canvas.delete('dragbox')
+            if moved:
+                sc = self.cur_view[0]
+                self.move_target(t, round((e.x - x0) / sc, 2), round((e.y - y0) / sc, 2))
+                return
+            if t[1] in ('text', 'art'):
+                return
+            moved = False
+        else:
+            moved = self.drag and self.drag[2]
+            self.drag = None
+            self.canvas.config(cursor='')
         if moved:
+            return
+        if self.adding:
+            self.adding = False
+            self.canvas.config(cursor='')
+            self.add_text_at(*self.to_mm(e))
             return
         for i in reversed(self.canvas.find_overlapping(e.x, e.y, e.x, e.y)):
             if i in self.clicks:
                 self.clicks[i](); return
+
+    # ------------------------------------------------------------------ texts you add, and moving things
+    def start_add_text(self):
+        if not self.pv or 'message' in self.pv:
+            return
+        self.adding = True
+        self.canvas.config(cursor='crosshair')
+        self.hover.config(text='Click on the panel where the text should go.')
+
+    def add_text_at(self, x, y):
+        from tkinter import simpledialog
+        txt = simpledialog.askstring('Add text', 'Text:', parent=self)
+        if not txt or not txt.strip():
+            return
+        import uuid
+        self.ui.setdefault('texts', []).append(dict(id=uuid.uuid4().hex[:8], text=txt.strip(), x=round(x, 2), y=round(y, 2)))
+        self.persist_ui(); self.update_preview()
+
+    def own_text(self, fid):
+        return next((t for t in self.ui.get('texts', []) if 'text:' + t['id'] == fid), None)
+
+    def move_target(self, t, dx, dy):
+        _, kind, d = t
+        if kind == 'text':
+            o = self.own_text(d['fid'])
+            if o:
+                o['x'] = round(o['x'] + dx, 2); o['y'] = round(o['y'] + dy, 2)
+        elif kind == 'art':
+            self.ui.setdefault('art_pos', {})[d['key']] = [round(d['at'][0] + dx, 2), round(d['at'][1] + dy, 2)]
+        else:
+            e = self.ui['label_edits'].setdefault(d['fid'], {})
+            e['dx'] = round(e.get('dx', 0.0) + dx, 3); e['dy'] = round(e.get('dy', 0.0) + dy, 3)
+        self.persist_ui(); self.update_preview()
+
+    def context_menu(self, e):
+        t = self.target_at(e)
+        if not t:
+            return
+        _, kind, d = t
+        m = tk.Menu(self, tearoff=0)
+        if kind == 'text':
+            m.add_command(label='Change text…', command=lambda: self.text_change(d['fid']))
+            m.add_command(label='Text size…', command=lambda: self.text_size(d['fid']))
+            m.add_command(label='Delete', command=lambda: self.text_delete(d['fid']))
+        elif kind == 'art':
+            m.add_command(label=f"Put the {d['what']} back in its automatic place", state='normal' if d.get('pinned') else 'disabled',
+                          command=lambda: (self.ui['art_pos'].pop(d['key'], None), self.persist_ui(), self.update_preview()))
+        else:
+            m.add_command(label='Edit labels…', command=lambda: (self.edit_labels(), self.editor.focus_row(d['fid'])))
+            m.add_command(label='Put it back where it was', command=lambda: self.label_reset(d['fid']))
+            m.add_command(label='Hide this label', command=lambda: self.label_hide(d['fid']))
+        m.tk_popup(e.x_root, e.y_root)
+
+    def text_change(self, fid):
+        from tkinter import simpledialog
+        o = self.own_text(fid)
+        if not o:
+            return
+        txt = simpledialog.askstring('Change text', 'Text:', initialvalue=o['text'], parent=self)
+        if txt is not None and txt.strip():
+            o['text'] = txt.strip(); self.persist_ui(); self.update_preview()
+
+    def text_size(self, fid):
+        from tkinter import simpledialog
+        o = self.own_text(fid)
+        if not o:
+            return
+        cur = o.get('size') or self.vars['label_size'].get()
+        v = simpledialog.askfloat('Text size', 'Height in mm (blank = the label size):', initialvalue=float(cur),
+                                  minvalue=0.8, maxvalue=30, parent=self)
+        if v:
+            o['size'] = round(v, 2); self.persist_ui(); self.update_preview()
+
+    def text_delete(self, fid):
+        self.ui['texts'] = [t for t in self.ui.get('texts', []) if 'text:' + t['id'] != fid]
+        self.persist_ui(); self.update_preview()
+
+    def label_reset(self, fid):
+        e = self.ui['label_edits'].get(fid, {})
+        e.pop('dx', None); e.pop('dy', None)
+        if not e:
+            self.ui['label_edits'].pop(fid, None)
+        self.persist_ui(); self.update_preview()
+
+    def label_hide(self, fid):
+        self.ui['label_edits'].setdefault(fid, {})['hide'] = True
+        self.persist_ui(); self.update_preview()
 
     def show_hover(self, s):
         b = s['geom'].bounds
@@ -1073,7 +1218,8 @@ class App(tk.Tk):
                                    + '\n\n'.join('- ' + e for e in errs[:6]) + ('\n\n…and more, see Result.' if len(errs) > 6 else ''))
         mem = load_json(panel_paths(board)[1])
         if mem:
-            self.ui = {'ignore': dict(mem.get('ignore_uncut', {})), 'label_edits': dict(mem.get('label_edits', {}))}
+            self.ui = {'ignore': dict(mem.get('ignore_uncut', {})), 'label_edits': dict(mem.get('label_edits', {})),
+                       'texts': [dict(t) for t in mem.get('texts', [])], 'art_pos': dict(mem.get('art_pos', {}))}
         self.fill_restore()
         panel, _ = panel_paths(board)
         self.stamp = (mtime(board), mtime(panel), mtime(self.art_file()))
@@ -1173,6 +1319,7 @@ class App(tk.Tk):
         if not mem:
             return               # no panel yet: saved with the first Generate
         mem['ignore_uncut'] = self.ui['ignore']; mem['label_edits'] = self.ui['label_edits']
+        mem['texts'] = self.ui.get('texts', []); mem['art_pos'] = self.ui.get('art_pos', {})
         try:
             with open(mem_path, 'w', encoding='utf-8') as f:
                 json.dump(mem, f, indent=1)
