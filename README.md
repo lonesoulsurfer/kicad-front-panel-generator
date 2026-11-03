@@ -30,13 +30,13 @@ Save your KiCad board, then open Panel Generator, click **Browse…** and choose
 
 ![The preview after loading a PCB](docs/images/step1_preview.png)
 
-Panel Generator only reads the saved file, so save in KiCad again whenever you move a part. The preview updates by itself when you do. Boards you've used before are in the dropdown, so next time you can pick one from there instead of browsing.
+Panel Generator only reads the saved 'kicad_pcb' file, so save in KiCad again whenever you move a part. The preview updates by itself when you do. Boards you've used before are in the dropdown, so next time you can pick one from there instead of browsing.
 
 ### 2. Set the size, corners and case holes
 
 By default the panel is the same size as your PCB. Use the settings on the left to change it:
 
-- **Make the panel bigger than the PCB by**: adds a border all the way round (tick *Different amount on each side* to set each side separately).
+- **Make the panel bigger than the PCB by**: increases the panel size around each edge, good for when you are adding a case (tick *Different amount on each side* to set each side separately).
 - **Rounded corners**: sets the corner radius.
 - **Case mounting holes**: screw holes to fix the panel to your case, in the corners or in the corners and the middle of each side. Set the hole size and how far its centre sits from the edge. The line underneath tells you how much panel is left between the hole and the edge. Pick **Slots** instead of round holes if you want some play to line the panel up.
 
@@ -48,7 +48,7 @@ The colours in the preview tell you what to check:
 - **Red outline:** a real problem, such as two holes overlapping.
 - **Orange dashed box:** a part that looks like it might need a hole but doesn't have one. If it really doesn't (a tactile switch hidden behind the panel, say), click it in the preview and it won't be flagged again. If it does, see the [technical guide](docs/TECHNICAL.md) for how to add one.
 
-The **Result** box under the preview lists anything that needs your attention, in plain words.
+The **Result** box under the preview lists anything that needs your attention.
 
 ### 3. Add labels (optional)
 
