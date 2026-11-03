@@ -6,6 +6,10 @@ Every pot, jack, switch, LED and screen on the board gets a hole in the right pl
 
 You don't need to trace parts onto a User layer, export to Fusion or Inkscape and back, or redraw the panel by hand.
 
+**▶ Watch the video: [Front Panel Design - Make Easy!](https://youtu.be/l9CzSfH8hN0)**
+
+[![Front Panel Design - Make Easy! on YouTube](https://img.youtube.com/vi/l9CzSfH8hN0/hqdefault.jpg)](https://youtu.be/l9CzSfH8hN0)
+
 ![A finished panel in KiCad's 3D viewer](docs/images/finished_3d.png)
 
 *The front panel for my Game of Life synth: holes, labels, pot scales, boxed key functions and the glider all made in Panel Generator, no Inkscape. Shown in KiCad's 3D viewer.*
