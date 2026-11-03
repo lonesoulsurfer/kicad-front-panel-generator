@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.20.1
+
+- **Snapping:** a text, label or title you drag (or add) snaps into line with the other labels and to the middle of holes, with pink guide lines while you drag. Hold Alt to place it freely.
+
 ## 0.20.0
 
 - **Drag to move** in the preview: labels, the title, the maker name and your own text. Right-click for more (put it back, hide, change, delete).

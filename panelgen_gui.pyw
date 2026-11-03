@@ -21,6 +21,7 @@ ART_STYLES = {   # what each style switches on: pot scale, rings, outputs in box
 }
 SCALES = {'None': 'none', 'Ticks': 'ticks', 'Numbers 0-10': 'numbers', 'Centre zero (- 0 +)': 'bipolar'}
 KICAD_FONT = "KiCad's own font"
+ALT_MASK = 0x20000 if sys.platform == 'win32' else 0x0008   # Alt held (on Windows, 0x0008 is Num Lock)
 
 # preview colours
 C_BG, C_PANEL, C_PANEL_EDGE, C_HOLE = '#eef1f4', '#3b4754', '#1f262e', '#eef1f4'
@@ -381,8 +382,9 @@ class App(tk.Tk):
         rb = ttk.Button(ph, text='Refresh', command=self.update_preview); rb.pack(side='right')
         fb = ttk.Button(ph, text='Fit', command=self.fit_view, width=5); fb.pack(side='right', padx=(0, 6))
         tb = ttk.Button(ph, text='Add text', command=self.start_add_text); tb.pack(side='right', padx=(0, 6))
-        Tip(tb, 'Click here, then click on the panel where the text goes. Drag any text, label or the title to move it; '
-                'right-click it for more.')
+        Tip(tb, 'Click here, then click on the panel where the text goes. Drag any text, label or the title to move it: '
+                'it snaps into line with other labels and to the middle of holes (hold Alt to place it freely). '
+                'Right-click it for more.')
         Tip(fb, 'Show the whole panel again. Mouse wheel zooms in and out where the pointer is; drag to move around; '
                 'double-click also fits.')
         self.zoom_lbl = ttk.Label(ph, text='', style='Dim.TLabel'); self.zoom_lbl.pack(side='right', padx=6)
@@ -1040,17 +1042,22 @@ class App(tk.Tk):
         if not self.drag or not getattr(self, 'cur_view', None):
             return
         if self.drag[0] == 'item':
-            _, x0, y0, t, moved = self.drag
+            _, x0, y0, t, moved = self.drag[:5]
             if not moved and abs(e.x - x0) + abs(e.y - y0) < 4:
                 return
             sc, ox, oy = self.cur_view
             b = t[0]
-            self.canvas.delete('dragbox')
-            self.canvas.create_rectangle(ox + b[0] * sc + e.x - x0, oy + b[1] * sc + e.y - y0,
-                                         ox + b[2] * sc + e.x - x0, oy + b[3] * sc + e.y - y0,
-                                         outline='#ffd28a', dash=(4, 2), width=2, tags='dragbox')
-            self.drag = ('item', x0, y0, t, True)
-            self.canvas.config(cursor='fleur')
+            dx, dy, gx, gy = self.snap(t, (e.x - x0) / sc, (e.y - y0) / sc, free=bool(getattr(e, 'state', 0) & ALT_MASK))
+            c = self.canvas
+            c.delete('dragbox')
+            if gx is not None:
+                c.create_line(ox + gx * sc, 0, ox + gx * sc, c.winfo_height(), fill='#ff4fd8', dash=(3, 3), tags='dragbox')
+            if gy is not None:
+                c.create_line(0, oy + gy * sc, c.winfo_width(), oy + gy * sc, fill='#ff4fd8', dash=(3, 3), tags='dragbox')
+            c.create_rectangle(ox + (b[0] + dx) * sc, oy + (b[1] + dy) * sc, ox + (b[2] + dx) * sc, oy + (b[3] + dy) * sc,
+                               outline='#ffd28a', dash=(4, 2), width=2, tags='dragbox')
+            self.drag = ('item', x0, y0, t, True, dx, dy)
+            c.config(cursor='fleur')
             return
         x0, y0, moved = self.drag
         if not moved and abs(e.x - x0) + abs(e.y - y0) < 4:
@@ -1063,13 +1070,13 @@ class App(tk.Tk):
 
     def release(self, e):
         if self.drag and self.drag[0] == 'item':
-            _, x0, y0, t, moved = self.drag
+            _, x0, y0, t, moved = self.drag[:5]
+            dx, dy = self.drag[5:7] if len(self.drag) > 5 else (0, 0)
             self.drag = None
             self.canvas.config(cursor='')
             self.canvas.delete('dragbox')
             if moved:
-                sc = self.cur_view[0]
-                self.move_target(t, round((e.x - x0) / sc, 2), round((e.y - y0) / sc, 2))
+                self.move_target(t, round(dx, 3), round(dy, 3))
                 return
             if t[1] in ('text', 'art'):
                 return
@@ -1083,7 +1090,9 @@ class App(tk.Tk):
         if self.adding:
             self.adding = False
             self.canvas.config(cursor='')
-            self.add_text_at(*self.to_mm(e))
+            x, y = self.to_mm(e)
+            dx, dy, _, _ = self.snap(((x, y, x, y), 'new', None), 0, 0)
+            self.add_text_at(x + dx, y + dy)
             return
         for i in reversed(self.canvas.find_overlapping(e.x, e.y, e.x, e.y)):
             if i in self.clicks:
@@ -1105,6 +1114,34 @@ class App(tk.Tk):
         import uuid
         self.ui.setdefault('texts', []).append(dict(id=uuid.uuid4().hex[:8], text=txt.strip(), x=round(x, 2), y=round(y, 2)))
         self.persist_ui(); self.update_preview()
+
+    def snap(self, t, dx, dy, free=False):
+        """Line a moved text up: its middle with the middle of a hole, and its height with other labels.
+        Returns the (snapped) move and the guide lines to draw. Hold Alt to place it freely."""
+        b, kind, d = t
+        cx, cy = (b[0] + b[2]) / 2 + dx, (b[1] + b[3]) / 2 + dy
+        if free or not self.pv:
+            return dx, dy, None, None
+        thr = 8 / self.cur_view[0]                     # 8 pixels, in mm
+        xs, ys = [], []
+        for sh in self.pv.get('shapes', []):
+            g = sh['geom'].bounds
+            xs.append((g[0] + g[2]) / 2); ys.append((g[1] + g[3]) / 2)
+        for L in self.pv.get('labels', []):
+            if d is not None and L is d:
+                continue
+            xs.append(L['x']); ys.append(L['y'])
+        for it in self.pv.get('art_items', []):
+            if d is not None and it is d:
+                continue
+            ib = it['box']; xs.append((ib[0] + ib[2]) / 2); ys.append((ib[1] + ib[3]) / 2)
+        x1, y1, x2, y2 = self.pv['panel_box']
+        xs.append((x1 + x2) / 2)
+        bx = min(xs, key=lambda v: abs(v - cx), default=None)
+        by = min(ys, key=lambda v: abs(v - cy), default=None)
+        gx = bx if bx is not None and abs(bx - cx) <= thr else None
+        gy = by if by is not None and abs(by - cy) <= thr else None
+        return dx + (gx - cx if gx is not None else 0), dy + (gy - cy if gy is not None else 0), gx, gy
 
     def own_text(self, fid):
         return next((t for t in self.ui.get('texts', []) if 'text:' + t['id'] == fid), None)
