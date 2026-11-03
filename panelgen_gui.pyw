@@ -1040,8 +1040,8 @@ class App(tk.Tk):
                                  'text' if L.get('own') else 'label', L))
         for it in pv.get('art_items', []):
             self.targets.append((it['box'], 'art', it))
-        for k in pv.get('knocked', []):            # labels cut out of an output box or edge tab: the box follows them
-            self.targets.append((k['box'], 'label', k))
+        for k in pv.get('knocked', []):            # labels cut out of an output box, edge tab or bar: the box follows them
+            self.targets.append((k['box'], 'text' if k['fid'].startswith('text:') else 'label', k))
         for im in pv.get('images', []):
             self.targets.append((im['box'], 'image', im))
         for L in pv.get('labels', []):
@@ -1094,6 +1094,19 @@ class App(tk.Tk):
 
     def press(self, e):
         t = None if self.adding else self.target_at(e)
+        if not self.adding and getattr(self, 'cur_view', None):     # near the edge of a tab or box: grab the edge, not the text
+            x, y = self.to_mm(e)
+            grab = 6 / self.cur_view[0]
+            for tt in getattr(self, 'targets', []):
+                if tt[1] != 'tab':
+                    continue
+                b = tt[0]
+                if not (b[0] - grab <= x <= b[2] + grab and b[1] - grab <= y <= b[3] + grab):
+                    continue
+                d_ = {'l': abs(x - b[0]), 'r': abs(x - b[2]), 't': abs(y - b[1]), 'b': abs(y - b[3])}
+                if min(d_[k] for k in tt[2]['edges']) <= grab:
+                    t = tt
+                    break
         if t and t[1] == 'tab':
             x, y = self.to_mm(e)
             b = t[0]
@@ -1121,6 +1134,9 @@ class App(tk.Tk):
                 if not getattr(e, 'state', 0) & ALT_MASK:
                     cands = [ob[i] for tb in self.pv.get('tab_boxes', []) if tb is not t[2]
                              for ob in [tb['box']] for i in ((0, 2) if axis == 0 else (1, 3))]
+                    if axis == 0:                      # a bar over two keys: snap its ends to key labels and hole edges
+                        cands += [L['x'] for L in self.pv.get('labels', [])]
+                        cands += [v for sh in self.pv.get('shapes', []) for v in (sh['geom'].bounds[0], sh['geom'].bounds[2])]
                     near = min(cands, key=lambda v: abs(v - pos), default=None)
                     if near is not None and abs(near - pos) <= 8 / sc:
                         pos, g = near, near
@@ -1350,6 +1366,8 @@ class App(tk.Tk):
                 if o and x and abs(x - float(o.get('size') or 0)) > 1e-6:
                     o['size'] = round(x, 2); self.persist_ui(); self.update_preview()
             entry(row, f"{d['h']:g}", sets); ttk.Label(row, text='mm').pack(side='left')
+            self.box_choice(box, o.get('box') if o else None, lambda v: (o.__setitem__('box', v) if v else o.pop('box', None),
+                                                                         self.persist_ui(), self.update_preview()))
             ttk.Button(box, text='Delete text', command=lambda: (self.text_delete(d['fid']), self.select(None))).pack(anchor='w', pady=(6, 0))
         elif kind == 'label':
             head.config(text=f"Label: {d.get('ref', '')}")
@@ -1361,6 +1379,15 @@ class App(tk.Tk):
                     if v.strip() and v != d.get('text'):
                         self.ui['label_edits'].setdefault(fid, {})['text'] = v; self.persist_ui(); self.update_preview()
                 entry(row, d.get('text', ''), setl, width=24)
+            if not fid.startswith('tabword:'):
+                def setbox(v, fid=fid):
+                    e = self.ui['label_edits'].setdefault(fid, {})
+                    if v:
+                        e['box'] = v
+                    else:
+                        e.pop('box', None)
+                    self.persist_ui(); self.update_preview()
+                self.box_choice(box, self.ui['label_edits'].get(fid, {}).get('box'), setbox)
             row = ttk.Frame(box); row.pack(fill='x', pady=(6, 0))
             ttk.Button(row, text='Put back where it was', command=lambda: self.label_reset(fid)).pack(side='left')
             if not fid.startswith('tabword:'):
@@ -1375,7 +1402,7 @@ class App(tk.Tk):
             if not d.get('pinned'):
                 b.state(['disabled'])
         elif kind == 'tab':
-            head.config(text=('Edge tab: ' if d['kind'] == 'edge' else 'Output box: ') + d.get('ref', ''))
+            head.config(text={'edge': 'Edge tab: ', 'output': 'Output box: ', 'textbox': 'Box round '}.get(d['kind'], '') + d.get('ref', ''))
             g = self.ui['label_edits'].get(d['key'], {})
             row = ttk.Frame(box); row.pack(fill='x', pady=(4, 0))
             ttk.Label(row, text='Make bigger by').pack(side='left')
@@ -1396,10 +1423,23 @@ class App(tk.Tk):
                         self.persist_ui(); self.update_preview()
                 entry(row, f"{g.get(edge, 0.0):g}", setg, width=4)
             ttk.Label(row, text='mm').pack(side='left')
-            ttk.Label(box, text='Or drag an edge of it in the preview: it snaps to the edges of the other tabs and boxes.',
+            ttk.Label(box, text='Or drag an edge of it in the preview: it snaps to the edges of the other tabs and boxes'
+                               + (', and to key labels and hole edges - stretch a bar over two keys.' if d['kind'] == 'textbox' else '.'),
                       style='Dim.TLabel', wraplength=390, justify='left').pack(anchor='w', pady=(4, 0))
             ttk.Button(box, text='Back to its own size', command=lambda: (self.ui['label_edits'].pop(d['key'], None),
                                                                           self.persist_ui(), self.update_preview())).pack(anchor='w', pady=(6, 0))
+
+    def box_choice(self, parent, current, apply):
+        """Box round a text or label: none, a line round it, or a filled bar with the text cut out."""
+        names = {'No box': None, 'Line round it': 'outline', 'Filled bar (text cut out)': 'filled'}
+        row = ttk.Frame(parent); row.pack(fill='x', pady=(4, 0))
+        ttk.Label(row, text='Box').pack(side='left')
+        var = self._sel_box = tk.StringVar(value=next((k for k, v in names.items() if v == current), 'No box'))
+        cb = ttk.Combobox(row, textvariable=var, values=list(names), state='readonly', width=24)
+        cb.pack(side='left', padx=4)
+        cb.bind('<<ComboboxSelected>>', lambda e: apply(names[var.get()]))
+        Tip(cb, 'For a key with two jobs, or one that needs two keys pressed: put the text in a box, then click the box and '
+                'drag its ends to stretch it over the keys. It snaps to key labels and to other boxes.')
 
     def own_image(self, iid):
         return next((i for i in self.ui.get('images', []) if i['id'] == iid), None)

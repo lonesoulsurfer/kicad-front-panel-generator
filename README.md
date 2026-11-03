@@ -64,6 +64,8 @@ Tick **Add labels from the PCB** and a label section opens. Each pot, jack and s
 
 **Need text that isn't on the PCB?** For example, what each key does. Click **Add text…** (in *Your text and pictures*), click where it goes and type it. Drag it to move it; click it to change its text or size, or delete it.
 
+**Boxes round text:** for a key with two jobs, or a function that needs two keys pressed, click the text and set **Box** to *Line round it* or *Filled bar* (text cut out). Then click the box and drag its ends to stretch it over the keys; it snaps to the key labels and to other boxes, and the text stays in the middle.
+
 **Pictures:** click **Add picture…** and pick a PNG, JPG or SVG (a glider, a logo). Its dark parts print. Drag it into place, and click it to set its width, print its light parts instead, or delete it.
 
 ### 4. Let it make the artwork (optional)

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.24.0
+
+- **Boxes round text:** a line round a text or label, or a filled bar with the text cut out. Drag the ends to stretch it over two keys (snaps to key labels and other boxes); the text stays centred.
+- Grabbing near the edge of a tab or box now always resizes it, even with text right next to the edge.
+
 ## 0.23.0
 
 - **Tidier window:** the steps are grouped under *Panel* and *Artwork*, each step in its own box. *Holes you removed or changed* moves up into Panel.

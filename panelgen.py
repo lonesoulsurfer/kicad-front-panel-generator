@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.23.0"
+VERSION = "0.24.0"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -2013,6 +2013,49 @@ def image_items(images, folder, outline, groups, log):
                 out += fracture(p)
     return out
 
+def text_boxes(placed, texts, edits, a, groups, outline, log):
+    """Boxes round texts or labels you asked for one (a double-function key: SAVE/LOAD over two keys): 'outline' draws a
+    line round the text, 'filled' a solid bar with the text cut out of it. Each can be made longer in the window.
+    Returns (silkscreen polygons, labels now cut out of a bar)."""
+    font, bold = a.label_font, a.label_bold == 'on'
+    sbold = bold or not font
+    own = {'text:' + t['id']: t for t in texts}
+    holes = unary_union([g['geom'] for g in groups]).buffer(0.3) if groups else None
+    inside = outline.buffer(-0.6)
+    polys, knocked = [], set()
+    for L in placed:
+        spec = own.get(L['fid'], {}).get('box') if L['fid'] in own else edits.get(L['fid'], {}).get('box')
+        if spec not in ('outline', 'filled'):
+            continue
+        key = 'box:' + L['fid']
+        g = edits.get(key, {})
+        x0, y0 = L['x'], L['y']                  # where the text was put; a stretched box keeps it in its middle
+        sx, sy = (g.get('r', 0.0) - g.get('l', 0.0)) / 2, (g.get('b', 0.0) - g.get('t', 0.0)) / 2
+        L['x'], L['y'] = round(x0 + sx, 4), round(y0 + sy, 4)
+        txt = text_shapes(L['text'], L['x'], L['y'], L['h'], font, sbold)
+        tb = unary_union(txt).bounds if txt else (L['x'] - L['w'] / 2, L['y'] - L['h'] / 2, L['x'] + L['w'] / 2, L['y'] + L['h'] / 2)
+        pad_x, pad_y = max(0.8, L['h'] * 0.35), max(0.45, L['h'] * 0.25)
+        hw, hh = (tb[2] - tb[0]) / 2 + pad_x, (tb[3] - tb[1]) / 2 + pad_y
+        ctr = ((tb[0] + tb[2]) / 2 - sx, (tb[1] + tb[3]) / 2 - sy)      # the box grows from the text's own place
+        bx = (ctr[0] - hw - g.get('l', 0.0), ctr[1] - hh - g.get('t', 0.0), ctr[0] + hw + g.get('r', 0.0), ctr[1] + hh + g.get('b', 0.0))
+        shape = rounded_box(*bx, min(0.8, (bx[3] - bx[1]) / 3))
+        if spec == 'filled':
+            if txt:
+                shape = shape.difference(unary_union(txt))
+                knocked.add(L['fid'])
+                a._knock_boxes[L['fid']] = dict(box=tb, ref=L['ref'], text=L['text'], h=L['h'])
+        else:
+            shape = shape.difference(shape.buffer(-0.3, join_style=1))
+        a._tab_boxes.append(dict(key=key, kind='textbox', edges='lrtb', box=bx, ref=f"'{L['text']}'"))
+        if holes is not None and shape.intersects(holes):
+            log.append(f"NOTE  the box round '{L['text']}' runs over a hole - that part is left off")
+            shape = shape.difference(holes)
+        shape = shape.intersection(inside)
+        for p in (shape.geoms if hasattr(shape, 'geoms') else [shape]):
+            if p.geom_type == 'Polygon' and p.area > 1e-4:
+                polys += fracture(p)
+    return polys, knocked
+
 def shapely_translate(g, dx, dy):
     from shapely.affinity import translate
     return translate(g, dx, dy)
@@ -2431,6 +2474,9 @@ def main(argv=None, preview=None):
         problems += sum(1 for l in log[n0:] if l.startswith('WARN'))
         log.append(f"auto  {len(a._auto)} shapes of artwork made for you"
                    + (f" ({len(knocked)} label{'s' if len(knocked) > 1 else ''} cut out of output boxes)" if knocked else ''))
+    tb_polys, tb_knocked = text_boxes([L for L in placed if L['fid'] not in knocked], texts, label_edits, a, groups, outline, log)
+    a._auto += tb_polys
+    knocked |= tb_knocked
     placed = [L for L in placed if L['fid'] not in knocked]     # those are in the artwork now, cut out of their box
     a._markers = part_markers(pcb, set(cfg.get('_none_ids', set())) | set(ignore_uncut), outline)
     # the template and the artwork file's guides first, so the artwork is rendered on the panel's current page
