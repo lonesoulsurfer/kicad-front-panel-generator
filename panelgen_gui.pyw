@@ -162,7 +162,9 @@ class App(tk.Tk):
         st.configure('Title.TLabel', font=self.f_title)
         st.configure('Dim.TLabel', foreground=C_DIM, font=self.f_small)
         st.configure('Badge.TLabel', font=self.f_head)
+        st.configure('Group.TLabel', font=self.f_head, foreground='#2563eb')
         if not themed:
+            st.configure('Card.TFrame', relief='solid', borderwidth=1)
             st.configure('Accent.TButton', font=self.f_head, padding=8)
         return themed
 
@@ -170,12 +172,12 @@ class App(tk.Tk):
     def build(self):
         v = self.vars
         root = ttk.Frame(self, padding=(14, 10)); root.pack(fill='both', expand=True)
-        root.columnconfigure(1, weight=1); root.columnconfigure(0, minsize=480); root.rowconfigure(1, weight=1)
+        root.columnconfigure(1, weight=1); root.columnconfigure(0, minsize=530); root.rowconfigure(1, weight=1)
 
 
         bg = ttk.Style(self).lookup('TFrame', 'background') or C_BG
         lc = ttk.Frame(root); lc.grid(row=1, column=0, sticky='nsew', padx=(0, 10))
-        cv = tk.Canvas(lc, highlightthickness=0, width=470, bg=bg)
+        cv = tk.Canvas(lc, highlightthickness=0, width=520, bg=bg)
         lsb = ttk.Scrollbar(lc, orient='vertical', command=cv.yview)
         cv.configure(yscrollcommand=lsb.set)
         cv.pack(side='left', fill='both', expand=True)
@@ -198,6 +200,7 @@ class App(tk.Tk):
         self.left = left
         self.sections = {}
 
+        self.group('g_panel', 'Panel', 'The board itself: its size, shape and holes.')
         # 1 PCB
         s = self.section('pcb', 'Your PCB', 'The synth PCB with the parts on it. Save it in KiCad first.')
         row = ttk.Frame(s); row.pack(fill='x')
@@ -277,6 +280,7 @@ class App(tk.Tk):
         Tip(c, 'Jacks, switches, pots, LEDs and screens with no rule get a dashed orange box in the preview. '
                'Click one that really sits behind the panel to stop warning about it.')
 
+        self.group('g_art', 'Artwork', 'Everything printed on the panel: labels, scales, your own text and pictures.')
         # labels
         s = self.section('labels', 'Labels', 'Optional: text for each control, printed on the panel\'s silkscreen.')
         c = ttk.Checkbutton(s, text='Add labels from the PCB', variable=v['labels_on'], command=self.refresh_states)
@@ -354,16 +358,23 @@ class App(tk.Tk):
         l = ttk.Label(row, text='corner radius'); l.pack(side='left', padx=(10, 0))
         Tip(l, '0 = the border follows the panel corners. Any other value rounds the border corners by that much.')
         self.w_bradius = self.num(row, 'border_radius'); ttk.Label(row, text='mm').pack(side='left')
-        row = ttk.Frame(det); row.pack(fill='x', pady=(8, 0))
+        for k in ('art_scale', 'art_rings', 'art_border', 'art_outputs', 'art_groups', 'art_tabs'):
+            v[k].trace_add('write', lambda *_: self.style_custom())
+
+        # your own text and pictures, and whatever is selected in the preview
+        s = self.section('extras', 'Your text and pictures', 'Add your own, then click anything in the preview (text, '
+                                                             'label, picture, title, tab) to change it here.')
+        row = ttk.Frame(s); row.pack(fill='x')
         b = ttk.Button(row, text='Add text…', command=self.start_add_text); b.pack(side='left')
         Tip(b, 'Click this, then click on the panel where the text goes. Drag any text, label, picture or the title to move '
                'it: it snaps into line with other labels, to the middle of holes and to the middle of gaps (hold Alt to '
-               'place it freely). Right-click it for more.')
+               'place it freely).')
         b = ttk.Button(row, text='Add picture…', command=self.add_picture); b.pack(side='left', padx=6)
-        Tip(b, 'A PNG, JPG or SVG (a glider, a logo...). Its dark parts print, transparent parts never do; right-click it to '
-               'print its light parts instead, or to change its size. It is copied into the Front Panel folder.')
-        for k in ('art_scale', 'art_rings', 'art_border', 'art_outputs', 'art_groups', 'art_tabs'):
-            v[k].trace_add('write', lambda *_: self.style_custom())
+        Tip(b, 'A PNG, JPG or SVG (a glider, a logo...). Its dark parts print, transparent parts never do. It is copied into '
+               'the Front Panel folder.')
+        self.sel_box = ttk.Frame(s); self.sel_box.pack(fill='x', pady=(8, 0))
+        self.sel = None
+        self.show_selected()
 
         # artwork
         s = self.section('art', 'Artwork from Inkscape', 'Optional: your own graphics and text, drawn on a 1:1 copy of the panel.')
@@ -456,27 +467,40 @@ class App(tk.Tk):
         self.out.configure(state='disabled')
         self.renumber()
 
+    def group(self, key, title, sub):
+        """A heading over a few related sections."""
+        f = ttk.Frame(self.left)
+        ttk.Label(f, text=title.upper(), style='Group.TLabel').pack(anchor='w')
+        ttk.Label(f, text=sub, style='Dim.TLabel', wraplength=430, justify='left').pack(anchor='w')
+        ttk.Separator(f).pack(fill='x', pady=(3, 0))
+        self.sections[key] = (f, None)
+
     def section(self, key, title, sub):
-        f = ttk.Frame(self.left); f.pack(fill='x', pady=(0, 7))
+        f = ttk.Frame(self.left, style='Card.TFrame', padding=(10, 8)); f.pack(fill='x', pady=(0, 7))
         h = ttk.Frame(f); h.pack(fill='x')
-        badge = tk.Canvas(h, width=22, height=22, highlightthickness=0, bg=ttk.Style(self).lookup('TFrame', 'background') or C_BG)
+        cbg = ttk.Style(self).lookup('Card.TFrame', 'background') or ttk.Style(self).lookup('TFrame', 'background') or C_BG
+        badge = tk.Canvas(h, width=22, height=22, highlightthickness=0, bg=cbg)
         badge.pack(side='left', padx=(0, 8))
         ttk.Label(h, text=title, style='Head.TLabel').pack(side='left')
-        ttk.Label(f, text=sub, style='Dim.TLabel', wraplength=410, justify='left').pack(anchor='w', padx=(30, 0))
+        ttk.Label(f, text=sub, style='Dim.TLabel', wraplength=390, justify='left').pack(anchor='w', padx=(30, 0))
         body = ttk.Frame(f); body.pack(fill='x', padx=(30, 0), pady=(3, 0))
         self.sections[key] = (f, badge)
         return body
 
     def renumber(self):
         """Show the sections that apply to this kind of panel, numbered in order."""
-        show = {'pcb', 'open', 'labels', 'auto', 'art', 'restore'} | ({'rail'} if self.mode == 'eurorack' else {'size', 'case'})
-        order = ['pcb', 'size', 'rail', 'case', 'open', 'labels', 'auto', 'art', 'restore']
+        show = {'g_panel', 'pcb', 'open', 'restore', 'g_art', 'labels', 'auto', 'extras', 'art', 'g_out'} | \
+               ({'rail'} if self.mode == 'eurorack' else {'size', 'case'})
+        order = ['g_panel', 'pcb', 'size', 'rail', 'case', 'open', 'restore', 'g_art', 'labels', 'auto', 'extras', 'art']
         n = 0
         for k in order:
             f, badge = self.sections[k]
             f.pack_forget()
         for k in order:
             f, badge = self.sections[k]
+            if badge is None:                     # a group heading
+                f.pack(fill='x', pady=(10 if k != 'g_panel' else 0, 6), before=self.left_end)
+                continue
             if k in show:
                 n += 1
                 f.pack(fill='x', pady=(0, 7), before=self.left_end)
@@ -905,6 +929,7 @@ class App(tk.Tk):
         self.set_chip(pv)
         self.show_status()
         self.draw()
+        self.show_selected()
         if self.editor and self.editor.winfo_exists():
             self.editor.refresh()
         if self.result_is_preview:
@@ -1009,7 +1034,7 @@ class App(tk.Tk):
                 text=f"{r}  ·  no cutout - click if it doesn't need one, or see Result for how to add one"))
             c.tag_bind(i, '<Leave>', lambda e: self.hover.config(text='Hover over a cutout to see what it is.'))
         fam = pv.get('label_font') or tkfont.nametofont('TkDefaultFont').actual('family')
-        self.targets = []                 # things you can drag: (box in mm, kind, data), topmost last
+        self.targets = [(tuple(tb['box']), 'tab', tb) for tb in pv.get('tab_boxes', [])]   # things you can drag, topmost last
         for L in pv.get('labels', []):
             self.targets.append(((L['x'] - L['w'] / 2, L['y'] - L['h'] / 2, L['x'] + L['w'] / 2, L['y'] + L['h'] / 2),
                                  'text' if L.get('own') else 'label', L))
@@ -1027,7 +1052,10 @@ class App(tk.Tk):
                 text=f"{L['ref']}  ·  label '{L['text']}'" + ('  ·  runs into something (see Result)' if L['status'] != 'ok' else '')
                      + ('  ·  drag to move, right-click to change or delete' if L.get('own') else '  ·  drag to move, click to edit')))
             c.tag_bind(i, '<Leave>', lambda e: self.hover.config(text='Hover over a cutout to see what it is.'))
-            self.clicks[i] = lambda f=L['fid']: (self.edit_labels(), self.editor.focus_row(f))
+        sel = self.selected_target()
+        if sel:                                    # what's selected: its box, so you can see what the left panel is changing
+            b = sel[0]
+            c.create_rectangle(X(b[0]) - 3, Y(b[1]) - 3, X(b[2]) + 3, Y(b[3]) + 3, outline='#2563eb', width=2, dash=(5, 2))
         for ref, (bx1, by1, bx2, by2) in pv.get('rail_bad', []):
             c.create_rectangle(X(bx1), Y(by1), X(bx2), Y(by2), outline=C_ERR, width=2, dash=(4, 2))
             c.create_text(X(bx2) + 10, Y(by1) - 2, text=f'{ref} hits the rail', anchor='nw', fill=C_ERR_TXT, font=self.f_small)
@@ -1066,6 +1094,13 @@ class App(tk.Tk):
 
     def press(self, e):
         t = None if self.adding else self.target_at(e)
+        if t and t[1] == 'tab':
+            x, y = self.to_mm(e)
+            b = t[0]
+            dist = {'l': abs(x - b[0]), 'r': abs(x - b[2]), 't': abs(y - b[1]), 'b': abs(y - b[3])}
+            edge = min(t[2]['edges'], key=lambda k: dist[k])
+            self.drag = ('item', e.x, e.y, t, False, 0, 0, edge)
+            return
         self.drag = ('item', e.x, e.y, t, False) if t else (e.x, e.y, False)
 
     def motion(self, e):
@@ -1077,6 +1112,31 @@ class App(tk.Tk):
                 return
             sc, ox, oy = self.cur_view
             b = t[0]
+            if t[1] == 'tab':                          # pull one edge of a tab: it snaps to the edges of the other tabs
+                edge = self.drag[7]
+                dx, dy = (e.x - x0) / sc, (e.y - y0) / sc
+                axis = 0 if edge in 'lr' else 1
+                pos = b[{'l': 0, 't': 1, 'r': 2, 'b': 3}[edge]] + (dx if axis == 0 else dy)
+                g = None
+                if not getattr(e, 'state', 0) & ALT_MASK:
+                    cands = [ob[i] for tb in self.pv.get('tab_boxes', []) if tb is not t[2]
+                             for ob in [tb['box']] for i in ((0, 2) if axis == 0 else (1, 3))]
+                    near = min(cands, key=lambda v: abs(v - pos), default=None)
+                    if near is not None and abs(near - pos) <= 8 / sc:
+                        pos, g = near, near
+                nb = list(b); nb[{'l': 0, 't': 1, 'r': 2, 'b': 3}[edge]] = pos
+                c = self.canvas
+                c.delete('dragbox')
+                if g is not None:
+                    if axis == 0:
+                        c.create_line(ox + g * sc, 0, ox + g * sc, c.winfo_height(), fill='#ff4fd8', dash=(3, 3), tags='dragbox')
+                    else:
+                        c.create_line(0, oy + g * sc, c.winfo_width(), oy + g * sc, fill='#ff4fd8', dash=(3, 3), tags='dragbox')
+                c.create_rectangle(ox + nb[0] * sc, oy + nb[1] * sc, ox + nb[2] * sc, oy + nb[3] * sc,
+                                   outline='#ffd28a', dash=(4, 2), width=2, tags='dragbox')
+                self.drag = ('item', x0, y0, t, True, pos - b[{'l': 0, 't': 1, 'r': 2, 'b': 3}[edge]], 0, edge)
+                c.config(cursor='sb_h_double_arrow' if axis == 0 else 'sb_v_double_arrow')
+                return
             dx, dy, gx, gy = self.snap(t, (e.x - x0) / sc, (e.y - y0) / sc, free=bool(getattr(e, 'state', 0) & ALT_MASK))
             c = self.canvas
             c.delete('dragbox')
@@ -1102,15 +1162,27 @@ class App(tk.Tk):
         if self.drag and self.drag[0] == 'item':
             _, x0, y0, t, moved = self.drag[:5]
             dx, dy = self.drag[5:7] if len(self.drag) > 5 else (0, 0)
+            edge = self.drag[7] if len(self.drag) > 7 else None
             self.drag = None
             self.canvas.config(cursor='')
             self.canvas.delete('dragbox')
+            if moved and t[1] == 'tab':
+                g = self.ui['label_edits'].setdefault(t[2]['key'], {})
+                grow = g.get(edge, 0.0) + (dx if edge in 'rb' else -dx)
+                if grow > 0.01:
+                    g[edge] = round(grow, 3)
+                else:
+                    g.pop(edge, None)
+                if not g:
+                    self.ui['label_edits'].pop(t[2]['key'], None)
+                self.select(t); self.persist_ui(); self.update_preview()
+                return
             if moved:
+                self.select(t)
                 self.move_target(t, round(dx, 3), round(dy, 3))
                 return
-            if t[1] in ('text', 'art', 'image'):
-                return
-            moved = False
+            self.select(t)
+            return
         else:
             moved = self.drag and self.drag[2]
             self.drag = None
@@ -1127,6 +1199,8 @@ class App(tk.Tk):
         for i in reversed(self.canvas.find_overlapping(e.x, e.y, e.x, e.y)):
             if i in self.clicks:
                 self.clicks[i](); return
+        if self.sel:                                   # a click on nothing: nothing selected
+            self.select(None)
 
     # ------------------------------------------------------------------ texts you add, and moving things
     def start_add_text(self):
@@ -1169,7 +1243,7 @@ class App(tk.Tk):
                 boxes.append(it['box'])
         for mk in self.pv.get('markers', []):
             boxes.append(mk['geom'].bounds)
-        boxes += [tuple(b) for b in self.pv.get('tab_boxes', [])]
+        boxes += [tuple(tb['box']) for tb in self.pv.get('tab_boxes', []) if not (d is not None and tb is d)]
         for ib in boxes:
             xs.append((ib[0] + ib[2]) / 2); ys.append((ib[1] + ib[3]) / 2)
         x1, y1, x2, y2 = self.pv['panel_box']
@@ -1192,6 +1266,140 @@ class App(tk.Tk):
         gx = bx if bx is not None and abs(bx - cx) <= thr else None
         gy = by if by is not None and abs(by - cy) <= thr else None
         return dx + (gx - cx if gx is not None else 0), dy + (gy - cy if gy is not None else 0), gx, gy
+
+    # ------------------------------------------------------------------ what's selected, changed in the left panel
+    def sel_key(self, t):
+        _, kind, d = t
+        return kind, {'image': d.get('id'), 'art': d.get('key'), 'tab': d.get('key')}.get(kind, d.get('fid'))
+
+    def select(self, t):
+        self.sel = self.sel_key(t) if t else None
+        self.draw(); self.show_selected()
+        if self.sel:                                   # bring the section into view, if it isn't
+            f, _ = self.sections['extras']
+            cv = self.left.master
+            try:
+                cv.update_idletasks()
+                total = max(1, self.left.winfo_height())
+                top, bot = cv.yview()
+                y0, y1 = self.sel_box.winfo_rooty() - self.left.winfo_rooty(), None
+                y1 = y0 + max(60, self.sel_box.winfo_height())
+                if y0 / total < top or y1 / total > bot:
+                    cv.yview_moveto(max(0.0, (f.winfo_y() - 10) / total))
+            except tk.TclError:
+                pass
+
+    def selected_target(self):
+        if not self.sel or not getattr(self, 'targets', None):
+            return None
+        return next((t for t in self.targets if self.sel_key(t) == self.sel), None)
+
+    def show_selected(self):
+        box = getattr(self, 'sel_box', None)
+        if box is None:
+            return
+        for w in box.winfo_children():
+            w.destroy()
+        t = self.selected_target()
+        if not t:
+            self.sel = None
+            ttk.Label(box, text='Nothing selected. Click a text, label, picture, the title or a tab in the preview.',
+                      style='Dim.TLabel', wraplength=390, justify='left').pack(anchor='w')
+            return
+        _, kind, d = t
+        def entry(row, value, apply, width=8):
+            var = tk.StringVar(value=value)
+            e = ttk.Entry(row, textvariable=var, width=width); e.pack(side='left', padx=4)
+            done = lambda _=None: apply(var.get())
+            e.bind('<Return>', done); e.bind('<FocusOut>', done)
+            return e
+        def num(v, lo, hi):
+            try:
+                x = float(str(v).replace('mm', '').strip())
+            except ValueError:
+                return None
+            return max(lo, min(hi, x))
+        head = ttk.Label(box, text='', style='Head.TLabel'); head.pack(anchor='w')
+        if kind == 'image':
+            o = self.own_image(d['id'])
+            head.config(text=f"Picture: {o['file'] if o else ''}")
+            row = ttk.Frame(box); row.pack(fill='x', pady=(4, 0))
+            ttk.Label(row, text='Width').pack(side='left')
+            def setw(v):
+                x = num(v, 1, 500)
+                if o and x and abs(x - o['w']) > 1e-6:
+                    o['w'] = round(x, 2); self.persist_ui(); self.update_preview()
+            entry(row, f"{d['w']:g}", setw); ttk.Label(row, text='mm  (the height follows)').pack(side='left')
+            inv = self._sel_inv = tk.BooleanVar(value=bool(d.get('invert')))     # kept, or Tk forgets it
+            ttk.Checkbutton(box, text='Print the light parts instead (for white-on-black pictures)', variable=inv,
+                            command=lambda: self.image_invert(d['id'])).pack(anchor='w', pady=(4, 0))
+            ttk.Button(box, text='Delete picture', command=lambda: (self.image_delete(d['id']), self.select(None))).pack(anchor='w', pady=(6, 0))
+        elif kind == 'text':
+            o = self.own_text(d['fid'])
+            head.config(text='Your text')
+            row = ttk.Frame(box); row.pack(fill='x', pady=(4, 0))
+            ttk.Label(row, text='Text').pack(side='left')
+            def sett(v):
+                if o and v.strip() and v.strip() != o['text']:
+                    o['text'] = v.strip(); self.persist_ui(); self.update_preview()
+            entry(row, o['text'] if o else '', sett, width=24)
+            row = ttk.Frame(box); row.pack(fill='x', pady=(4, 0))
+            ttk.Label(row, text='Size').pack(side='left')
+            def sets(v):
+                x = num(v, 0.8, 30)
+                if o and x and abs(x - float(o.get('size') or 0)) > 1e-6:
+                    o['size'] = round(x, 2); self.persist_ui(); self.update_preview()
+            entry(row, f"{d['h']:g}", sets); ttk.Label(row, text='mm').pack(side='left')
+            ttk.Button(box, text='Delete text', command=lambda: (self.text_delete(d['fid']), self.select(None))).pack(anchor='w', pady=(6, 0))
+        elif kind == 'label':
+            head.config(text=f"Label: {d.get('ref', '')}")
+            fid = d['fid']
+            if not fid.startswith('tabword:'):
+                row = ttk.Frame(box); row.pack(fill='x', pady=(4, 0))
+                ttk.Label(row, text='Text').pack(side='left')
+                def setl(v):
+                    if v.strip() and v != d.get('text'):
+                        self.ui['label_edits'].setdefault(fid, {})['text'] = v; self.persist_ui(); self.update_preview()
+                entry(row, d.get('text', ''), setl, width=24)
+            row = ttk.Frame(box); row.pack(fill='x', pady=(6, 0))
+            ttk.Button(row, text='Put back where it was', command=lambda: self.label_reset(fid)).pack(side='left')
+            if not fid.startswith('tabword:'):
+                ttk.Button(row, text='Hide', command=lambda: (self.label_hide(fid), self.select(None))).pack(side='left', padx=6)
+                ttk.Button(row, text='Edit labels…', command=lambda: (self.edit_labels(), self.editor.focus_row(fid))).pack(side='left')
+        elif kind == 'art':
+            head.config(text='Title' if d['key'] == 'title' else 'Maker name')
+            ttk.Label(box, text="Its text and size are set in 'Artwork made for you'.", style='Dim.TLabel').pack(anchor='w')
+            b = ttk.Button(box, text='Put it back in its automatic place',
+                           command=lambda: (self.ui['art_pos'].pop(d['key'], None), self.persist_ui(), self.update_preview()))
+            b.pack(anchor='w', pady=(6, 0))
+            if not d.get('pinned'):
+                b.state(['disabled'])
+        elif kind == 'tab':
+            head.config(text=('Edge tab: ' if d['kind'] == 'edge' else 'Output box: ') + d.get('ref', ''))
+            g = self.ui['label_edits'].get(d['key'], {})
+            row = ttk.Frame(box); row.pack(fill='x', pady=(4, 0))
+            ttk.Label(row, text='Make bigger by').pack(side='left')
+            for edge in d['edges']:
+                ttk.Label(row, text={'l': 'left', 'r': 'right', 't': 'top', 'b': 'bottom'}[edge]).pack(side='left', padx=(6, 0))
+                def setg(v, edge=edge):
+                    x = num(v, 0, 50)
+                    if x is None:
+                        return
+                    gg = self.ui['label_edits'].setdefault(d['key'], {})
+                    if abs(x - gg.get(edge, 0.0)) > 1e-6:
+                        if x > 0:
+                            gg[edge] = round(x, 2)
+                        else:
+                            gg.pop(edge, None)
+                        if not gg:
+                            self.ui['label_edits'].pop(d['key'], None)
+                        self.persist_ui(); self.update_preview()
+                entry(row, f"{g.get(edge, 0.0):g}", setg, width=4)
+            ttk.Label(row, text='mm').pack(side='left')
+            ttk.Label(box, text='Or drag an edge of it in the preview: it snaps to the edges of the other tabs and boxes.',
+                      style='Dim.TLabel', wraplength=390, justify='left').pack(anchor='w', pady=(4, 0))
+            ttk.Button(box, text='Back to its own size', command=lambda: (self.ui['label_edits'].pop(d['key'], None),
+                                                                          self.persist_ui(), self.update_preview())).pack(anchor='w', pady=(6, 0))
 
     def own_image(self, iid):
         return next((i for i in self.ui.get('images', []) if i['id'] == iid), None)
@@ -1224,7 +1432,7 @@ class App(tk.Tk):
         self.ui.setdefault('images', []).append(dict(id=uuid.uuid4().hex[:8], file=name, x=round((x1 + x2) / 2, 2),
                                                      y=round((y1 + y2) / 2, 2), w=round(min(20.0, (x2 - x1) / 4), 1)))
         self.persist_ui(); self.update_preview()
-        self.hover.config(text='Picture added in the middle of the panel - drag it into place, right-click it to change its size.')
+        self.hover.config(text='Picture added in the middle of the panel - drag it into place; change its size on the left.')
 
     def image_size(self, iid):
         from tkinter import simpledialog

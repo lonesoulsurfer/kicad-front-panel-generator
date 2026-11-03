@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.22.0"
+VERSION = "0.23.0"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -1729,6 +1729,9 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             if txt:
                 lb = unary_union(txt).buffer(0.8, join_style=2).bounds     # the real text, not the estimate
                 bx = [min(bx[0], lb[0]), min(bx[1], lb[1]), max(bx[2], lb[2]), max(bx[3], lb[3])]
+            tkey = 'tab:' + fid
+            g_ = edits.get(tkey, {})                                      # made bigger in the window
+            bx = [bx[0] - g_.get('l', 0.0), bx[1] - g_.get('t', 0.0), bx[2] + g_.get('r', 0.0), bx[3] + g_.get('b', 0.0)]
             tab = rounded_box(*bx, 1.0)
             if txt:
                 tab = tab.difference(unary_union(txt))
@@ -1739,7 +1742,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
                 log.append(f"NOTE  the output box for {fps[fid].ref} runs into a nearby hole - it's trimmed there. "
                            "Move the label or the part if it looks odd")
             tabs.append(tab.difference(own.buffer(0.3)).difference(others))
-            a._tab_boxes.append(tab.bounds)
+            a._tab_boxes.append(dict(key=tkey, kind='output', edges='ltrb', box=tab.bounds, ref=fps[fid].ref))
         if tabs:
             shapes.append(unary_union(tabs).intersection(inside))
 
@@ -1801,12 +1804,17 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
                         xs += [tb[0], tb[2]]
                         far = max(far, (tb[3] + 1.4) if side == 'top' else (tb[1] - 1.4), key=lambda v: sgn * v)
                         a._knock_boxes[wkey] = dict(box=tb, ref='edge tab', text=shared)
+                tkey = 'tab:' + run[0][2]['fid']
+                g_ = edits.get(tkey, {})                                  # made bigger in the window
+                l_, r_ = min(xs) - 1.5 - g_.get('l', 0.0), max(xs) + 1.5 + g_.get('r', 0.0)
                 if side == 'top':
-                    tab = rounded_box(min(xs) - 1.5, py1 - 3, max(xs) + 1.5, far, 1.2)
+                    tab = rounded_box(l_, py1 - 3, r_, far + g_.get('b', 0.0), 1.2)
                 else:
-                    tab = rounded_box(min(xs) - 1.5, far, max(xs) + 1.5, py2 + 3, 1.2)
+                    tab = rounded_box(l_, far - g_.get('t', 0.0), r_, py2 + 3, 1.2)
                 tab_areas.append(tab)
-                a._tab_boxes.append(tab.bounds)
+                vis = tab.intersection(outline).bounds
+                a._tab_boxes.append(dict(key=tkey, kind='edge', edges='lrb' if side == 'top' else 'lrt', box=vis,
+                                         ref=', '.join(p[2]['ref'] for p in run)))
                 if txts:
                     tab = tab.difference(unary_union(txts))
                 if tab.intersects(keep_out):

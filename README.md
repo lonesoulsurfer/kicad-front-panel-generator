@@ -60,11 +60,11 @@ Tick **Add labels from the PCB** and a label section opens. Each pot, jack and s
 
 ![Labels added from the PCB, in a custom font](docs/images/step3_labels.png)
 
-**Move things by dragging them in the preview:** any label, the title or your own text. It snaps into line with the other labels, to the middle of holes, and to the middle of the gap between two things (hold **Alt** to place it freely). Right-click one for more (put it back, hide it, change or delete your text).
+**Move things by dragging them in the preview:** any label, the title or your own text. It snaps into line with the other labels, to the middle of holes, and to the middle of the gap between two things (hold **Alt** to place it freely). Click one to select it: its settings appear on the left under **Your text and pictures** (text, size, put it back, hide, delete).
 
-**Need text that isn't on the PCB?** For example, what each key does. Click **Add text…** (in *Artwork made for you*), click where it goes and type it. You can drag it, and right-click it to change its size or delete it.
+**Need text that isn't on the PCB?** For example, what each key does. Click **Add text…** (in *Your text and pictures*), click where it goes and type it. Drag it to move it; click it to change its text or size, or delete it.
 
-**Pictures:** click **Add picture…** and pick a PNG, JPG or SVG (a glider, a logo). Its dark parts print. Drag it into place and right-click it to change its size, print its light parts instead, or delete it.
+**Pictures:** click **Add picture…** and pick a PNG, JPG or SVG (a glider, a logo). Its dark parts print. Drag it into place, and click it to set its width, print its light parts instead, or delete it.
 
 ### 4. Let it make the artwork (optional)
 
@@ -74,7 +74,7 @@ Don't want to open Inkscape? Tick **Make artwork for me** and Panel Generator dr
 - **Rings** round push buttons.
 - **Outputs in filled boxes:** any jack whose label says OUT gets a solid box with the label cut out of it, the usual way modular panels show outputs.
 - **Boxes round rows of controls:** a box round 3 or more of the same control in a row or column, scales and labels inside.
-- **Tabs for edge jacks:** jacks on the panel edge (the plug goes in from the side) get a filled tab hanging from the edge with their labels cut out. Labels like MIDI IN and MIDI OUT become IN / OUT with MIDI underneath.
+- **Tabs for edge jacks:** jacks on the panel edge (the plug goes in from the side) get a filled tab hanging from the edge with their labels cut out. Labels like MIDI IN and MIDI OUT become IN / OUT with MIDI underneath. Drag an edge of a tab or output box to make it bigger; it snaps to the edges of the others, so you can make them all the same size.
 - **Border** (square, following the panel, or with its own rounded corners) and a **title** along the top (plus your name or brand, small, along the bottom). They go in the first free spot; drag them anywhere.
 
 Pick a **Style** to start from (*Minimal*, *Classic synth* or *Modular*) and change anything after. To change one part (a centre-zero scale for a pan pot, or a jack that's an output but isn't labelled OUT), click its **Artwork** cell in **Edit labels**. Anything that would hit a hole, a label or the edge is left out, and you get a note.

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.23.0
+
+- **Tidier window:** the steps are grouped under *Panel* and *Artwork*, each step in its own box. *Holes you removed or changed* moves up into Panel.
+- **Click to select:** click a label, your text, a picture, the title or a tab in the preview, and its settings appear on the left under *Your text and pictures* (with Add text… and Add picture…). Right-click still works as a shortcut.
+- **Bigger tabs:** drag an edge of an edge tab or output box to enlarge it; it snaps to the edges of the others. Or type the amount on the left.
+
 ## 0.22.0
 
 - **Pictures:** Add picture… puts a PNG, JPG or SVG on the panel; drag it, size it, print its dark or light parts.
