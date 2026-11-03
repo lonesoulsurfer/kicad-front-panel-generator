@@ -123,7 +123,7 @@ class App(tk.Tk):
         v['labels_on'] = tk.BooleanVar(); v['label_pos'] = tk.StringVar(value='above')
         v['label_gap'] = tk.StringVar(value='1.5'); v['label_size'] = tk.StringVar(value='2')
         v['label_font'] = tk.StringVar(value=KICAD_FONT); v['label_bold'] = tk.BooleanVar(); v['label_caps'] = tk.BooleanVar()
-        self.ui = {'ignore': {}, 'label_edits': {}, 'texts': [], 'art_pos': {}}   # ignored parts, label changes, your texts, moved title
+        self.ui = {'ignore': {}, 'label_edits': {}, 'texts': [], 'art_pos': {}, 'images': []}   # ignored parts, label changes, your texts, moved title, pictures
         self.editor = None
         self.mode, self.pv, self.after_id, self.loading = None, None, None, False
         self.stamp = None
@@ -354,7 +354,14 @@ class App(tk.Tk):
         l = ttk.Label(row, text='corner radius'); l.pack(side='left', padx=(10, 0))
         Tip(l, '0 = the border follows the panel corners. Any other value rounds the border corners by that much.')
         self.w_bradius = self.num(row, 'border_radius'); ttk.Label(row, text='mm').pack(side='left')
-        ttk.Button(row, text='Add text…', command=self.start_add_text).pack(side='right')
+        row = ttk.Frame(det); row.pack(fill='x', pady=(8, 0))
+        b = ttk.Button(row, text='Add text…', command=self.start_add_text); b.pack(side='left')
+        Tip(b, 'Click this, then click on the panel where the text goes. Drag any text, label, picture or the title to move '
+               'it: it snaps into line with other labels, to the middle of holes and to the middle of gaps (hold Alt to '
+               'place it freely). Right-click it for more.')
+        b = ttk.Button(row, text='Add picture…', command=self.add_picture); b.pack(side='left', padx=6)
+        Tip(b, 'A PNG, JPG or SVG (a glider, a logo...). Its dark parts print, transparent parts never do; right-click it to '
+               'print its light parts instead, or to change its size. It is copied into the Front Panel folder.')
         for k in ('art_scale', 'art_rings', 'art_border', 'art_outputs', 'art_groups', 'art_tabs'):
             v[k].trace_add('write', lambda *_: self.style_custom())
 
@@ -397,10 +404,7 @@ class App(tk.Tk):
         self.chip = tk.Label(ph, text='', font=self.f_head, padx=8, pady=1); self.chip.pack(side='left', padx=10)
         rb = ttk.Button(ph, text='Refresh', command=self.update_preview); rb.pack(side='right')
         fb = ttk.Button(ph, text='Fit', command=self.fit_view, width=5); fb.pack(side='right', padx=(0, 6))
-        tb = ttk.Button(ph, text='Add text', command=self.start_add_text); tb.pack(side='right', padx=(0, 6))
-        Tip(tb, 'Click here, then click on the panel where the text goes. Drag any text, label or the title to move it: '
-                'it snaps into line with other labels and to the middle of holes (hold Alt to place it freely). '
-                'Right-click it for more.')
+
         Tip(fb, 'Show the whole panel again. Mouse wheel zooms in and out where the pointer is; drag to move around; '
                 'double-click also fits.')
         self.zoom_lbl = ttk.Label(ph, text='', style='Dim.TLabel'); self.zoom_lbl.pack(side='right', padx=6)
@@ -734,7 +738,8 @@ class App(tk.Tk):
             v['label_font'].set(s['label_font'] or KICAD_FONT)
             v['label_bold'].set(s['label_bold'] == 'on'); v['label_caps'].set(s['label_caps'] == 'on')
             self.ui = {'ignore': dict(mem.get('ignore_uncut', {})), 'label_edits': dict(mem.get('label_edits', {})),
-                       'texts': [dict(t) for t in mem.get('texts', [])], 'art_pos': dict(mem.get('art_pos', {}))}
+                       'texts': [dict(t) for t in mem.get('texts', [])], 'art_pos': dict(mem.get('art_pos', {})),
+                       'images': [dict(i) for i in mem.get('images', [])]}
         finally:
             self.loading = False
         self.refresh_states()
@@ -1012,6 +1017,8 @@ class App(tk.Tk):
             self.targets.append((it['box'], 'art', it))
         for k in pv.get('knocked', []):            # labels cut out of an output box or edge tab: the box follows them
             self.targets.append((k['box'], 'label', k))
+        for im in pv.get('images', []):
+            self.targets.append((im['box'], 'image', im))
         for L in pv.get('labels', []):
             px = -max(5, round(L['h'] * self.pg.KICAD_EM * sc))     # KiCad's em square is 1.4 x the text size
             i = c.create_text(X(L['x']), Y(L['y']), text=L['text'], fill='#ffffff' if L['status'] == 'ok' else '#ffb347',
@@ -1101,7 +1108,7 @@ class App(tk.Tk):
             if moved:
                 self.move_target(t, round(dx, 3), round(dy, 3))
                 return
-            if t[1] in ('text', 'art'):
+            if t[1] in ('text', 'art', 'image'):
                 return
             moved = False
         else:
@@ -1154,17 +1161,89 @@ class App(tk.Tk):
             if d is not None and L is d:
                 continue
             xs.append(L['x']); ys.append(L['y'])
-        for it in self.pv.get('art_items', []):
-            if d is not None and it is d:
-                continue
-            ib = it['box']; xs.append((ib[0] + ib[2]) / 2); ys.append((ib[1] + ib[3]) / 2)
+        boxes = []                                     # other things on the panel, as boxes
+        for key in ('art_items', 'knocked', 'images'):
+            for it in self.pv.get(key, []):
+                if d is not None and it is d:
+                    continue
+                boxes.append(it['box'])
+        for mk in self.pv.get('markers', []):
+            boxes.append(mk['geom'].bounds)
+        boxes += [tuple(b) for b in self.pv.get('tab_boxes', [])]
+        for ib in boxes:
+            xs.append((ib[0] + ib[2]) / 2); ys.append((ib[1] + ib[3]) / 2)
         x1, y1, x2, y2 = self.pv['panel_box']
         xs.append((x1 + x2) / 2)
+        # the middle of the gap between whatever is either side of it (e.g. between a screen and an edge tab)
+        w2, h2 = (b[2] - b[0]) / 2, (b[3] - b[1]) / 2
+        obst = [sh['geom'].bounds for sh in self.pv.get('shapes', [])] + boxes + \
+               [(L['x'] - L['w'] / 2, L['y'] - L['h'] / 2, L['x'] + L['w'] / 2, L['y'] + L['h'] / 2)
+                for L in self.pv.get('labels', []) if not (d is not None and L is d)]
+        row = [o for o in obst if o[1] < cy + h2 and o[3] > cy - h2]
+        left = max([o[2] for o in row if o[2] <= cx - w2 + 0.01] + [x1])
+        right = min([o[0] for o in row if o[0] >= cx + w2 - 0.01] + [x2])
+        xs.append((left + right) / 2)
+        col = [o for o in obst if o[0] < cx + w2 and o[2] > cx - w2]
+        top = max([o[3] for o in col if o[3] <= cy - h2 + 0.01] + [y1])
+        bot = min([o[1] for o in col if o[1] >= cy + h2 - 0.01] + [y2])
+        ys.append((top + bot) / 2)
         bx = min(xs, key=lambda v: abs(v - cx), default=None)
         by = min(ys, key=lambda v: abs(v - cy), default=None)
         gx = bx if bx is not None and abs(bx - cx) <= thr else None
         gy = by if by is not None and abs(by - cy) <= thr else None
         return dx + (gx - cx if gx is not None else 0), dy + (gy - cy if gy is not None else 0), gx, gy
+
+    def own_image(self, iid):
+        return next((i for i in self.ui.get('images', []) if i['id'] == iid), None)
+
+    def add_picture(self):
+        b = self.board.get()
+        if not b or not self.pv or 'message' in self.pv:
+            messagebox.showinfo('Panel Generator', 'Choose your PCB first.'); return
+        f = filedialog.askopenfilename(title='Add a picture', filetypes=[('Pictures', '*.png *.jpg *.jpeg *.gif *.bmp *.svg'),
+                                                                         ('All files', '*.*')])
+        if not f:
+            return
+        import shutil, uuid
+        folder = os.path.join(os.path.dirname(panel_paths(b)[0]), 'images')
+        try:
+            os.makedirs(folder, exist_ok=True)
+            name = os.path.basename(f)
+            dest = os.path.join(folder, name)
+            if os.path.exists(dest) and os.path.abspath(dest) != os.path.abspath(f):
+                stem, ext = os.path.splitext(name)
+                n = 2
+                while os.path.exists(os.path.join(folder, f'{stem} {n}{ext}')):
+                    n += 1
+                name = f'{stem} {n}{ext}'; dest = os.path.join(folder, name)
+            if os.path.abspath(dest) != os.path.abspath(f):
+                shutil.copyfile(f, dest)
+        except OSError as e:
+            messagebox.showerror('Panel Generator', f"Couldn't copy the picture into the Front Panel folder ({e})"); return
+        x1, y1, x2, y2 = self.pv['panel_box']
+        self.ui.setdefault('images', []).append(dict(id=uuid.uuid4().hex[:8], file=name, x=round((x1 + x2) / 2, 2),
+                                                     y=round((y1 + y2) / 2, 2), w=round(min(20.0, (x2 - x1) / 4), 1)))
+        self.persist_ui(); self.update_preview()
+        self.hover.config(text='Picture added in the middle of the panel - drag it into place, right-click it to change its size.')
+
+    def image_size(self, iid):
+        from tkinter import simpledialog
+        o = self.own_image(iid)
+        if not o:
+            return
+        v = simpledialog.askfloat('Picture size', 'Width in mm (the height follows):', initialvalue=float(o['w']),
+                                  minvalue=1, maxvalue=500, parent=self)
+        if v:
+            o['w'] = round(v, 2); self.persist_ui(); self.update_preview()
+
+    def image_invert(self, iid):
+        o = self.own_image(iid)
+        if o:
+            o['invert'] = not o.get('invert', False); self.persist_ui(); self.update_preview()
+
+    def image_delete(self, iid):
+        self.ui['images'] = [i for i in self.ui.get('images', []) if i['id'] != iid]
+        self.persist_ui(); self.update_preview()
 
     def own_text(self, fid):
         return next((t for t in self.ui.get('texts', []) if 'text:' + t['id'] == fid), None)
@@ -1177,6 +1256,10 @@ class App(tk.Tk):
                 o['x'] = round(o['x'] + dx, 2); o['y'] = round(o['y'] + dy, 2)
         elif kind == 'art':
             self.ui.setdefault('art_pos', {})[d['key']] = [round(d['at'][0] + dx, 2), round(d['at'][1] + dy, 2)]
+        elif kind == 'image':
+            o = self.own_image(d['id'])
+            if o:
+                o['x'] = round(o['x'] + dx, 2); o['y'] = round(o['y'] + dy, 2)
         else:
             e = self.ui['label_edits'].setdefault(d['fid'], {})
             e['dx'] = round(e.get('dx', 0.0) + dx, 3); e['dy'] = round(e.get('dy', 0.0) + dy, 3)
@@ -1192,6 +1275,11 @@ class App(tk.Tk):
             m.add_command(label='Change text…', command=lambda: self.text_change(d['fid']))
             m.add_command(label='Text size…', command=lambda: self.text_size(d['fid']))
             m.add_command(label='Delete', command=lambda: self.text_delete(d['fid']))
+        elif kind == 'image':
+            m.add_command(label='Size…', command=lambda: self.image_size(d['id']))
+            m.add_command(label='Print the light parts instead' if not d.get('invert') else 'Print the dark parts',
+                          command=lambda: self.image_invert(d['id']))
+            m.add_command(label='Delete', command=lambda: self.image_delete(d['id']))
         elif kind == 'art':
             m.add_command(label=f"Put the {d['what']} back in its automatic place", state='normal' if d.get('pinned') else 'disabled',
                           command=lambda: (self.ui['art_pos'].pop(d['key'], None), self.persist_ui(), self.update_preview()))
@@ -1279,7 +1367,8 @@ class App(tk.Tk):
         mem = load_json(panel_paths(board)[1])
         if mem:
             self.ui = {'ignore': dict(mem.get('ignore_uncut', {})), 'label_edits': dict(mem.get('label_edits', {})),
-                       'texts': [dict(t) for t in mem.get('texts', [])], 'art_pos': dict(mem.get('art_pos', {}))}
+                       'texts': [dict(t) for t in mem.get('texts', [])], 'art_pos': dict(mem.get('art_pos', {})),
+                       'images': [dict(i) for i in mem.get('images', [])]}
         self.fill_restore()
         panel, _ = panel_paths(board)
         self.stamp = (mtime(board), mtime(panel), mtime(self.art_file()))
@@ -1379,7 +1468,7 @@ class App(tk.Tk):
         if not mem:
             return               # no panel yet: saved with the first Generate
         mem['ignore_uncut'] = self.ui['ignore']; mem['label_edits'] = self.ui['label_edits']
-        mem['texts'] = self.ui.get('texts', []); mem['art_pos'] = self.ui.get('art_pos', {})
+        mem['texts'] = self.ui.get('texts', []); mem['art_pos'] = self.ui.get('art_pos', {}); mem['images'] = self.ui.get('images', [])
         try:
             with open(mem_path, 'w', encoding='utf-8') as f:
                 json.dump(mem, f, indent=1)

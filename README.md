@@ -60,9 +60,11 @@ Tick **Add labels from the PCB** and a label section opens. Each pot, jack and s
 
 ![Labels added from the PCB, in a custom font](docs/images/step3_labels.png)
 
-**Move things by dragging them in the preview:** any label, the title or your own text. It snaps into line with the other labels and to the middle of the hole below it (hold **Alt** to place it freely). Right-click one for more (put it back, hide it, change or delete your text).
+**Move things by dragging them in the preview:** any label, the title or your own text. It snaps into line with the other labels, to the middle of holes, and to the middle of the gap between two things (hold **Alt** to place it freely). Right-click one for more (put it back, hide it, change or delete your text).
 
-**Need text that isn't on the PCB?** For example, what each key does. Click **Add text** above the preview, click where it goes and type it. You can drag it, and right-click it to change its size or delete it.
+**Need text that isn't on the PCB?** For example, what each key does. Click **Add text…** (in *Artwork made for you*), click where it goes and type it. You can drag it, and right-click it to change its size or delete it.
+
+**Pictures:** click **Add picture…** and pick a PNG, JPG or SVG (a glider, a logo). Its dark parts print. Drag it into place and right-click it to change its size, print its light parts instead, or delete it.
 
 ### 4. Let it make the artwork (optional)
 

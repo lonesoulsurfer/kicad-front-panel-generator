@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.21.1"
+VERSION = "0.22.0"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -1657,6 +1657,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
         parts.setdefault(c['id'], []).append(c)
     shapes, dropped = [], 0
     a._knock_boxes = {}                       # labels cut out of a box or tab: where their text is, for dragging
+    a._tab_boxes = []                         # output boxes and edge tabs, for lining things up in the window
     def other_labels(fid):
         return unary_union([b for f, b in label_box.items() if f != fid]) if len(label_box) > 1 else None
 
@@ -1738,6 +1739,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
                 log.append(f"NOTE  the output box for {fps[fid].ref} runs into a nearby hole - it's trimmed there. "
                            "Move the label or the part if it looks odd")
             tabs.append(tab.difference(own.buffer(0.3)).difference(others))
+            a._tab_boxes.append(tab.bounds)
         if tabs:
             shapes.append(unary_union(tabs).intersection(inside))
 
@@ -1789,18 +1791,22 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
                                                          for f, b in a._knock_boxes.items() if f in {p[2]['fid'] for p in run}],
                           key=lambda v: sgn * v)
                 if shared:
-                    y2_ = ys + sgn * (h * 1.7 + 0.8)
-                    ts = text_shapes(shared, (min(xs) + max(xs)) / 2, y2_, h * 1.15, font, sbold)
+                    wkey = 'tabword:' + run[0][2]['fid']            # the shared word can be dragged too
+                    ew = edits.get(wkey, {})
+                    y2_ = ys + sgn * (h * 1.7 + 0.8) + ew.get('dy', 0.0)
+                    ts = text_shapes(shared, (min(xs) + max(xs)) / 2 + ew.get('dx', 0.0), y2_, h * 1.15, font, sbold)
                     if ts:
                         txts += ts
                         tb = unary_union(ts).bounds
                         xs += [tb[0], tb[2]]
-                        far = y2_ + sgn * (h * 1.15 / 2 + 1.4)
+                        far = max(far, (tb[3] + 1.4) if side == 'top' else (tb[1] - 1.4), key=lambda v: sgn * v)
+                        a._knock_boxes[wkey] = dict(box=tb, ref='edge tab', text=shared)
                 if side == 'top':
                     tab = rounded_box(min(xs) - 1.5, py1 - 3, max(xs) + 1.5, far, 1.2)
                 else:
                     tab = rounded_box(min(xs) - 1.5, far, max(xs) + 1.5, py2 + 3, 1.2)
                 tab_areas.append(tab)
+                a._tab_boxes.append(tab.bounds)
                 if txts:
                     tab = tab.difference(unary_union(txts))
                 if tab.intersects(keep_out):
@@ -1927,6 +1933,77 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             if p.geom_type == 'Polygon' and p.area > 1e-4:
                 polys += fracture(p)
     return polys, knocked
+
+_image_cache = {}
+
+def image_shapes(path, cx, cy, w_mm, invert=False):
+    """A picture (PNG, JPG, SVG...) as silkscreen polygons, w_mm wide and centred on (cx, cy): its dark parts print
+    (its light parts with invert). Transparent parts never print. Returns (polygons, height in mm)."""
+    from PIL import Image, ImageOps
+    import tempfile
+    key = (path, os.path.getmtime(path), round(w_mm, 3), bool(invert))
+    if key in _image_cache:
+        polys, h_mm = _image_cache[key]
+    else:
+        if path.lower().endswith('.svg'):
+            ink = find_inkscape()
+            if not ink:
+                raise RuntimeError("SVG pictures need Inkscape to read them - install it, or use a PNG")
+            import subprocess
+            fd, png = tempfile.mkstemp(suffix='.png'); os.close(fd)
+            subprocess.run([ink, path, '--export-type=png', f'--export-filename={png}', '--export-width=1200',
+                            '--export-background=#ffffff', '--export-background-opacity=0'], capture_output=True, timeout=120)
+            im = Image.open(png); im.load(); os.remove(png)
+        else:
+            im = Image.open(path); im.load()
+        im = im.convert('RGBA')
+        if max(im.size) > 1200:
+            f = 1200 / max(im.size)
+            im = im.resize((max(1, round(im.width * f)), max(1, round(im.height * f))), Image.LANCZOS)
+        bg = Image.new('RGBA', im.size, (0, 0, 0, 255) if invert else (255, 255, 255, 255))
+        g = Image.alpha_composite(bg, im).convert('L')
+        if invert:
+            g = ImageOps.invert(g)
+        mm_px = w_mm / im.width
+        h_mm = im.height * mm_px
+        fd, png = tempfile.mkstemp(suffix='.png'); os.close(fd)
+        try:
+            g.save(png)
+            polys = trace_png(png, 25.4 / mm_px, 0.0, 0.0)
+        finally:
+            os.remove(png)
+        _image_cache[key] = (polys, h_mm)
+    return [affinity.translate(p, cx - w_mm / 2, cy - h_mm / 2) for p in polys], h_mm
+
+def image_items(images, folder, outline, groups, log):
+    """Your pictures, placed: silkscreen polygons (holes left clear)."""
+    out = []
+    holes = unary_union([g['geom'] for g in groups]).buffer(0.3) if groups else None
+    inside = outline.buffer(-0.6)
+    for im in images:
+        path = os.path.join(folder, 'images', im['file'])
+        if not os.path.exists(path):
+            log.append(f"WARN  picture {im['file']} is missing from the Front Panel\\images folder - add it again"); continue
+        try:
+            polys, h = image_shapes(path, im['x'], im['y'], float(im['w']), im.get('invert', False))
+        except Exception as e:
+            log.append(f"WARN  couldn't read the picture {im['file']} ({e})"); continue
+        im['_box'] = (im['x'] - im['w'] / 2, im['y'] - h / 2, im['x'] + im['w'] / 2, im['y'] + h / 2)
+        if not polys:
+            log.append(f"NOTE  picture {im['file']} has nothing dark enough to print - try 'White parts print' (right-click it)")
+            continue
+        u = unary_union(polys)
+        if holes is not None and u.intersects(holes):
+            log.append(f"NOTE  picture {im['file']} runs over a hole - that part is left off")
+        if not inside.contains(u):
+            log.append(f"NOTE  picture {im['file']} runs past the panel edge - that part is left off")
+        u = u.intersection(inside)
+        if holes is not None:
+            u = u.difference(holes)
+        for p in (u.geoms if hasattr(u, 'geoms') else [u]):
+            if p.geom_type == 'Polygon' and p.area > 1e-4:
+                out += fracture(p)
+    return out
 
 def shapely_translate(g, dx, dy):
     from shapely.affinity import translate
@@ -2154,6 +2231,7 @@ def main(argv=None, preview=None):
     ignore_uncut = ui.get('ignore', mem0.get('ignore_uncut', {}))
     label_edits = ui.get('label_edits', mem0.get('label_edits', {}))
     texts = [dict(t) for t in ui.get('texts', mem0.get('texts', []))]
+    images = [dict(i) for i in ui.get('images', mem0.get('images', []))]
     a._art_pos = dict(ui.get('art_pos', mem0.get('art_pos', {})))
     cfg = json.load(open(a.rules))
     cfg['grow'] = a.grow
@@ -2337,7 +2415,7 @@ def main(argv=None, preview=None):
         problems += sum(1 for l in log[n0:] if l.startswith('WARN'))
         log.append(f"labels {len(placed)} on the silkscreen ({sum(1 for r in label_rows if r['hide'])} hidden, "
                    f"{sum(1 for r in label_rows if not r['hide'] and not r['text'].strip())} with no text)")
-    a._auto, knocked, a._art_items, a._knock_boxes = [], set(), [], {}
+    a._auto, knocked, a._art_items, a._knock_boxes, a._tab_boxes = [], set(), [], {}, []
     if a.auto_art == 'on':
         n0 = len(log)
         a._auto, knocked = auto_artwork(cutouts + manual, part_fps, groups, outline, placed, a, label_edits, log,
@@ -2380,6 +2458,8 @@ def main(argv=None, preview=None):
         else:
             art = import_artwork(art_svg, outline, log, os.path.dirname(out_path) if os.path.isdir(os.path.dirname(out_path)) else None)
     art = art + a._auto
+    if images:
+        art = art + image_items(images, os.path.dirname(out_path), outline, groups, log)
     if preview is not None and a.make_artwork_file:      # the window's 'Create artwork file' button: no panel written
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         svg_path = re.sub(r'\.kicad_pcb$', '', out_path) + '_template.svg'
@@ -2394,7 +2474,8 @@ def main(argv=None, preview=None):
                      rail_bad=rail_bad, uncut=uncut, labels=placed, label_rows=label_rows,
                      label_edits=label_edits, ignore_uncut=ignore_uncut, artwork=art, markers=a._markers,
                      art_items=a._art_items, texts=texts, art_pos=a._art_pos,
-                     knocked=[dict(fid=f, **v) for f, v in a._knock_boxes.items()])
+                     knocked=[dict(fid=f, **v) for f, v in a._knock_boxes.items()], tab_boxes=a._tab_boxes,
+                     images=[dict(id=i['id'], box=i['_box'], w=i['w'], invert=i.get('invert', False)) for i in images if '_box' in i])
         return 1 if any(l.startswith('ERROR') for l in log) else 0
 
     uuids, items, generated = [], [], {}
@@ -2424,6 +2505,7 @@ def main(argv=None, preview=None):
                'labels_generated': {L['fid']: dict(uuid=L['uuid'], at=[L['x'], L['y']], auto=list(L['auto']), text=L['text'],
                                                     ref=L['ref']) for L in placed if not L.get('own')},
                'label_edits': label_edits, 'ignore_uncut': ignore_uncut, 'texts': texts, 'art_pos': a._art_pos,
+               'images': [{k: v for k, v in i.items() if not k.startswith('_')} for i in images],
                'settings': dict(margin=a.margin, **{f'margin_{k}': v for k, v in m.items()},
                                 screws=a.screws, screw_dia=a.screw_dia, screw_inset=a.screw_inset, screw_slot=a.screw_slot, rail_slot=a.rail_slot,
                                 corner_radius=a.corner_radius, grow=a.grow, min_web=a.min_web,

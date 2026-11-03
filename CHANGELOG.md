@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.22.0
+
+- **Pictures:** Add picture… puts a PNG, JPG or SVG on the panel; drag it, size it, print its dark or light parts.
+- **Snapping** also lines things up with markers, tabs and pictures, and with the middle of the gap between two things (e.g. a title between the screen and the edge).
+- Edge-tab labels snap, and the shared word under an edge tab (MIDI) can be dragged.
+- Add text… moved into the Artwork made for you section.
+
 ## 0.21.1
 
 - Labels cut out of an output box or an edge tab can be dragged too; the box or tab follows the label.
