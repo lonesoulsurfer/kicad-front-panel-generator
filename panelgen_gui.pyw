@@ -13,12 +13,14 @@ DEFAULTS = dict(margin=0.0, margin_top=0.0, margin_right=0.0, margin_bottom=0.0,
                 corner_radius=0.0, grow=0.0, svg=False, check_uncut='on',
                 artwork='off', labels='off', label_size=2.0, label_gap=1.5, label_pos='above', label_font='', label_bold='off', label_caps='off',
                 auto_art='off', art_style='Classic synth', art_scale='ticks', art_rings='on', art_outputs='off', art_border='off',
+                art_border_radius=0.0, art_groups='off', art_tabs='off',
                 art_title='', art_maker='', title_size=5.0, knob_size=13.0)
-ART_STYLES = {   # what each style switches on: pot scale, rings, outputs in boxes, border
-    'Minimal': dict(scale='Ticks', rings=False, outputs=False, border=False),
-    'Classic synth': dict(scale='Numbers 0-10', rings=True, outputs=False, border=True),
-    'Modular': dict(scale='Ticks', rings=False, outputs=True, border=False),
+ART_STYLES = {   # what each style switches on
+    'Minimal': dict(scale='Ticks', rings=False, outputs=False, border=False, groups=False, tabs=False),
+    'Classic synth': dict(scale='Numbers 0-10', rings=True, outputs=False, border=True, groups=True, tabs=True),
+    'Modular': dict(scale='Ticks', rings=False, outputs=True, border=False, groups=False, tabs=True),
 }
+STYLE_KEYS = ('scale', 'rings', 'outputs', 'border', 'groups', 'tabs')
 SCALES = {'None': 'none', 'Ticks': 'ticks', 'Numbers 0-10': 'numbers', 'Centre zero (- 0 +)': 'bipolar'}
 KICAD_FONT = "KiCad's own font"
 ALT_MASK = 0x20000 if sys.platform == 'win32' else 0x0008   # Alt held (on Windows, 0x0008 is Num Lock)
@@ -115,6 +117,7 @@ class App(tk.Tk):
         v['auto_on'] = tk.BooleanVar(); v['art_style'] = tk.StringVar(value='Classic synth')
         v['art_scale'] = tk.StringVar(value='Ticks'); v['art_rings'] = tk.BooleanVar(value=True)
         v['art_outputs'] = tk.BooleanVar(); v['art_border'] = tk.BooleanVar()
+        v['art_groups'] = tk.BooleanVar(); v['art_tabs'] = tk.BooleanVar(); v['border_radius'] = tk.StringVar(value='0')
         v['art_title'] = tk.StringVar(); v['art_maker'] = tk.StringVar()
         v['title_size'] = tk.StringVar(value='5'); v['knob_size'] = tk.StringVar(value='13')
         v['labels_on'] = tk.BooleanVar(); v['label_pos'] = tk.StringVar(value='above')
@@ -335,11 +338,24 @@ class App(tk.Tk):
         self.num(g, 'knob_size', grid=(3, 5)); ttk.Label(g, text='mm').grid(row=3, column=6, sticky='w', pady=(6, 0))
         row = ttk.Frame(det); row.pack(fill='x', pady=(6, 0))
         ttk.Checkbutton(row, text='Rings round buttons', variable=v['art_rings']).pack(side='left', padx=(0, 12))
-        ttk.Checkbutton(row, text='Border', variable=v['art_border']).pack(side='left', padx=(0, 12))
         c = ttk.Checkbutton(row, text='Outputs in filled boxes', variable=v['art_outputs']); c.pack(side='left')
         Tip(c, "Jacks whose label says OUT get a filled box with the label cut out of it - the usual way to tell outputs "
                "from inputs. Set any jack to output or input in Edit labels.")
-        for k in ('art_scale', 'art_rings', 'art_border', 'art_outputs'):
+        row = ttk.Frame(det); row.pack(fill='x', pady=(4, 0))
+        c = ttk.Checkbutton(row, text='Boxes round rows of controls', variable=v['art_groups']); c.pack(side='left', padx=(0, 12))
+        Tip(c, 'A box round 3 or more of the same control in a row or a column (pots, buttons, jacks), with their scales '
+               "and labels inside. Left out (with a note) when it would run into another part, a label or the edge.")
+        c = ttk.Checkbutton(row, text='Tabs for edge jacks', variable=v['art_tabs']); c.pack(side='left')
+        Tip(c, "Jacks on the panel edge (no hole, the plug goes in from the side) get a filled tab hanging from the edge "
+               "with their labels cut out. Neighbours share a tab; labels with the same first word (MIDI IN, MIDI OUT) "
+               "become IN / OUT with MIDI underneath.")
+        row = ttk.Frame(det); row.pack(fill='x', pady=(4, 0))
+        ttk.Checkbutton(row, text='Border', variable=v['art_border'], command=self.refresh_states).pack(side='left')
+        l = ttk.Label(row, text='corner radius'); l.pack(side='left', padx=(10, 0))
+        Tip(l, '0 = the border follows the panel corners. Any other value rounds the border corners by that much.')
+        self.w_bradius = self.num(row, 'border_radius'); ttk.Label(row, text='mm').pack(side='left')
+        ttk.Button(row, text='Add text…', command=self.start_add_text).pack(side='right')
+        for k in ('art_scale', 'art_rings', 'art_border', 'art_outputs', 'art_groups', 'art_tabs'):
             v[k].trace_add('write', lambda *_: self.style_custom())
 
         # artwork
@@ -495,6 +511,7 @@ class App(tk.Tk):
         self.show(self.label_detail, v['labels_on'].get(), fill='x')
         self.show(self.art_detail, v['art_on'].get(), fill='x')
         self.show(self.auto_detail, v['auto_on'].get(), fill='x')
+        en(self.w_bradius, v['art_border'].get())
         self.art_state()
         en(self.w_margin, v['expand'].get() and not v['per_side'].get())
         en(self.w_per, v['expand'].get())
@@ -582,6 +599,7 @@ class App(tk.Tk):
             v = self.vars
             v['art_scale'].set(st['scale']); v['art_rings'].set(st['rings'])
             v['art_outputs'].set(st['outputs']); v['art_border'].set(st['border'])
+            v['art_groups'].set(st['groups']); v['art_tabs'].set(st['tabs'])
         finally:
             self.applying_style = False
 
@@ -591,8 +609,7 @@ class App(tk.Tk):
             return
         st = ART_STYLES.get(self.vars['art_style'].get())
         v = self.vars
-        if st and (v['art_scale'].get(), v['art_rings'].get(), v['art_outputs'].get(), v['art_border'].get()) != \
-                (st['scale'], st['rings'], st['outputs'], st['border']):
+        if st and tuple(v['art_' + k].get() for k in STYLE_KEYS) != tuple(st[k] for k in STYLE_KEYS):
             v['art_style'].set('Custom')
 
     def show(self, w, on, **pack):
@@ -709,6 +726,8 @@ class App(tk.Tk):
             v['art_scale'].set(next((k for k, x in SCALES.items() if x == s['art_scale']), 'Ticks'))
             v['art_rings'].set(s['art_rings'] == 'on'); v['art_outputs'].set(s['art_outputs'] == 'on')
             v['art_border'].set(s['art_border'] == 'on')
+            v['art_groups'].set(s['art_groups'] == 'on'); v['art_tabs'].set(s['art_tabs'] == 'on')
+            v['border_radius'].set(f"{s['art_border_radius']:g}")
             v['art_title'].set(s['art_title']); v['art_maker'].set(s['art_maker'])
             v['title_size'].set(f"{s['title_size']:g}"); v['knob_size'].set(f"{s['knob_size']:g}")
             v['label_pos'].set(s['label_pos']); v['label_gap'].set(f"{s['label_gap']:g}"); v['label_size'].set(f"{s['label_size']:g}")
@@ -813,6 +832,8 @@ class App(tk.Tk):
                      '--art-rings', 'on' if v['art_rings'].get() else 'off',
                      '--art-outputs', 'on' if v['art_outputs'].get() else 'off',
                      '--art-border', 'on' if v['art_border'].get() else 'off',
+                     '--art-border-radius', f"{self.number('border_radius', 'border corner radius'):g}" if v['art_border'].get() else '0',
+                     '--art-groups', 'on' if v['art_groups'].get() else 'off', '--art-tabs', 'on' if v['art_tabs'].get() else 'off',
                      '--art-title', v['art_title'].get(), '--art-maker', v['art_maker'].get(),
                      '--title-size', f'{ts:g}', '--knob-size', f'{ks:g}']
         else:

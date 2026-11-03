@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.21.0
+
+- **Artwork made for you, stage 2:** boxes round rows or columns of 3+ of the same control, and filled tabs for jacks on the panel edge (labels cut out; MIDI IN / MIDI OUT become IN / OUT with MIDI underneath).
+- **Border corner radius:** give the border its own rounded corners.
+- **Add text…** button in the Artwork made for you section too.
+
 ## 0.20.1
 
 - **Snapping:** a text, label or title you drag (or add) snaps into line with the other labels and to the middle of holes, with pink guide lines while you drag. Hold Alt to place it freely.

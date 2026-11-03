@@ -162,7 +162,9 @@ Tick **Make artwork for me** (or `--auto-art on`). The artwork is drawn from the
 | Pot scales | Pot scale | `--art-scale none/ticks/numbers/bipolar` | 11 marks over `--pot-sweep 300` degrees, starting `--knob-size 13` / 2 + 0.6 mm from the centre. Numbers are `--scale-text 1.4` mm. Pots are found by rule or footprint name (pot, potentiometer, R_Pot); encoders get none |
 | Rings | Rings round buttons | `--art-rings on` | 0.8 mm wide, 0.8 mm out from the hole, on round push buttons (Alps SKRC, switch/button footprints) |
 | Output boxes | Outputs in filled boxes | `--art-outputs on` | Jacks whose label contains OUT (or set to output in Edit labels). The label is cut out of the box, using the label font (a bold sans when the labels use KiCad's own font, which has no font file) |
-| Border | Border | `--art-border on` | 0.6 mm line inside the case screws, broken round any hole |
+| Border | Border, corner radius | `--art-border on`, `--art-border-radius 0` | 0.6 mm line inside the case screws, broken round any hole and edge tab. Radius 0 follows the panel corners |
+| Boxes | Boxes round rows of controls | `--art-groups on` | 3+ of the same kind (pots/encoders, buttons, toggles, jacks) centred on one line (within 1 mm) and no more than 32 mm apart. 0.6 mm line, 1.5 mm outside their scales, rings and labels, 2 mm corners. Left out with a NOTE if it would touch another part, a label or the edge |
+| Edge tabs | Tabs for edge jacks | `--art-tabs on` | Parts with no hole whose courtyard crosses the top or bottom edge. Neighbours under 10 mm apart share a tab. Labels with the same first word (MIDI IN / MIDI OUT) become IN / OUT over each jack with MIDI underneath |
 | Title / maker | Title, Maker | `--art-title`, `--art-maker`, `--title-size 5`, `--title-font`, `--title-bold` | Top centre, then top left, top right, bottom centre: the first spot clear of holes, labels and other artwork |
 
 - **Labels move out of the way:** with this on, a pot's label starts outside its knob and scale, and a button's outside its ring. Any label whose usual side runs into a cutout or off the panel goes on the other side (that applies with this off too).

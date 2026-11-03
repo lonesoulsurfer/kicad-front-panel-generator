@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.20.1"
+VERSION = "0.21.0"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -1556,7 +1556,7 @@ def part_kind(c, fp=None):
         return 'encoder'
     if re.search(r'(^|[\W_])pot|potentiometer|r_pot|rv\d', t):
         return 'pot'
-    if re.search(r'jack|thonk|audiojack|pj3', t):
+    if re.search(r'jack|thonk|audiojack|pj-?3', t):
         return 'jack'
     if re.search(r'(^|[\W_])led', t):
         return 'led'
@@ -1638,7 +1638,7 @@ def auto_scale_radius(a, fid=None):
         r += 0.5 + a.scale_text
     return r
 
-def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log):
+def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=()):
     """Artwork made from the panel itself: pot scales, rings round buttons, outputs in filled boxes, a border and a
     title. Returns silkscreen polygons; labels that get cut out of an output box are taken off the plain labels."""
     from shapely.ops import unary_union
@@ -1739,19 +1739,138 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log):
         if tabs:
             shapes.append(unary_union(tabs).intersection(inside))
 
-    # 4. border
+    tab_areas = []
+    # 4. tabs for jacks on the panel edge (no hole, the plug goes in from the side): a filled tab hanging from the edge
+    if a.art_tabs == 'on':
+        px1, py1, px2, py2 = outline.bounds
+        edge_parts = []
+        for L in placed:
+            fp = fps.get(L['fid'])
+            if L['fid'] not in no_hole or fp is None:
+                continue
+            cb = courtyard_box(fp)
+            if not cb:
+                continue
+            side = 'top' if cb[1] < py1 + 0.01 else 'bottom' if cb[3] > py2 - 0.01 else None
+            if side:
+                edge_parts.append((side, cb, L))
+        for side in ('top', 'bottom'):
+            row = sorted([p for p in edge_parts if p[0] == side], key=lambda p: p[1][0])
+            runs = []
+            for p in row:                         # neighbours less than 10 mm apart share one tab
+                if runs and p[1][0] - runs[-1][-1][1][2] < 10:
+                    runs[-1].append(p)
+                else:
+                    runs.append([p])
+            for run in runs:
+                h = run[0][2]['h']
+                sgn = 1 if side == 'top' else -1
+                edge_y = py1 if side == 'top' else py2
+                ys = edge_y + sgn * (1.4 + h / 2)
+                # labels sharing a first word (MIDI IN, MIDI OUT): the rest over each jack, the shared word once underneath
+                words = [L['text'].split() for _, _, L in run]
+                shared = words[0][0] if len(run) > 1 and all(len(w) > 1 and w[0].lower() == words[0][0].lower() for w in words) else ''
+                txts, xs = [], []
+                for (_, cb, L), w in zip(run, words):
+                    cx = (cb[0] + cb[2]) / 2
+                    ts = text_shapes(' '.join(w[1:]) if shared else L['text'], cx, ys, L['h'], font, sbold)
+                    if ts:
+                        txts += ts
+                        tb = unary_union(ts).bounds
+                        xs += [tb[0], tb[2]]
+                    xs += [cx - 3.5, cx + 3.5]
+                    knocked.add(L['fid'])
+                far = ys + sgn * (h / 2 + 1.4)
+                if shared:
+                    y2_ = ys + sgn * (h * 1.7 + 0.8)
+                    ts = text_shapes(shared, (min(xs) + max(xs)) / 2, y2_, h * 1.15, font, sbold)
+                    if ts:
+                        txts += ts
+                        tb = unary_union(ts).bounds
+                        xs += [tb[0], tb[2]]
+                        far = y2_ + sgn * (h * 1.15 / 2 + 1.4)
+                if side == 'top':
+                    tab = rounded_box(min(xs) - 1.5, py1 - 3, max(xs) + 1.5, far, 1.2)
+                else:
+                    tab = rounded_box(min(xs) - 1.5, far, max(xs) + 1.5, py2 + 3, 1.2)
+                tab_areas.append(tab)
+                if txts:
+                    tab = tab.difference(unary_union(txts))
+                if tab.intersects(keep_out):
+                    log.append(f"NOTE  the edge tab for {', '.join(p[2]['ref'] for p in run)} runs into a hole - it's trimmed there")
+                shapes.append(tab.difference(keep_out))
+
+    # 5. boxes round rows (or columns) of the same kind of control
+    if a.art_groups == 'on':
+        items = []
+        for fid, cs in parts.items():
+            c = next((x for x in cs if x.get('circle')), None)
+            k = part_kind(c, fps.get(fid)) if c else None
+            if k in ('pot', 'encoder', 'button', 'toggle', 'jack'):
+                items.append(dict(fid=fid, kind='pot' if k == 'encoder' else k, c=c['circle'], geom=unary_union([x['geom'] for x in cs])))
+        def runs_of(axis):
+            out = []
+            for kind in {i['kind'] for i in items}:
+                same = [i for i in items if i['kind'] == kind]
+                used = set()
+                for i in same:
+                    if i['fid'] in used:
+                        continue
+                    line = sorted([j for j in same if abs(j['c'][1 - axis] - i['c'][1 - axis]) < 1.0], key=lambda j: j['c'][axis])
+                    run = [line[0]]
+                    for j in line[1:]:
+                        if j['c'][axis] - run[-1]['c'][axis] <= 32:
+                            run.append(j)
+                        else:
+                            if len(run) >= 3:
+                                out.append(run)
+                            run = [j]
+                    if len(run) >= 3:
+                        out.append(run)
+                    used |= {j['fid'] for j in line}
+            return out
+        boxes_done = []
+        for run in sorted(runs_of(0) + runs_of(1), key=len, reverse=True):
+            ids = {i['fid'] for i in run}
+            if any(ids & d for d in boxes_done):
+                continue
+            parts_geo = []
+            for i in run:
+                cx, cy, r = i['c']
+                rr = auto_scale_radius(a, i['fid']) if i['kind'] == 'pot' else r + (1.6 if i['kind'] == 'button' and a.art_rings == 'on' else 0.6)
+                parts_geo.append(Point(cx, cy).buffer(rr))
+                if i['fid'] in label_box:
+                    parts_geo.append(label_box[i['fid']])
+            bb = unary_union(parts_geo).bounds
+            frame = rounded_box(bb[0] - 1.5, bb[1] - 1.5, bb[2] + 1.5, bb[3] + 1.5, 2.0)
+            line = frame.difference(frame.buffer(-0.6, join_style=1))
+            others = holes.difference(unary_union([i['geom'] for i in run]).buffer(0.01))
+            other_labels = [b for f, b in label_box.items() if f not in ids and f not in knocked]
+            if line.intersects(others.buffer(0.5)) or any(line.intersects(b) for b in other_labels) or not inside.contains(line):
+                log.append(f"NOTE  no box round {', '.join(fps[i['fid']].ref for i in run)}: it would run into another part, "
+                           "a label or the edge")
+                continue
+            boxes_done.append(ids)
+            shapes.append(line)
+
+    # 6. border
     if a.art_border == 'on':
         inner = outline.buffer(-(border_in_ := (max(1.5, a.screw_inset + a.screw_dia / 2 + 1.0) if a.screws != 'none' else 1.5)),
                                join_style=1)
+        if a.art_border_radius > 0 and not inner.is_empty:       # its own rounded corners
+            R = a.art_border_radius
+            inner = inner.buffer(-R, join_style=2).buffer(R, quad_segs=16)
         if not inner.is_empty:
             band = inner.difference(inner.buffer(-0.6, join_style=1))
             band = band.difference(holes.buffer(0.8))
+            for t in tab_areas:                                      # broken round the edge tabs
+                band = band.difference(t.buffer(0.8))
             for f, b in label_box.items():
                 if f not in knocked:
                     band = band.difference(b.buffer(0.6))
             shapes.append(band)
 
-    # 5. title along the top, maker along the bottom: the first spot that's free
+    # 7. title along the top, maker along the bottom: the first spot that's free
     taken = unary_union([holes.buffer(0.8)] + [b.buffer(0.6) for f, b in label_box.items() if f not in knocked]
                         + [g.buffer(0.6) for g in shapes])
     x1, y1, x2, y2 = outline.bounds
@@ -1970,6 +2089,9 @@ def main(argv=None, preview=None):
     ap.add_argument('--art-rings', choices=['on', 'off'], help='rings round push buttons')
     ap.add_argument('--art-outputs', choices=['on', 'off'], help="jacks whose label says OUT get a filled box, the label cut out of it")
     ap.add_argument('--art-border', choices=['on', 'off'], help='a line round the panel, inside the case screws')
+    ap.add_argument('--art-border-radius', type=float, help='round the corners of the border, mm (0 = follow the panel)')
+    ap.add_argument('--art-groups', choices=['on', 'off'], help='a box round rows or columns of 3+ of the same control')
+    ap.add_argument('--art-tabs', choices=['on', 'off'], help='a filled tab, labels cut out, for jacks on the panel edge')
     ap.add_argument('--art-title', help='title along the top of the panel')
     ap.add_argument('--art-maker', help='your name or brand, small, along the bottom')
     ap.add_argument('--title-size', type=float, help='title height, mm (default 5)')
@@ -2007,7 +2129,8 @@ def main(argv=None, preview=None):
                     min_web=1.0, svg=False, grow=0.0, panel_layer='User.1', check_uncut='on',
                     artwork='off', artwork_file='',
                     labels='off', label_size=2.0, label_gap=1.5, label_pos='above', label_font='', label_bold='off', label_caps='off',
-                    auto_art='off', art_style='', art_scale='ticks', art_rings='on', art_outputs='off', art_border='off', art_title='',
+                    auto_art='off', art_style='', art_scale='ticks', art_rings='on', art_outputs='off', art_border='off', art_border_radius=0.0,
+                    art_groups='off', art_tabs='off', art_title='',
                     art_maker='', title_size=5.0, title_font='', title_bold='on', knob_size=13.0, pot_sweep=300.0, scale_text=1.4)
     for k, d in defaults.items():          # explicit option > saved (with --again) > built-in default
         if getattr(a, k) is None:
@@ -2210,7 +2333,8 @@ def main(argv=None, preview=None):
     a._auto, knocked, a._art_items = [], set(), []
     if a.auto_art == 'on':
         n0 = len(log)
-        a._auto, knocked = auto_artwork(cutouts + manual, part_fps, groups, outline, placed, a, label_edits, log)
+        a._auto, knocked = auto_artwork(cutouts + manual, part_fps, groups, outline, placed, a, label_edits, log,
+                                        no_hole=set(cfg.get('_none_ids', set())) | set(ignore_uncut))
         problems += sum(1 for l in log[n0:] if l.startswith('WARN'))
         log.append(f"auto  {len(a._auto)} shapes of artwork made for you"
                    + (f" ({len(knocked)} label{'s' if len(knocked) > 1 else ''} cut out of output boxes)" if knocked else ''))
@@ -2300,6 +2424,7 @@ def main(argv=None, preview=None):
                                 label_font=a.label_font, label_bold=a.label_bold, label_caps=a.label_caps,
                                 artwork=a.artwork, artwork_file=a.artwork_file,
                                 **{k: getattr(a, k) for k in ('auto_art', 'art_style', 'art_scale', 'art_rings', 'art_outputs', 'art_border',
+                                                              'art_border_radius', 'art_groups', 'art_tabs',
                                                               'art_title', 'art_maker', 'title_size', 'title_font', 'title_bold',
                                                               'knob_size', 'pot_sweep', 'scale_text')})},
               open(mem_path, 'w', encoding='utf-8'), indent=1)
