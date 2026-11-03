@@ -120,10 +120,12 @@ class App(tk.Tk):
         v['art_groups'] = tk.BooleanVar(); v['art_tabs'] = tk.BooleanVar(); v['border_radius'] = tk.StringVar(value='0')
         v['art_title'] = tk.StringVar(); v['art_maker'] = tk.StringVar()
         v['title_size'] = tk.StringVar(value='5'); v['knob_size'] = tk.StringVar(value='13')
+        v['title_dir'] = tk.StringVar(value='Across')
         v['labels_on'] = tk.BooleanVar(); v['label_pos'] = tk.StringVar(value='above')
         v['label_gap'] = tk.StringVar(value='1.5'); v['label_size'] = tk.StringVar(value='2')
         v['label_font'] = tk.StringVar(value=KICAD_FONT); v['label_bold'] = tk.BooleanVar(); v['label_caps'] = tk.BooleanVar()
         self.ui = {'ignore': {}, 'label_edits': {}, 'texts': [], 'art_pos': {}, 'images': []}   # ignored parts, label changes, your texts, moved title, pictures
+        self.undo_stack, self.ui_prev = [], None
         self.editor = None
         self.mode, self.pv, self.after_id, self.loading = None, None, None, False
         self.stamp = None
@@ -330,6 +332,9 @@ class App(tk.Tk):
         ttk.Entry(g, textvariable=v['art_title'], width=20).grid(row=1, column=1, columnspan=3, sticky='w', padx=4, pady=(6, 0))
         l = ttk.Label(g, text='Size'); l.grid(row=1, column=4, sticky='w', padx=(10, 0), pady=(6, 0))
         self.num(g, 'title_size', grid=(1, 5)); ttk.Label(g, text='mm').grid(row=1, column=6, sticky='w', pady=(6, 0))
+        td = ttk.Combobox(g, textvariable=v['title_dir'], values=['Across', 'Standing up'], width=11, state='readonly')
+        td.grid(row=1, column=7, sticky='w', padx=(6, 0), pady=(6, 0))
+        Tip(td, 'Across, along the top; or standing up along a side, read from the bottom. Drag it anywhere after.')
         l = ttk.Label(g, text='Maker'); l.grid(row=2, column=0, sticky='w', pady=(6, 0))
         Tip(l, 'Your name or brand, small, along the bottom. Leave empty for none.')
         ttk.Entry(g, textvariable=v['art_maker'], width=20).grid(row=2, column=1, columnspan=3, sticky='w', padx=4, pady=(6, 0))
@@ -415,6 +420,11 @@ class App(tk.Tk):
         self.chip = tk.Label(ph, text='', font=self.f_head, padx=8, pady=1); self.chip.pack(side='left', padx=10)
         rb = ttk.Button(ph, text='Refresh', command=self.update_preview); rb.pack(side='right')
         fb = ttk.Button(ph, text='Fit', command=self.fit_view, width=5); fb.pack(side='right', padx=(0, 6))
+        self.w_undo = ttk.Button(ph, text='Undo', command=self.undo, width=6); self.w_undo.pack(side='right', padx=(0, 6))
+        self.w_undo.state(['disabled'])
+        Tip(self.w_undo, 'Take back the last change: a move, a text, a picture, a box, a label edit (Ctrl+Z). '
+                         'Settings on the left are changed back by hand.')
+        self.bind_all('<Control-z>', self.undo); self.bind_all('<Control-Z>', self.undo)
 
         Tip(fb, 'Show the whole panel again. Mouse wheel zooms in and out where the pointer is; drag to move around; '
                 'double-click also fits.')
@@ -758,12 +768,14 @@ class App(tk.Tk):
             v['border_radius'].set(f"{s['art_border_radius']:g}")
             v['art_title'].set(s['art_title']); v['art_maker'].set(s['art_maker'])
             v['title_size'].set(f"{s['title_size']:g}"); v['knob_size'].set(f"{s['knob_size']:g}")
+            v['title_dir'].set('Standing up' if s.get('title_vertical') == 'on' else 'Across')
             v['label_pos'].set(s['label_pos']); v['label_gap'].set(f"{s['label_gap']:g}"); v['label_size'].set(f"{s['label_size']:g}")
             v['label_font'].set(s['label_font'] or KICAD_FONT)
             v['label_bold'].set(s['label_bold'] == 'on'); v['label_caps'].set(s['label_caps'] == 'on')
             self.ui = {'ignore': dict(mem.get('ignore_uncut', {})), 'label_edits': dict(mem.get('label_edits', {})),
                        'texts': [dict(t) for t in mem.get('texts', [])], 'art_pos': dict(mem.get('art_pos', {})),
                        'images': [dict(i) for i in mem.get('images', [])]}
+            self.reset_undo()
         finally:
             self.loading = False
         self.refresh_states()
@@ -864,7 +876,8 @@ class App(tk.Tk):
                      '--art-border-radius', f"{self.number('border_radius', 'border corner radius'):g}" if v['art_border'].get() else '0',
                      '--art-groups', 'on' if v['art_groups'].get() else 'off', '--art-tabs', 'on' if v['art_tabs'].get() else 'off',
                      '--art-title', v['art_title'].get(), '--art-maker', v['art_maker'].get(),
-                     '--title-size', f'{ts:g}', '--knob-size', f'{ks:g}']
+                     '--title-size', f'{ts:g}', '--knob-size', f'{ks:g}',
+                     '--title-vertical', 'on' if v['title_dir'].get() == 'Standing up' else 'off']
         else:
             args += ['--auto-art', 'off']
         args += ['--artwork', 'on' if v['art_on'].get() else 'off']
@@ -1264,6 +1277,18 @@ class App(tk.Tk):
             xs.append((ib[0] + ib[2]) / 2); ys.append((ib[1] + ib[3]) / 2)
         x1, y1, x2, y2 = self.pv['panel_box']
         xs.append((x1 + x2) / 2)
+        # half way between two neighbouring holes in a row or a column (MIDI over its IN and OUT jacks)
+        cs = sorted(((sh['geom'].bounds[0] + sh['geom'].bounds[2]) / 2, (sh['geom'].bounds[1] + sh['geom'].bounds[3]) / 2)
+                    for sh in self.pv.get('shapes', []))
+        for i, (ax, ay) in enumerate(cs):
+            for bx_, by_ in cs[i + 1:]:
+                if abs(ay - by_) < 1.0 and 0 < bx_ - ax < 40:
+                    if not any(ax < qx < bx_ and abs(qy - ay) < 1.0 for qx, qy in cs):
+                        xs.append((ax + bx_) / 2)
+                if abs(ax - bx_) < 1.0 and 0 < abs(by_ - ay) < 40:
+                    lo, hi = sorted((ay, by_))
+                    if not any(lo < qy < hi and abs(qx - ax) < 1.0 for qx, qy in cs):
+                        ys.append((ay + by_) / 2)
         # the middle of the gap between whatever is either side of it (e.g. between a screen and an edge tab)
         w2, h2 = (b[2] - b[0]) / 2, (b[3] - b[1]) / 2
         obst = [sh['geom'].bounds for sh in self.pv.get('shapes', [])] + boxes + \
@@ -1346,6 +1371,15 @@ class App(tk.Tk):
                 if o and x and abs(x - o['w']) > 1e-6:
                     o['w'] = round(x, 2); self.persist_ui(); self.update_preview()
             entry(row, f"{d['w']:g}", setw); ttk.Label(row, text='mm  (the height follows)').pack(side='left')
+            row = ttk.Frame(box); row.pack(fill='x', pady=(4, 0))
+            ttk.Label(row, text='Turn').pack(side='left')
+            def setr(v):
+                x = num(v, -360, 360)
+                if o is not None and x is not None and abs(x - float(o.get('rot', 0))) > 1e-6:
+                    o['rot'] = round(x % 360, 2); self.persist_ui(); self.update_preview()
+            entry(row, f"{float(d.get('rot', 0)):g}", setr, width=5); ttk.Label(row, text='degrees').pack(side='left')
+            ttk.Button(row, text='↺ 90', width=5, command=lambda: setr(str(float(o.get('rot', 0)) - 90))).pack(side='left', padx=(8, 4))
+            ttk.Button(row, text='↻ 90', width=5, command=lambda: setr(str(float(o.get('rot', 0)) + 90))).pack(side='left')
             inv = self._sel_inv = tk.BooleanVar(value=bool(d.get('invert')))     # kept, or Tk forgets it
             ttk.Checkbutton(box, text='Print the light parts instead (for white-on-black pictures)', variable=inv,
                             command=lambda: self.image_invert(d['id'])).pack(anchor='w', pady=(4, 0))
@@ -1444,7 +1478,7 @@ class App(tk.Tk):
     def own_image(self, iid):
         return next((i for i in self.ui.get('images', []) if i['id'] == iid), None)
 
-    def add_picture(self):
+    def add_picture(self, at=None):
         b = self.board.get()
         if not b or not self.pv or 'message' in self.pv:
             messagebox.showinfo('Panel Generator', 'Choose your PCB first.'); return
@@ -1469,10 +1503,11 @@ class App(tk.Tk):
         except OSError as e:
             messagebox.showerror('Panel Generator', f"Couldn't copy the picture into the Front Panel folder ({e})"); return
         x1, y1, x2, y2 = self.pv['panel_box']
-        self.ui.setdefault('images', []).append(dict(id=uuid.uuid4().hex[:8], file=name, x=round((x1 + x2) / 2, 2),
-                                                     y=round((y1 + y2) / 2, 2), w=round(min(20.0, (x2 - x1) / 4), 1)))
+        cx, cy = at or ((x1 + x2) / 2, (y1 + y2) / 2)
+        self.ui.setdefault('images', []).append(dict(id=uuid.uuid4().hex[:8], file=name, x=round(cx, 2),
+                                                     y=round(cy, 2), w=round(min(20.0, (x2 - x1) / 4), 1)))
         self.persist_ui(); self.update_preview()
-        self.hover.config(text='Picture added in the middle of the panel - drag it into place; change its size on the left.')
+        self.hover.config(text='Picture added - drag it into place; change its size and turn it on the left.')
 
     def image_size(self, iid):
         from tkinter import simpledialog
@@ -1483,6 +1518,11 @@ class App(tk.Tk):
                                   minvalue=1, maxvalue=500, parent=self)
         if v:
             o['w'] = round(v, 2); self.persist_ui(); self.update_preview()
+
+    def image_turn(self, iid, deg):
+        o = self.own_image(iid)
+        if o:
+            o['rot'] = round((float(o.get('rot', 0)) + deg) % 360, 2); self.persist_ui(); self.update_preview()
 
     def image_invert(self, iid):
         o = self.own_image(iid)
@@ -1516,6 +1556,18 @@ class App(tk.Tk):
     def context_menu(self, e):
         t = self.target_at(e)
         if not t:
+            if not self.pv or 'message' in self.pv or not getattr(self, 'cur_view', None):
+                return
+            x, y = self.to_mm(e)
+            m = tk.Menu(self, tearoff=0)
+            def here_text():
+                dx, dy, _, _ = self.snap(((x, y, x, y), 'new', None), 0, 0)
+                self.add_text_at(x + dx, y + dy)
+            m.add_command(label='Add text here…', command=here_text)
+            m.add_command(label='Add picture here…', command=lambda: self.add_picture(at=(x, y)))
+            if self.undo_stack:
+                m.add_separator(); m.add_command(label='Undo', command=self.undo)
+            m.tk_popup(e.x_root, e.y_root)
             return
         _, kind, d = t
         m = tk.Menu(self, tearoff=0)
@@ -1525,6 +1577,7 @@ class App(tk.Tk):
             m.add_command(label='Delete', command=lambda: self.text_delete(d['fid']))
         elif kind == 'image':
             m.add_command(label='Size…', command=lambda: self.image_size(d['id']))
+            m.add_command(label='Turn 90° clockwise', command=lambda: self.image_turn(d['id'], 90))
             m.add_command(label='Print the light parts instead' if not d.get('invert') else 'Print the dark parts',
                           command=lambda: self.image_invert(d['id']))
             m.add_command(label='Delete', command=lambda: self.image_delete(d['id']))
@@ -1617,6 +1670,7 @@ class App(tk.Tk):
             self.ui = {'ignore': dict(mem.get('ignore_uncut', {})), 'label_edits': dict(mem.get('label_edits', {})),
                        'texts': [dict(t) for t in mem.get('texts', [])], 'art_pos': dict(mem.get('art_pos', {})),
                        'images': [dict(i) for i in mem.get('images', [])]}
+            self.reset_undo()
         self.fill_restore()
         panel, _ = panel_paths(board)
         self.stamp = (mtime(board), mtime(panel), mtime(self.art_file()))
@@ -1706,8 +1760,36 @@ class App(tk.Tk):
         else:
             self.fill_restore(); self.update_preview()
 
-    def persist_ui(self):
+    def reset_undo(self):
+        import copy
+        self.undo_stack, self.ui_prev = [], copy.deepcopy(self.ui)
+        if hasattr(self, 'w_undo'):
+            self.w_undo.state(['disabled'])
+
+    def undo(self, _=None):
+        """Take back the last change made in the preview or the left panel (moves, texts, pictures, boxes, labels)."""
+        if _ is not None and isinstance(self.focus_get(), (ttk.Entry, tk.Entry)):
+            return                                     # Ctrl+Z in a text box undoes the typing, not this
+        if not getattr(self, 'undo_stack', None):
+            return
+        import copy
+        self.ui = self.undo_stack.pop()
+        self.ui_prev = copy.deepcopy(self.ui)
+        self.persist_ui(record=False)
+        if not self.undo_stack:
+            self.w_undo.state(['disabled'])
+        self.sel = None
+        self.update_preview()
+
+    def persist_ui(self, record=True):
         """Save ignored parts and label edits into the panel's memory file straight away (if there is one yet)."""
+        import copy
+        if record and getattr(self, 'ui_prev', None) is not None and self.ui_prev != self.ui:
+            self.undo_stack.append(self.ui_prev)
+            del self.undo_stack[:-50]
+            if hasattr(self, 'w_undo'):
+                self.w_undo.state(['!disabled'])
+        self.ui_prev = copy.deepcopy(self.ui)
         b = self.board.get()
         if not b:
             return

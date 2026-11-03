@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.25.0
+
+- **Undo** button (and Ctrl+Z) for changes made in the preview and the left panel's selection settings.
+- **Right-click an empty spot** to add text or a picture there.
+- **Title across or standing up** along a side.
+- **Turn pictures** by any angle, or 90° at a time.
+- **Snaps half way between two holes** in a row or column, e.g. MIDI over its IN and OUT jacks.
+- **A text you add saying OUT next to a jack** gives that jack an output box, for jacks with no label on the PCB.
+- README: new screenshots and a step for your own text, pictures and boxes.
+
 ## 0.24.0
 
 - **Boxes round text:** a line round a text or label, or a filled bar with the text cut out. Drag the ends to stretch it over two keys (snaps to key labels and other boxes); the text stays centred.

@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.24.0"
+VERSION = "0.25.0"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -1714,12 +1714,24 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
     knocked = set()
     if a.art_outputs == 'on':
         tabs = []
+        jacks = {fid: next(x for x in cs if x.get('circle'))['circle'] for fid, cs in parts.items()
+                 if any(x.get('circle') for x in cs) and part_kind(next(x for x in cs if x.get('circle')), fps.get(fid)) == 'jack'}
+        own_out = {}                              # text you added saying OUT, next to a jack: that jack's label
+        for T in placed:
+            if not T.get('own') or not re.search(r'\bOUT\b', T['text'], re.I) or not jacks:
+                continue
+            jf, (jx, jy, jr) = min(jacks.items(), key=lambda kv: math.hypot(kv[1][0] - T['x'], kv[1][1] - T['y']))
+            d_ = math.hypot(jx - T['x'], jy - T['y'])
+            if d_ <= jr + 10 and (jf not in own_out or d_ < own_out[jf][0]):
+                own_out[jf] = (d_, T)
         for fid, cs in parts.items():
             c = next((x for x in cs if x.get('circle')), None)
             if not c or part_kind(c, fps.get(fid)) != 'jack':
                 continue
             L = next((x for x in placed if x['fid'] == fid), None)
             io = edits.get(fid, {}).get('io')
+            if io != 'in' and fid in own_out and (L is None or not re.search(r'\bOUT', L['text'], re.I)):
+                L = own_out[fid][1]
             out = io == 'out' or (io != 'in' and L is not None and re.search(r'\bOUT', L['text'], re.I))
             if not out:
                 continue
@@ -1735,8 +1747,8 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             tab = rounded_box(*bx, 1.0)
             if txt:
                 tab = tab.difference(unary_union(txt))
-                knocked.add(fid)
-                a._knock_boxes[fid] = dict(box=unary_union(txt).bounds, ref=L['ref'], text=L['text'])
+                knocked.add(L['fid'])
+                a._knock_boxes[L['fid']] = dict(box=unary_union(txt).bounds, ref=L['ref'], text=L['text'], h=L['h'])
             others = holes.difference(own.buffer(0.01)).buffer(0.5)
             if tab.intersection(others).area > 0.05:
                 log.append(f"NOTE  the output box for {fps[fid].ref} runs into a nearby hole - it's trimmed there. "
@@ -1905,7 +1917,9 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
         sh = text_shapes(text, 0, 0, h, a.title_font or font, a.title_bold == 'on' if what == 'title' else sbold)
         if not sh:
             return
-        u = unary_union(sh); bx = u.bounds; w = bx[2] - bx[0]
+        if what == 'title' and a.title_vertical == 'on':       # standing up, read from the bottom
+            sh = [affinity.rotate(p, -90, origin=(0, 0)) for p in sh]
+        u = unary_union(sh); bx = u.bounds; w = bx[2] - bx[0]; hh = bx[3] - bx[1]
         pin = (a._art_pos or {}).get(key)
         def put(sx, sy):
             moved = [shapely_translate(p, sx, sy) for p in sh]
@@ -1918,17 +1932,22 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             if not region.contains(mu) or mu.intersects(taken):
                 log.append(f"WARN  the {what} '{text}' runs into a hole, a label or the edge where you put it - drag it somewhere clear")
             return
-        for sx, sy in spots(w):
+        for sx, sy in spots(w, hh):
             mu = unary_union([shapely_translate(p, sx, sy) for p in sh])
             if region.contains(mu) and not mu.intersects(taken):
                 put(sx, sy); return
         log.append(f"WARN  no free space for the {what} '{text}' - drag it in the preview, make the text smaller, or turn it off")
     m = edge + 0.4
     th = a.title_size
-    place(a.art_title, th, lambda w: [((x1 + x2) / 2, y1 + m + th / 2), (x1 + m + w / 2, y1 + m + th / 2),
-                                      (x2 - m - w / 2, y1 + m + th / 2), ((x1 + x2) / 2, y2 - m - th / 2)], 'title', 'title')
+    if a.title_vertical == 'on':
+        title_spots = lambda w, hh: [(x1 + m + w / 2, (y1 + y2) / 2), (x2 - m - w / 2, (y1 + y2) / 2),
+                                     (x1 + m + w / 2, y1 + m + hh / 2), (x2 - m - w / 2, y1 + m + hh / 2)]
+    else:
+        title_spots = lambda w, hh: [((x1 + x2) / 2, y1 + m + hh / 2), (x1 + m + w / 2, y1 + m + hh / 2),
+                                     (x2 - m - w / 2, y1 + m + hh / 2), ((x1 + x2) / 2, y2 - m - hh / 2)]
+    place(a.art_title, th, title_spots, 'title', 'title')
     ms = max(1.5, a.label_size * 0.8)
-    place(a.art_maker, ms, lambda w: [(x2 - m - w / 2, y2 - m - ms / 2), (x1 + m + w / 2, y2 - m - ms / 2),
+    place(a.art_maker, ms, lambda w, hh: [(x2 - m - w / 2, y2 - m - ms / 2), (x1 + m + w / 2, y2 - m - ms / 2),
                                       ((x1 + x2) / 2, y2 - m - ms / 2)], 'maker name', 'maker')
 
     if dropped:
@@ -1996,7 +2015,12 @@ def image_items(images, folder, outline, groups, log):
             polys, h = image_shapes(path, im['x'], im['y'], float(im['w']), im.get('invert', False))
         except Exception as e:
             log.append(f"WARN  couldn't read the picture {im['file']} ({e})"); continue
-        im['_box'] = (im['x'] - im['w'] / 2, im['y'] - h / 2, im['x'] + im['w'] / 2, im['y'] + h / 2)
+        rot = float(im.get('rot', 0) or 0) % 360
+        frame = box(im['x'] - im['w'] / 2, im['y'] - h / 2, im['x'] + im['w'] / 2, im['y'] + h / 2)
+        if rot:                                   # turned clockwise, about its middle
+            polys = [affinity.rotate(p, rot, origin=(im['x'], im['y'])) for p in polys]
+            frame = affinity.rotate(frame, rot, origin=(im['x'], im['y']))
+        im['_box'] = frame.bounds
         if not polys:
             log.append(f"NOTE  picture {im['file']} has nothing dark enough to print - try 'White parts print' (right-click it)")
             continue
@@ -2232,6 +2256,7 @@ def main(argv=None, preview=None):
     ap.add_argument('--title-size', type=float, help='title height, mm (default 5)')
     ap.add_argument('--title-font', help='font for the title ("" = the label font)')
     ap.add_argument('--title-bold', choices=['on', 'off'])
+    ap.add_argument('--title-vertical', choices=['on', 'off'], help='title standing up along a side, read from the bottom')
     ap.add_argument('--knob-size', type=float, help='knob diameter, mm: the pot scale starts outside it (default 13)')
     ap.add_argument('--pot-sweep', type=float, help='how far the pots turn, degrees (default 300)')
     ap.add_argument('--scale-text', type=float, help='size of the numbers on pot scales, mm (default 1.4)')
@@ -2266,7 +2291,7 @@ def main(argv=None, preview=None):
                     labels='off', label_size=2.0, label_gap=1.5, label_pos='above', label_font='', label_bold='off', label_caps='off',
                     auto_art='off', art_style='', art_scale='ticks', art_rings='on', art_outputs='off', art_border='off', art_border_radius=0.0,
                     art_groups='off', art_tabs='off', art_title='',
-                    art_maker='', title_size=5.0, title_font='', title_bold='on', knob_size=13.0, pot_sweep=300.0, scale_text=1.4)
+                    art_maker='', title_size=5.0, title_font='', title_bold='on', title_vertical='off', knob_size=13.0, pot_sweep=300.0, scale_text=1.4)
     for k, d in defaults.items():          # explicit option > saved (with --again) > built-in default
         if getattr(a, k) is None:
             setattr(a, k, saved.get(k, d))
@@ -2529,7 +2554,8 @@ def main(argv=None, preview=None):
                      label_edits=label_edits, ignore_uncut=ignore_uncut, artwork=art, markers=a._markers,
                      art_items=a._art_items, texts=texts, art_pos=a._art_pos,
                      knocked=[dict(fid=f, **v) for f, v in a._knock_boxes.items()], tab_boxes=a._tab_boxes,
-                     images=[dict(id=i['id'], box=i['_box'], w=i['w'], invert=i.get('invert', False)) for i in images if '_box' in i])
+                     images=[dict(id=i['id'], box=i['_box'], w=i['w'], invert=i.get('invert', False), rot=i.get('rot', 0))
+                             for i in images if '_box' in i])
         return 1 if any(l.startswith('ERROR') for l in log) else 0
 
     uuids, items, generated = [], [], {}
@@ -2569,7 +2595,7 @@ def main(argv=None, preview=None):
                                 artwork=a.artwork, artwork_file=a.artwork_file,
                                 **{k: getattr(a, k) for k in ('auto_art', 'art_style', 'art_scale', 'art_rings', 'art_outputs', 'art_border',
                                                               'art_border_radius', 'art_groups', 'art_tabs',
-                                                              'art_title', 'art_maker', 'title_size', 'title_font', 'title_bold',
+                                                              'art_title', 'art_maker', 'title_size', 'title_font', 'title_bold', 'title_vertical',
                                                               'knob_size', 'pot_sweep', 'scale_text')})},
               open(mem_path, 'w', encoding='utf-8'), indent=1)
 

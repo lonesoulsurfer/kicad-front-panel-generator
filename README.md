@@ -8,7 +8,7 @@ You don't need to trace parts onto a User layer, export to Fusion or Inkscape an
 
 ![A finished panel in KiCad's 3D viewer](docs/images/finished_3d.png)
 
-*The front panel for my Game of Life synth: holes, labels and artwork all made with Panel Generator, shown in KiCad's 3D viewer.*
+*The front panel for my Game of Life synth: holes, labels, pot scales, boxed key functions and the glider all made in Panel Generator, no Inkscape. Shown in KiCad's 3D viewer.*
 
 ## What you need
 
@@ -60,24 +60,16 @@ Tick **Add labels from the PCB** and a label section opens. Each pot, jack and s
 
 ![Labels added from the PCB, in a custom font](docs/images/step3_labels.png)
 
-**Move things by dragging them in the preview:** any label, the title or your own text. It snaps into line with the other labels, to the middle of holes, and to the middle of the gap between two things (hold **Alt** to place it freely). Click one to select it: its settings appear on the left under **Your text and pictures** (text, size, put it back, hide, delete).
-
-**Need text that isn't on the PCB?** For example, what each key does. Click **Add text…** (in *Your text and pictures*), click where it goes and type it. Drag it to move it; click it to change its text or size, or delete it.
-
-**Boxes round text:** for a key with two jobs, or a function that needs two keys pressed, click the text and set **Box** to *Line round it* or *Filled bar* (text cut out). Then click the box and drag its ends to stretch it over the keys; it snaps to the key labels and to other boxes, and the text stays in the middle.
-
-**Pictures:** click **Add picture…** and pick a PNG, JPG or SVG (a glider, a logo). Its dark parts print. Drag it into place, and click it to set its width, print its light parts instead, or delete it.
-
 ### 4. Let it make the artwork (optional)
 
 Don't want to open Inkscape? Tick **Make artwork for me** and Panel Generator draws the artwork from your panel:
 
 - **Pot scales:** tick marks, 0–10 numbers or centre-zero (− 0 +) round each pot, over a 300° turn. Set the **Knob** size so the scale and the label start outside the knob.
 - **Rings** round push buttons.
-- **Outputs in filled boxes:** any jack whose label says OUT gets a solid box with the label cut out of it, the usual way modular panels show outputs.
+- **Outputs in filled boxes:** any jack whose label says OUT gets a solid box with the label cut out of it, the usual way modular panels show outputs. A text you add saying OUT right next to a jack counts too.
 - **Boxes round rows of controls:** a box round 3 or more of the same control in a row or column, scales and labels inside.
 - **Tabs for edge jacks:** jacks on the panel edge (the plug goes in from the side) get a filled tab hanging from the edge with their labels cut out. Labels like MIDI IN and MIDI OUT become IN / OUT with MIDI underneath. Drag an edge of a tab or output box to make it bigger; it snaps to the edges of the others, so you can make them all the same size.
-- **Border** (square, following the panel, or with its own rounded corners) and a **title** along the top (plus your name or brand, small, along the bottom). They go in the first free spot; drag them anywhere.
+- **Border** (square, following the panel, or with its own rounded corners) and a **title**, across the top or standing up along a side (plus your name or brand, small, along the bottom). They go in the first free spot; drag them anywhere.
 
 Pick a **Style** to start from (*Minimal*, *Classic synth* or *Modular*) and change anything after. To change one part (a centre-zero scale for a pan pot, or a jack that's an output but isn't labelled OUT), click its **Artwork** cell in **Edit labels**. Anything that would hit a hole, a label or the edge is left out, and you get a note.
 
@@ -85,7 +77,20 @@ Pick a **Style** to start from (*Minimal*, *Classic synth* or *Modular*) and cha
 
 You can use this and Inkscape together: the made artwork appears in the Inkscape file on its own layer, so you can draw more on top.
 
-### 5. Draw your own artwork in Inkscape (optional)
+### 5. Add your own text, pictures and boxes (optional)
+
+Everything here is done in the preview, with the settings under **Your text and pictures** on the left.
+
+- **Move anything by dragging it:** a label, your text, a picture or the title. It snaps into line with the other labels, to the middle of holes, half way between two holes (a MIDI label over its IN and OUT jacks), and to the middle of the gap between two things. Hold **Alt** to place it freely.
+- **Click anything to change it.** Its settings appear on the left: text, size, put it back, hide or delete.
+- **Add text** for things that aren't on the PCB, such as what each key does: click **Add text…** (or right-click the panel and choose *Add text here*), then click where it goes and type it.
+- **Boxes round text:** for a key with two jobs, or a function that needs two keys pressed, click the text and set **Box** to *Line round it* or *Filled bar* (text cut out). Then drag the box's ends to stretch it over the keys. It snaps to the key labels and to other boxes, and the text stays in the middle.
+- **Pictures:** click **Add picture…** and pick a PNG, JPG or SVG (a glider, a logo). Its dark parts print. Drag it into place, then click it to set its width, turn it, print its light parts instead, or delete it.
+- **Undo** (or Ctrl+Z) takes back the last change in the preview.
+
+![Your own text, pictures and boxes](docs/images/text_pictures.png)
+
+### 6. Draw your own artwork in Inkscape (optional)
 
 Labels only do text. For anything else (borders, logos, boxes, white-on-black text, your own fonts), tick **Add my artwork to the silkscreen** and click **Create artwork file**.
 
@@ -104,7 +109,7 @@ The red holes aren't printed. They're redrawn from the PCB every time you genera
 
 ![Inkscape artwork in the preview](docs/images/step4_artwork.png)
 
-### 6. Generate the panel
+### 7. Generate the panel
 
 When the preview looks right, click **Generate panel**. This makes the panel file (`<your board>_panel.kicad_pcb`) in a `Front Panel` folder next to your PCB, and opens it in KiCad so you can check it, including in the 3D viewer.
 
@@ -114,7 +119,7 @@ Close the panel in KiCad before you generate again, so the file can be replaced.
 
 ![The generated panel open in KiCad](docs/images/step5_kicad.png)
 
-### 7. Make gerbers
+### 8. Make gerbers
 
 Click **Make gerbers**. Panel Generator uses KiCad to make the gerber and drill files, checks the panel, and puts everything in one zip in the `Front Panel` folder. Upload that zip to JLCPCB, PCBWay or a similar fab.
 
