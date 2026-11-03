@@ -1010,6 +1010,8 @@ class App(tk.Tk):
                                  'text' if L.get('own') else 'label', L))
         for it in pv.get('art_items', []):
             self.targets.append((it['box'], 'art', it))
+        for k in pv.get('knocked', []):            # labels cut out of an output box or edge tab: the box follows them
+            self.targets.append((k['box'], 'label', k))
         for L in pv.get('labels', []):
             px = -max(5, round(L['h'] * self.pg.KICAD_EM * sc))     # KiCad's em square is 1.4 x the text size
             i = c.create_text(X(L['x']), Y(L['y']), text=L['text'], fill='#ffffff' if L['status'] == 'ok' else '#ffb347',

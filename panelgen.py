@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.21.0"
+VERSION = "0.21.1"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -1656,6 +1656,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             continue
         parts.setdefault(c['id'], []).append(c)
     shapes, dropped = [], 0
+    a._knock_boxes = {}                       # labels cut out of a box or tab: where their text is, for dragging
     def other_labels(fid):
         return unary_union([b for f, b in label_box.items() if f != fid]) if len(label_box) > 1 else None
 
@@ -1731,6 +1732,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             if txt:
                 tab = tab.difference(unary_union(txt))
                 knocked.add(fid)
+                a._knock_boxes[fid] = dict(box=unary_union(txt).bounds, ref=L['ref'], text=L['text'])
             others = holes.difference(own.buffer(0.01)).buffer(0.5)
             if tab.intersection(others).area > 0.05:
                 log.append(f"NOTE  the output box for {fps[fid].ref} runs into a nearby hole - it's trimmed there. "
@@ -1772,15 +1774,20 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
                 shared = words[0][0] if len(run) > 1 and all(len(w) > 1 and w[0].lower() == words[0][0].lower() for w in words) else ''
                 txts, xs = [], []
                 for (_, cb, L), w in zip(run, words):
+                    e_ = edits.get(L['fid'], {})
                     cx = (cb[0] + cb[2]) / 2
-                    ts = text_shapes(' '.join(w[1:]) if shared else L['text'], cx, ys, L['h'], font, sbold)
+                    ts = text_shapes(' '.join(w[1:]) if shared else L['text'], cx + e_.get('dx', 0.0), ys + e_.get('dy', 0.0),
+                                     L['h'], font, sbold)
                     if ts:
                         txts += ts
                         tb = unary_union(ts).bounds
                         xs += [tb[0], tb[2]]
+                        a._knock_boxes[L['fid']] = dict(box=tb, ref=L['ref'], text=L['text'])
                     xs += [cx - 3.5, cx + 3.5]
                     knocked.add(L['fid'])
-                far = ys + sgn * (h / 2 + 1.4)
+                far = max([ys + sgn * (h / 2 + 1.4)] + [(b['box'][3] + 1.4) if side == 'top' else (b['box'][1] - 1.4)
+                                                         for f, b in a._knock_boxes.items() if f in {p[2]['fid'] for p in run}],
+                          key=lambda v: sgn * v)
                 if shared:
                     y2_ = ys + sgn * (h * 1.7 + 0.8)
                     ts = text_shapes(shared, (min(xs) + max(xs)) / 2, y2_, h * 1.15, font, sbold)
@@ -2330,7 +2337,7 @@ def main(argv=None, preview=None):
         problems += sum(1 for l in log[n0:] if l.startswith('WARN'))
         log.append(f"labels {len(placed)} on the silkscreen ({sum(1 for r in label_rows if r['hide'])} hidden, "
                    f"{sum(1 for r in label_rows if not r['hide'] and not r['text'].strip())} with no text)")
-    a._auto, knocked, a._art_items = [], set(), []
+    a._auto, knocked, a._art_items, a._knock_boxes = [], set(), [], {}
     if a.auto_art == 'on':
         n0 = len(log)
         a._auto, knocked = auto_artwork(cutouts + manual, part_fps, groups, outline, placed, a, label_edits, log,
@@ -2386,7 +2393,8 @@ def main(argv=None, preview=None):
                      pcb_box=((x1 + ER_PCB_INSET, y1 + ER_RAIL, x2 - ER_PCB_INSET, y2 - ER_RAIL) if tpl else (bx1, by1, bx2, by2)),
                      rail_bad=rail_bad, uncut=uncut, labels=placed, label_rows=label_rows,
                      label_edits=label_edits, ignore_uncut=ignore_uncut, artwork=art, markers=a._markers,
-                     art_items=a._art_items, texts=texts, art_pos=a._art_pos)
+                     art_items=a._art_items, texts=texts, art_pos=a._art_pos,
+                     knocked=[dict(fid=f, **v) for f, v in a._knock_boxes.items()])
         return 1 if any(l.startswith('ERROR') for l in log) else 0
 
     uuids, items, generated = [], [], {}

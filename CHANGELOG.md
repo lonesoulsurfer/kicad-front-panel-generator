@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.21.1
+
+- Labels cut out of an output box or an edge tab can be dragged too; the box or tab follows the label.
+
 ## 0.21.0
 
 - **Artwork made for you, stage 2:** boxes round rows or columns of 3+ of the same control, and filled tabs for jacks on the panel edge (labels cut out; MIDI IN / MIDI OUT become IN / OUT with MIDI underneath).
