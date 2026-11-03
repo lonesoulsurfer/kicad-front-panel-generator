@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.25.1
+
+- A box stretched over other texts takes them in: one long bar under a row of keys, each name cut out where it is.
+
 ## 0.25.0
 
 - **Undo** button (and Ctrl+Z) for changes made in the preview and the left panel's selection settings.

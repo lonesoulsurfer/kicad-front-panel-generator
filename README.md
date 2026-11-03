@@ -84,7 +84,7 @@ Everything here is done in the preview, with the settings under **Your text and 
 - **Move anything by dragging it:** a label, your text, a picture or the title. It snaps into line with the other labels, to the middle of holes, half way between two holes (a MIDI label over its IN and OUT jacks), and to the middle of the gap between two things. Hold **Alt** to place it freely.
 - **Click anything to change it.** Its settings appear on the left: text, size, put it back, hide or delete.
 - **Add text** for things that aren't on the PCB, such as what each key does: click **Add text…** (or right-click the panel and choose *Add text here*), then click where it goes and type it.
-- **Boxes round text:** for a key with two jobs, or a function that needs two keys pressed, click the text and set **Box** to *Line round it* or *Filled bar* (text cut out). Then drag the box's ends to stretch it over the keys. It snaps to the key labels and to other boxes, and the text stays in the middle.
+- **Boxes round text:** for a key with two jobs, or a function that needs two keys pressed, click the text and set **Box** to *Line round it* or *Filled bar* (text cut out). Then drag the box's ends to stretch it over the keys. It snaps to the key labels and to other boxes. Stretch it over other texts and they go into the box too, where they are: one long bar under a row of keys. A box round just one text keeps it in the middle.
 - **Pictures:** click **Add picture…** and pick a PNG, JPG or SVG (a glider, a logo). Its dark parts print. Drag it into place, then click it to set its width, turn it, print its light parts instead, or delete it.
 - **Undo** (or Ctrl+Z) takes back the last change in the preview.
 

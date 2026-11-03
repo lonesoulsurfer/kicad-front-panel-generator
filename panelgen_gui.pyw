@@ -1473,7 +1473,7 @@ class App(tk.Tk):
         cb.pack(side='left', padx=4)
         cb.bind('<<ComboboxSelected>>', lambda e: apply(names[var.get()]))
         Tip(cb, 'For a key with two jobs, or one that needs two keys pressed: put the text in a box, then click the box and '
-                'drag its ends to stretch it over the keys. It snaps to key labels and to other boxes.')
+                'drag its ends to stretch it over the keys. It snaps to key labels and to other boxes. Any text it reaches over goes into it too (one long bar under a row of keys).')
 
     def own_image(self, iid):
         return next((i for i in self.ui.get('images', []) if i['id'] == iid), None)

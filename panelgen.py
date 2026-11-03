@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.25.0"
+VERSION = "0.25.1"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -2047,29 +2047,40 @@ def text_boxes(placed, texts, edits, a, groups, outline, log):
     holes = unary_union([g['geom'] for g in groups]).buffer(0.3) if groups else None
     inside = outline.buffer(-0.6)
     polys, knocked = [], set()
+    spec_of = lambda L: own.get(L['fid'], {}).get('box') if L['fid'] in own else edits.get(L['fid'], {}).get('box')
+    owners = {L['fid'] for L in placed if spec_of(L) in ('outline', 'filled')}
+    taken = set()                                # texts already inside another bar
     for L in placed:
-        spec = own.get(L['fid'], {}).get('box') if L['fid'] in own else edits.get(L['fid'], {}).get('box')
-        if spec not in ('outline', 'filled'):
+        spec = spec_of(L)
+        if spec not in ('outline', 'filled') or L['fid'] in taken:
             continue
         key = 'box:' + L['fid']
         g = edits.get(key, {})
-        x0, y0 = L['x'], L['y']                  # where the text was put; a stretched box keeps it in its middle
-        sx, sy = (g.get('r', 0.0) - g.get('l', 0.0)) / 2, (g.get('b', 0.0) - g.get('t', 0.0)) / 2
-        L['x'], L['y'] = round(x0 + sx, 4), round(y0 + sy, 4)
+        pad_x, pad_y = max(0.8, L['h'] * 0.35), max(0.45, L['h'] * 0.25)
         txt = text_shapes(L['text'], L['x'], L['y'], L['h'], font, sbold)
         tb = unary_union(txt).bounds if txt else (L['x'] - L['w'] / 2, L['y'] - L['h'] / 2, L['x'] + L['w'] / 2, L['y'] + L['h'] / 2)
-        pad_x, pad_y = max(0.8, L['h'] * 0.35), max(0.45, L['h'] * 0.25)
-        hw, hh = (tb[2] - tb[0]) / 2 + pad_x, (tb[3] - tb[1]) / 2 + pad_y
-        ctr = ((tb[0] + tb[2]) / 2 - sx, (tb[1] + tb[3]) / 2 - sy)      # the box grows from the text's own place
-        bx = (ctr[0] - hw - g.get('l', 0.0), ctr[1] - hh - g.get('t', 0.0), ctr[0] + hw + g.get('r', 0.0), ctr[1] + hh + g.get('b', 0.0))
+        bx = (tb[0] - pad_x - g.get('l', 0.0), tb[1] - pad_y - g.get('t', 0.0), tb[2] + pad_x + g.get('r', 0.0), tb[3] + pad_y + g.get('b', 0.0))
+        # other texts the box now reaches over (one long bar under a row of keys): they go in it, where they are
+        inner = [M for M in placed if M is not L and M['fid'] not in knocked and M['fid'] not in taken
+                 and (M['fid'] not in owners or spec_of(M) == spec)
+                 and bx[0] <= M['x'] <= bx[2] and bx[1] <= M['y'] <= bx[3]]
+        if not inner:                            # just this text: keep it in the middle of a stretched box
+            sx, sy = (g.get('r', 0.0) - g.get('l', 0.0)) / 2, (g.get('b', 0.0) - g.get('t', 0.0)) / 2
+            if sx or sy:
+                L['x'], L['y'] = round(L['x'] + sx, 4), round(L['y'] + sy, 4)
+                txt = text_shapes(L['text'], L['x'], L['y'], L['h'], font, sbold)
+                tb = unary_union(txt).bounds if txt else tb
         shape = rounded_box(*bx, min(0.8, (bx[3] - bx[1]) / 3))
         if spec == 'filled':
-            if txt:
-                shape = shape.difference(unary_union(txt))
-                knocked.add(L['fid'])
-                a._knock_boxes[L['fid']] = dict(box=tb, ref=L['ref'], text=L['text'], h=L['h'])
+            for M in [L] + inner:
+                mt = txt if M is L else text_shapes(M['text'], M['x'], M['y'], M['h'], font, sbold)
+                if mt:
+                    shape = shape.difference(unary_union(mt))
+                    knocked.add(M['fid'])
+                    a._knock_boxes[M['fid']] = dict(box=unary_union(mt).bounds, ref=M['ref'], text=M['text'], h=M['h'])
         else:
             shape = shape.difference(shape.buffer(-0.3, join_style=1))
+        taken |= {M['fid'] for M in inner}
         a._tab_boxes.append(dict(key=key, kind='textbox', edges='lrtb', box=bx, ref=f"'{L['text']}'"))
         if holes is not None and shape.intersects(holes):
             log.append(f"NOTE  the box round '{L['text']}' runs over a hole - that part is left off")
