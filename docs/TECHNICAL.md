@@ -151,6 +151,23 @@ Tick **Add labels from the PCB** in the window (or `--labels on`) to print a lab
 - **Panel-only parts** (jacks, charge port and so on, placed from PanelParts in the panel) get a label too. Add a field called `Label` to the part in the panel (e.g. `GATE IN`), or type the text in Edit labels, where they're listed as "P1 (panel)".
 - A font other than KiCad's own must be installed on the computer that opens the panel file. The gerbers contain the letter shapes, so the fab doesn't need the font.
 
+## Artwork made for you (optional)
+
+Tick **Make artwork for me** (or `--auto-art on`). The artwork is drawn from the panel itself and goes on F.Silkscreen with the labels.
+
+| Item | Window | Command line | Notes |
+|---|---|---|---|
+| Pot scales | Pot scale | `--art-scale none/ticks/numbers/bipolar` | 11 marks over `--pot-sweep 300` degrees, starting `--knob-size 13` / 2 + 0.6 mm from the centre. Numbers are `--scale-text 1.4` mm. Pots are found by rule or footprint name (pot, potentiometer, R_Pot); encoders get none |
+| Rings | Rings round buttons | `--art-rings on` | 0.8 mm wide, 0.8 mm out from the hole, on round push buttons (Alps SKRC, switch/button footprints) |
+| Output boxes | Outputs in filled boxes | `--art-outputs on` | Jacks whose label contains OUT (or set to output in Edit labels). The label is cut out of the box, using the label font (a bold sans when the labels use KiCad's own font, which has no font file) |
+| Border | Border | `--art-border on` | 0.6 mm line inside the case screws, broken round any hole |
+| Title / maker | Title, Maker | `--art-title`, `--art-maker`, `--title-size 5`, `--title-font`, `--title-bold` | Top centre, then top left, top right, bottom centre: the first spot clear of holes, labels and other artwork |
+
+- **Labels move out of the way:** with this on, a pot's label starts outside its knob and scale, and a button's outside its ring. Any label whose usual side runs into a cutout or off the panel goes on the other side (that applies with this off too).
+- **Per part:** in Edit labels, click a pot's **Artwork** cell to cycle auto / ticks / 0-10 / − 0 + / no scale, or a jack's to cycle auto / output / input.
+- **Checks:** any mark that would touch another hole, another label or the edge is left out, and Result has a NOTE saying how many. A title with no free space is a WARN.
+- **With Inkscape:** the made artwork is written into the artwork file as a guide layer, *Auto artwork*, so you can see it while drawing. That layer isn't imported (it's already on the panel), and it's rebuilt every time like the red cutouts.
+
 ## Artwork from Inkscape (optional)
 
 For anything labels can't do (borders, boxes, logos, white-on-black text, your own fonts), draw it in Inkscape on an exact 1:1 copy of the panel.

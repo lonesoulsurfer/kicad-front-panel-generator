@@ -11,7 +11,15 @@ CONFIG = os.path.join(os.environ.get('APPDATA') or os.path.expanduser('~'), 'pan
 DEFAULTS = dict(margin=0.0, margin_top=0.0, margin_right=0.0, margin_bottom=0.0, margin_left=0.0,
                 screws='none', screw_dia=2.2, screw_inset=3.5, screw_slot=0.0, rail_slot=0.0,
                 corner_radius=0.0, grow=0.0, svg=False, check_uncut='on',
-                artwork='off', labels='off', label_size=2.0, label_gap=1.5, label_pos='above', label_font='', label_bold='off', label_caps='off')
+                artwork='off', labels='off', label_size=2.0, label_gap=1.5, label_pos='above', label_font='', label_bold='off', label_caps='off',
+                auto_art='off', art_style='Classic synth', art_scale='ticks', art_rings='on', art_outputs='off', art_border='off',
+                art_title='', art_maker='', title_size=5.0, knob_size=13.0)
+ART_STYLES = {   # what each style switches on: pot scale, rings, outputs in boxes, border
+    'Minimal': dict(scale='Ticks', rings=False, outputs=False, border=False),
+    'Classic synth': dict(scale='Numbers 0-10', rings=True, outputs=False, border=True),
+    'Modular': dict(scale='Ticks', rings=False, outputs=True, border=False),
+}
+SCALES = {'None': 'none', 'Ticks': 'ticks', 'Numbers 0-10': 'numbers', 'Centre zero (- 0 +)': 'bipolar'}
 KICAD_FONT = "KiCad's own font"
 
 # preview colours
@@ -103,6 +111,11 @@ class App(tk.Tk):
         v['svg'] = tk.BooleanVar(); v['open'] = tk.BooleanVar(value=self.cfg.get('open_after', True))
         v['uncut_check'] = tk.BooleanVar(value=True)
         v['art_on'] = tk.BooleanVar()
+        v['auto_on'] = tk.BooleanVar(); v['art_style'] = tk.StringVar(value='Classic synth')
+        v['art_scale'] = tk.StringVar(value='Ticks'); v['art_rings'] = tk.BooleanVar(value=True)
+        v['art_outputs'] = tk.BooleanVar(); v['art_border'] = tk.BooleanVar()
+        v['art_title'] = tk.StringVar(); v['art_maker'] = tk.StringVar()
+        v['title_size'] = tk.StringVar(value='5'); v['knob_size'] = tk.StringVar(value='13')
         v['labels_on'] = tk.BooleanVar(); v['label_pos'] = tk.StringVar(value='above')
         v['label_gap'] = tk.StringVar(value='1.5'); v['label_size'] = tk.StringVar(value='2')
         v['label_font'] = tk.StringVar(value=KICAD_FONT); v['label_bold'] = tk.BooleanVar(); v['label_caps'] = tk.BooleanVar()
@@ -289,6 +302,45 @@ class App(tk.Tk):
         ttk.Checkbutton(row, text='ALL CAPS', variable=v['label_caps']).pack(side='left')
         ttk.Button(row, text='Edit labels…', command=self.edit_labels).pack(side='right')
 
+        # artwork made for you
+        s = self.section('auto', 'Artwork made for you', 'Optional: pot scales, rings, output boxes, a border and a title, '
+                                                         'drawn from your panel. No Inkscape needed.')
+        c = ttk.Checkbutton(s, text='Make artwork for me', variable=v['auto_on'], command=self.refresh_states)
+        c.pack(anchor='w')
+        Tip(c, 'Everything is placed from the holes and labels on your panel, and checked against them. It also goes into '
+               "the Inkscape file on its own layer, so you can draw more on top if you like.")
+        h6 = ttk.Frame(s); h6.pack(fill='x')
+        det = self.auto_detail = ttk.Frame(h6); det.pack(fill='x')
+        g = ttk.Frame(det); g.pack(fill='x', pady=(6, 0))
+        ttk.Label(g, text='Style').grid(row=0, column=0, sticky='w')
+        sc = ttk.Combobox(g, textvariable=v['art_style'], values=list(ART_STYLES) + ['Custom'], width=14, state='readonly')
+        sc.grid(row=0, column=1, columnspan=3, sticky='w', padx=4)
+        sc.bind('<<ComboboxSelected>>', lambda e: self.apply_style())
+        Tip(sc, 'Minimal: ticks round the pots. Classic synth: numbered scales, rings round buttons, a border. '
+                "Modular: ticks, and outputs in filled boxes (any jack whose label says OUT). Change anything below after.")
+        ttk.Label(g, text='Title').grid(row=1, column=0, sticky='w', pady=(6, 0))
+        ttk.Entry(g, textvariable=v['art_title'], width=20).grid(row=1, column=1, columnspan=3, sticky='w', padx=4, pady=(6, 0))
+        l = ttk.Label(g, text='Size'); l.grid(row=1, column=4, sticky='w', padx=(10, 0), pady=(6, 0))
+        self.num(g, 'title_size', grid=(1, 5)); ttk.Label(g, text='mm').grid(row=1, column=6, sticky='w', pady=(6, 0))
+        l = ttk.Label(g, text='Maker'); l.grid(row=2, column=0, sticky='w', pady=(6, 0))
+        Tip(l, 'Your name or brand, small, along the bottom. Leave empty for none.')
+        ttk.Entry(g, textvariable=v['art_maker'], width=20).grid(row=2, column=1, columnspan=3, sticky='w', padx=4, pady=(6, 0))
+        ttk.Label(g, text='Pot scale').grid(row=3, column=0, sticky='w', pady=(6, 0))
+        ps = ttk.Combobox(g, textvariable=v['art_scale'], values=list(SCALES), width=16, state='readonly')
+        ps.grid(row=3, column=1, columnspan=3, sticky='w', padx=4, pady=(6, 0))
+        Tip(ps, 'Marks round every pot, over a 300 degree turn. Change one pot (e.g. centre zero for a pan pot) in Edit labels.')
+        l = ttk.Label(g, text='Knob'); l.grid(row=3, column=4, sticky='w', padx=(10, 0), pady=(6, 0))
+        Tip(l, 'Knob diameter: the scale and the label start outside it, so the knob never hides them.')
+        self.num(g, 'knob_size', grid=(3, 5)); ttk.Label(g, text='mm').grid(row=3, column=6, sticky='w', pady=(6, 0))
+        row = ttk.Frame(det); row.pack(fill='x', pady=(6, 0))
+        ttk.Checkbutton(row, text='Rings round buttons', variable=v['art_rings']).pack(side='left', padx=(0, 12))
+        ttk.Checkbutton(row, text='Border', variable=v['art_border']).pack(side='left', padx=(0, 12))
+        c = ttk.Checkbutton(row, text='Outputs in filled boxes', variable=v['art_outputs']); c.pack(side='left')
+        Tip(c, "Jacks whose label says OUT get a filled box with the label cut out of it - the usual way to tell outputs "
+               "from inputs. Set any jack to output or input in Edit labels.")
+        for k in ('art_scale', 'art_rings', 'art_border', 'art_outputs'):
+            v[k].trace_add('write', lambda *_: self.style_custom())
+
         # artwork
         s = self.section('art', 'Artwork from Inkscape', 'Optional: your own graphics and text, drawn on a 1:1 copy of the panel.')
         c = ttk.Checkbutton(s, text='Add my artwork to the silkscreen', variable=v['art_on'], command=self.refresh_states)
@@ -390,8 +442,8 @@ class App(tk.Tk):
 
     def renumber(self):
         """Show the sections that apply to this kind of panel, numbered in order."""
-        show = {'pcb', 'open', 'labels', 'art', 'restore'} | ({'rail'} if self.mode == 'eurorack' else {'size', 'case'})
-        order = ['pcb', 'size', 'rail', 'case', 'open', 'labels', 'art', 'restore']
+        show = {'pcb', 'open', 'labels', 'auto', 'art', 'restore'} | ({'rail'} if self.mode == 'eurorack' else {'size', 'case'})
+        order = ['pcb', 'size', 'rail', 'case', 'open', 'labels', 'auto', 'art', 'restore']
         n = 0
         for k in order:
             f, badge = self.sections[k]
@@ -435,6 +487,7 @@ class App(tk.Tk):
         self.show(self.case_detail, v['screws'].get() != 'none', fill='x')
         self.show(self.label_detail, v['labels_on'].get(), fill='x')
         self.show(self.art_detail, v['art_on'].get(), fill='x')
+        self.show(self.auto_detail, v['auto_on'].get(), fill='x')
         self.art_state()
         en(self.w_margin, v['expand'].get() and not v['per_side'].get())
         en(self.w_per, v['expand'].get())
@@ -512,6 +565,28 @@ class App(tk.Tk):
             os.startfile(d)
         elif d:
             messagebox.showinfo('Panel Generator', f"The panel folder is:\n{d}" + ('' if os.path.isdir(d) else '\n(not made yet)'))
+
+    def apply_style(self):
+        st = ART_STYLES.get(self.vars['art_style'].get())
+        if not st:
+            return
+        self.applying_style = True
+        try:
+            v = self.vars
+            v['art_scale'].set(st['scale']); v['art_rings'].set(st['rings'])
+            v['art_outputs'].set(st['outputs']); v['art_border'].set(st['border'])
+        finally:
+            self.applying_style = False
+
+    def style_custom(self):
+        """Changing a single item by hand makes the style 'Custom'."""
+        if getattr(self, 'applying_style', False) or self.loading:
+            return
+        st = ART_STYLES.get(self.vars['art_style'].get())
+        v = self.vars
+        if st and (v['art_scale'].get(), v['art_rings'].get(), v['art_outputs'].get(), v['art_border'].get()) != \
+                (st['scale'], st['rings'], st['outputs'], st['border']):
+            v['art_style'].set('Custom')
 
     def show(self, w, on, **pack):
         if on and not w.winfo_manager():
@@ -622,6 +697,13 @@ class App(tk.Tk):
             v['uncut_check'].set(s['check_uncut'] != 'off')
             v['art_on'].set(s['artwork'] == 'on')
             v['labels_on'].set(s['labels'] == 'on')
+            v['auto_on'].set(s['auto_art'] == 'on')
+            v['art_style'].set(s.get('art_style') or 'Custom')
+            v['art_scale'].set(next((k for k, x in SCALES.items() if x == s['art_scale']), 'Ticks'))
+            v['art_rings'].set(s['art_rings'] == 'on'); v['art_outputs'].set(s['art_outputs'] == 'on')
+            v['art_border'].set(s['art_border'] == 'on')
+            v['art_title'].set(s['art_title']); v['art_maker'].set(s['art_maker'])
+            v['title_size'].set(f"{s['title_size']:g}"); v['knob_size'].set(f"{s['knob_size']:g}")
             v['label_pos'].set(s['label_pos']); v['label_gap'].set(f"{s['label_gap']:g}"); v['label_size'].set(f"{s['label_size']:g}")
             v['label_font'].set(s['label_font'] or KICAD_FONT)
             v['label_bold'].set(s['label_bold'] == 'on'); v['label_caps'].set(s['label_caps'] == 'on')
@@ -713,6 +795,20 @@ class App(tk.Tk):
                      '--label-bold', 'on' if v['label_bold'].get() else 'off', '--label-caps', 'on' if v['label_caps'].get() else 'off']
         else:
             args += ['--labels', 'off']
+        if v['auto_on'].get():
+            ts, ks = self.number('title_size', 'title size'), self.number('knob_size', 'knob size')
+            if ts < 1:
+                raise ValueError('Title size must be at least 1 mm')
+            if ks < 3:
+                raise ValueError('Knob size is the knob diameter in mm (13 is typical for small synth knobs)')
+            args += ['--auto-art', 'on', '--art-style', v['art_style'].get(), '--art-scale', SCALES[v['art_scale'].get()],
+                     '--art-rings', 'on' if v['art_rings'].get() else 'off',
+                     '--art-outputs', 'on' if v['art_outputs'].get() else 'off',
+                     '--art-border', 'on' if v['art_border'].get() else 'off',
+                     '--art-title', v['art_title'].get(), '--art-maker', v['art_maker'].get(),
+                     '--title-size', f'{ts:g}', '--knob-size', f'{ks:g}']
+        else:
+            args += ['--auto-art', 'off']
         args += ['--artwork', 'on' if v['art_on'].get() else 'off']
         args += ['--ui-state', json.dumps(self.ui)]
         for r in restore:
@@ -1174,21 +1270,21 @@ class App(tk.Tk):
 
 class LabelEditor(tk.Toplevel):
     """Table of every label: show/hide, change the text, put it above or below, undo a move."""
-    COLS = ('show', 'part', 'text', 'pos', 'gap', 'moved', 'src')
+    COLS = ('show', 'part', 'text', 'pos', 'gap', 'art', 'moved', 'src')
 
     def __init__(self, app):
         super().__init__(app)
         self.app = app
-        self.title('Edit labels'); self.geometry('1040x520'); self.transient(app)
+        self.title('Edit labels'); self.geometry('1150x520'); self.transient(app)
         f = ttk.Frame(self, padding=12); f.pack(fill='both', expand=True)
         ttk.Label(f, text='Labels', style='Head.TLabel').pack(anchor='w')
         ttk.Label(f, text='Click the tick to show or hide a label  ·  double-click the text to change it  ·  click Position to '
-                          'switch above/below  ·  double-click Gap to set the gap for one label (blank = the main setting)  ·  labels you move in KiCad keep their place: click Moved to put one back',
-                  style='Dim.TLabel', wraplength=1010, justify='left').pack(anchor='w', pady=(2, 8))
+                          'switch above/below  ·  double-click Gap to set the gap for one label (blank = the main setting)  ·  click Artwork to change the scale of a pot or mark a jack as output or input  ·  labels you move in KiCad keep their place: click Moved to put one back',
+                  style='Dim.TLabel', wraplength=1120, justify='left').pack(anchor='w', pady=(2, 8))
         tf = ttk.Frame(f); tf.pack(fill='both', expand=True)
         t = self.tree = ttk.Treeview(tf, columns=self.COLS, show='headings', selectmode='browse')
         for col, txt, w, anchor in (('show', 'Show', 50, 'center'), ('part', 'Part', 120, 'w'), ('text', 'Label text', 220, 'w'),
-                                    ('pos', 'Position', 90, 'center'), ('gap', 'Gap', 80, 'center'), ('moved', 'Moved', 90, 'center'), ('src', 'Text came from', 330, 'w')):
+                                    ('pos', 'Position', 90, 'center'), ('gap', 'Gap', 80, 'center'), ('art', 'Artwork', 110, 'center'), ('moved', 'Moved', 90, 'center'), ('src', 'Text came from', 330, 'w')):
             t.heading(col, text=txt); t.column(col, width=w, anchor=anchor, stretch=(col == 'text'))
         sb = ttk.Scrollbar(tf, command=t.yview); t.configure(yscrollcommand=sb.set)
         sb.pack(side='right', fill='y'); t.pack(fill='both', expand=True)
@@ -1214,7 +1310,13 @@ class LabelEditor(tk.Toplevel):
             if src == '-' and sk[0]:
                 src = f'not used: "{sk[0]}" {sk[1]}'
             gap = f"{r['gap']:g} mm" if r.get('gap') is not None else 'auto'
-            t.insert('', 'end', iid=r['fid'], values=('☐' if r['hide'] else '☑', r['ref'], text, pos, gap, moved, src))
+            art = ''
+            if r.get('kind') == 'pot':
+                art = {None: 'scale: auto', 'none': 'no scale', 'ticks': 'ticks', 'numbers': '0-10',
+                       'bipolar': '- 0 +'}.get(r.get('scale'), 'scale: auto')
+            elif r.get('kind') == 'jack':
+                art = {None: 'auto', 'out': 'output', 'in': 'input'}.get(r.get('io'), 'auto')
+            t.insert('', 'end', iid=r['fid'], values=('☐' if r['hide'] else '☑', r['ref'], text, pos, gap, art, moved, src))
         if sel and t.exists(sel[0]):
             t.selection_set(sel[0])
 
@@ -1226,11 +1328,11 @@ class LabelEditor(tk.Toplevel):
     def edit(self, fid, **changes):
         e = dict(self.app.ui['label_edits'].get(fid, {}))
         for k, val in changes.items():
-            if k == 'gap':
+            if k in ('gap', 'scale', 'io'):
                 if val is None:
-                    e.pop('gap', None)
+                    e.pop(k, None)
                 else:
-                    e['gap'] = val
+                    e[k] = val
             elif val in (None, '', False, 0, 0.0) and k != 'text':
                 e.pop(k, None)
             elif k == 'text' and val is None:
@@ -1254,7 +1356,13 @@ class LabelEditor(tk.Toplevel):
         elif col == '#4':
             nxt = {'': 'above', 'above': 'below', 'below': ''}[r['pos'] or '']
             self.edit(fid, pos=nxt)
-        elif col == '#6' and (r['dx'] or r['dy']):
+        elif col == '#6' and r.get('kind') == 'pot':
+            seq = [None, 'ticks', 'numbers', 'bipolar', 'none']
+            self.edit(fid, scale=seq[(seq.index(r.get('scale')) + 1) % len(seq)] if r.get('scale') in seq else 'ticks')
+        elif col == '#6' and r.get('kind') == 'jack':
+            seq = [None, 'out', 'in']
+            self.edit(fid, io=seq[(seq.index(r.get('io')) + 1) % len(seq)] if r.get('io') in seq else 'out')
+        elif col == '#7' and (r['dx'] or r['dy']):
             self.edit(fid, dx=0, dy=0)
 
     def dclick(self, ev):
@@ -1282,7 +1390,7 @@ class LabelEditor(tk.Toplevel):
         e.bind('<Return>', done); e.bind('<FocusOut>', done); e.bind('<Escape>', lambda _: done(save=False))
 
     def reset_all(self):
-        if messagebox.askyesno('Edit labels', 'Undo every label change - text, hidden, position, gap and moves - for this board?', parent=self):
+        if messagebox.askyesno('Edit labels', 'Undo every label change - text, hidden, position, gap, artwork and moves - for this board?', parent=self):
             self.app.ui['label_edits'] = {}
             self.app.persist_ui(); self.app.update_preview()
 

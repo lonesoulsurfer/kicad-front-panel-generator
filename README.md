@@ -60,7 +60,22 @@ Tick **Add labels from the PCB** and a label section opens. Each pot, jack and s
 
 ![Labels added from the PCB, in a custom font](docs/images/step3_labels.png)
 
-### 4. Add your own artwork (optional)
+### 4. Let it make the artwork (optional)
+
+Don't want to open Inkscape? Tick **Make artwork for me** and Panel Generator draws the artwork from your panel:
+
+- **Pot scales:** tick marks, 0–10 numbers or centre-zero (− 0 +) round each pot, over a 300° turn. Set the **Knob** size so the scale and the label start outside the knob.
+- **Rings** round push buttons.
+- **Outputs in filled boxes:** any jack whose label says OUT gets a solid box with the label cut out of it, the usual way modular panels show outputs.
+- **Border** and a **title** along the top (plus your name or brand, small, along the bottom). They go in the first free spot.
+
+Pick a **Style** to start from (*Minimal*, *Classic synth* or *Modular*) and change anything after. To change one part (a centre-zero scale for a pan pot, or a jack that's an output but isn't labelled OUT), click its **Artwork** cell in **Edit labels**. Anything that would hit a hole, a label or the edge is left out, and you get a note.
+
+![Artwork made for you](docs/images/auto_artwork.png)
+
+You can use this and Inkscape together: the made artwork appears in the Inkscape file on its own layer, so you can draw more on top.
+
+### 5. Draw your own artwork in Inkscape (optional)
 
 Labels only do text. For anything else (borders, logos, boxes, white-on-black text, your own fonts), tick **Add my artwork to the silkscreen** and click **Create artwork file**.
 
@@ -79,7 +94,7 @@ The red holes aren't printed. They're redrawn from the PCB every time you genera
 
 ![Inkscape artwork in the preview](docs/images/step4_artwork.png)
 
-### 5. Generate the panel
+### 6. Generate the panel
 
 When the preview looks right, click **Generate panel**. This makes the panel file (`<your board>_panel.kicad_pcb`) in a `Front Panel` folder next to your PCB, and opens it in KiCad so you can check it, including in the 3D viewer.
 
@@ -89,7 +104,7 @@ Close the panel in KiCad before you generate again, so the file can be replaced.
 
 ![The generated panel open in KiCad](docs/images/step5_kicad.png)
 
-### 6. Make gerbers
+### 7. Make gerbers
 
 Click **Make gerbers**. Panel Generator uses KiCad to make the gerber and drill files, checks the panel, and puts everything in one zip in the `Front Panel` folder. Upload that zip to JLCPCB, PCBWay or a similar fab.
 

@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.18.2"
+VERSION = "0.19.0"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -818,6 +818,13 @@ def write_svg(path, x1, y1, x2, y2, shapes, labels=(), a=None):
                 parts.append(f'<text x="{fmt((bx[0] + bx[2]) / 2)}" y="{fmt(bx[3] + 2.2)}" font-family="sans-serif" '
                              f'font-size="1.8" text-anchor="middle" fill="#1f6feb" stroke="none">{t}</text>')
         parts.append('</g>')
+    auto = getattr(a, '_auto', []) if a is not None else []
+    if auto:
+        parts.append(L('auto', 'Auto artwork (made by Panel Generator - not imported)', ' style="display:inline;opacity:0.5"'))
+        for p in auto:
+            d = 'M' + ' L'.join(f'{fmt(x)},{fmt(y)}' for x, y in list(p.exterior.coords)[:-1]) + ' Z'
+            parts.append(f'<path d="{d}" fill="#000" stroke="none"/>')
+        parts.append('</g>')
     if labels:
         fam = (a.label_font or 'sans-serif').replace('"', '')
         parts.append(L('labels', 'Labels (made by Panel Generator - not imported)', ' style="display:inline;opacity:0.5"'))
@@ -1046,7 +1053,7 @@ def text_width(text, h, bold=False, font=''):
         return max(1, len(text)) * h * KICAD_EM * 0.75          # unknown font: assume a wide-ish one
     return max(1, len(text)) * h * (0.9 if bold else 0.8)
 
-def make_labels(pcb, cutouts, groups, outline, a, edits, log, no_hole=()):
+def make_labels(pcb, cutouts, groups, outline, a, edits, log, no_hole=(), clear=None):
     """Labels for every part that has a cutout, and for parts marked as needing none (edge jacks, a reset button
     behind the panel): (labels to place, table rows for the window)."""
     fps = {fp.uuid: fp for fp in map(Footprint, kids(pcb, 'footprint')) if fp.uuid}
@@ -1074,7 +1081,8 @@ def make_labels(pcb, cutouts, groups, outline, a, edits, log, no_hole=()):
         row = dict(fid=fid, ref=fp.ref + (' (panel)' if fid.startswith('manual:') else ' (no hole)' if fid in ob_px else ''), guess=guess, source=src, text=text, hide=bool(e.get('hide')),
                    skipped=skipped_label(fp) if not guess else ('', ''),
                    pos=e.get('pos', ''), dx=e.get('dx', 0.0), dy=e.get('dy', 0.0),
-                   gap=e.get('gap') if isinstance(e.get('gap'), (int, float)) else None)
+                   gap=e.get('gap') if isinstance(e.get('gap'), (int, float)) else None,
+                   kind=part_kind(cs[0], fp) if cs else 'no hole', scale=e.get('scale'), io=e.get('io'))
         rows.append(row)
         if not text.strip() and not row['hide'] and row['skipped'][0]:
             log.append(f"CHECK no label for {fp.ref}: \"{row['skipped'][0]}\" {row['skipped'][1]}, so it isn't used. "
@@ -1093,6 +1101,10 @@ def make_labels(pcb, cutouts, groups, outline, a, edits, log, no_hole=()):
             ob = unary_union([c['geom'] for c in cs]).bounds
             grp = next((key_group[c['key']] for c in cs if c.get('key') in key_group), None)
             gb = grp['geom'].bounds if grp else ob
+            circ = next((c['circle'] for c in cs if c.get('circle')), None)
+            if clear and fid in clear and circ:       # a pot: start the gap outside its knob and scale
+                R = clear[fid]
+                ob = gb = (circ[0] - R, circ[1] - R, circ[0] + R, circ[1] + R)
         if grp and len(grp.get('member_keys') or []) > 1 and not e.get('pos'):
             at_top, at_bottom = abs(ob[1] - gb[1]) < 0.05, abs(ob[3] - gb[3]) < 0.05
             if at_top != at_bottom:               # a key in a merged slot: label on its own side of the slot
@@ -1111,6 +1123,14 @@ def make_labels(pcb, cutouts, groups, outline, a, edits, log, no_hole=()):
             fits = lambda y: outline.contains(box(ax - w0 / 2, y - h / 2, ax + w0 / 2, y + h / 2)) and \
                 not any(box(ax - w0 / 2, y - h / 2, ax + w0 / 2, y + h / 2).intersects(g['geom']) for g in groups)
             ay = next((y for y in (ay, other, (gb[1] + gb[3]) / 2) if fits(y)), ay)
+        elif not e.get('pos') and not (grp and len(grp.get('member_keys') or []) > 1):
+            # the usual side runs into a cutout or off the panel: use the other side if that's clear
+            w0 = text_width(text, h, bold, a.label_font)
+            bx_ = lambda y: box(ax - w0 / 2, y - h / 2, ax + w0 / 2, y + h / 2)
+            bad = lambda y: not outline.contains(bx_(y)) or any(bx_(y).intersects(g['geom']) for g in groups)
+            other = gb[3] + g_ + h / 2 if pos == 'above' else gb[1] - g_ - h / 2
+            if bad(ay) and not bad(other):
+                ay = other
         x, y = ax + row['dx'], ay + row['dy']
         placed.append(dict(fid=fid, ref=fp.ref, text=text, x=round(x, 4), y=round(y, 4), auto=(round(ax, 4), round(ay, 4)),
                            h=h, w=text_width(text, h, bold, a.label_font), status='ok'))
@@ -1213,7 +1233,7 @@ def art_layer(text):
                 return i, lab, layers
     return None, None, layers
 
-GUIDE_LAYERS = ('panel', 'labels', 'markers')    # layers Panel Generator draws as guides: never printed
+GUIDE_LAYERS = ('panel', 'labels', 'markers', 'auto')    # layers Panel Generator draws as guides: never printed
 
 def svg_element_span(text, el_id, tag='g'):
     """(start, end) of the <g ... id="el_id"> element in raw SVG text, or None. Keeps everything else byte-for-byte."""
@@ -1315,7 +1335,7 @@ def refresh_artwork_guides(art_svg, template_svg, log):
     except OSError:
         return
     new = rescue_from_guides(art, log)
-    for lid in ('labels', 'markers', 'panel'):   # labels and part-marker guides, then the red cutouts on top
+    for lid in ('auto', 'labels', 'markers', 'panel'):   # auto artwork, labels and marker guides, then the red cutouts on top
         t_span, a_span = svg_element_span(tpl, lid), svg_element_span(new, lid)
         fresh = tpl[t_span[0]:t_span[1]] if t_span else ''
         if a_span:
@@ -1496,6 +1516,254 @@ def artwork_items(polys, uuids):
         out.append(f'\t(gr_poly (pts {xy}) (stroke (width 0) (type solid)) (fill yes) (layer "F.SilkS") (uuid "{u}"))')
     return out
 
+# ---------------------------------------------------------------- auto artwork
+SANS_FONTS = ('Arial', 'Helvetica', 'DejaVu Sans', 'Liberation Sans', 'Segoe UI', 'Verdana')
+
+def part_kind(c, fp=None):
+    """What a cutout is for: pot, encoder, jack, led, toggle, button, key, screen or other."""
+    t = ' '.join([c.get('rule') or '', getattr(fp, 'lib', '') or '', getattr(fp, 'props', {}).get('Value', '')]).lower()
+    if re.search(r'encoder', t):
+        return 'encoder'
+    if re.search(r'(^|[\W_])pot|potentiometer|r_pot|rv\d', t):
+        return 'pot'
+    if re.search(r'jack|thonk|audiojack|pj3', t):
+        return 'jack'
+    if re.search(r'(^|[\W_])led', t):
+        return 'led'
+    if re.search(r'toggle|spdt|dpdt', t):
+        return 'toggle'
+    if re.search(r'(^|[\W_])mx([\W_]|$)|cherry', t):
+        return 'key'
+    if re.search(r'tft|oled|lcd|screen|display', t):
+        return 'screen'
+    if re.search(r'switch|button|push|alps|skrc|tact', t):
+        return 'button'
+    return 'other'
+
+def text_shapes(text, cx, cy, h, font='', bold=False):
+    """Text as silkscreen polygons, its capital letters h mm tall and centred on (cx, cy). Uses the font's own shapes,
+    so it can be cut out of a filled shape (KiCad's text can't)."""
+    from PIL import Image, ImageDraw, ImageFont
+    import tempfile
+    path = font_file(font, bold) if font else None
+    for fam in ([] if path else SANS_FONTS):
+        path = font_file(fam, bold) or font_file(fam, False)
+        if path:
+            break
+    def load(size):
+        if path:
+            return ImageFont.truetype(path, size)
+        try:
+            return ImageFont.load_default(size=size)
+        except TypeError:
+            return ImageFont.load_default()
+    ppm = 40                                                    # pixels per mm: 0.025 mm steps
+    f0 = load(200)
+    cap = f0.getbbox('H', anchor='ls')
+    cap_px = max(1, cap[3] - cap[1])
+    f = load(max(4, round(200 * h * ppm / cap_px)))
+    l, t, r, b = f.getbbox(text, anchor='ls')
+    pad = 4
+    im = Image.new('L', (r - l + 2 * pad, b - t + 2 * pad), 255)
+    ImageDraw.Draw(im).text((pad - l, pad - t), text, font=f, fill=0, anchor='ls')
+    cap_s = f.getbbox('H', anchor='ls')
+    base_row = pad - t                                         # the baseline, in image rows
+    x0 = cx - im.width / ppm / 2
+    y0 = cy + (cap_s[3] - cap_s[1]) / ppm / 2 - base_row / ppm
+    fd, png = tempfile.mkstemp(suffix='.png'); os.close(fd)
+    try:
+        im.save(png)
+        polys = trace_png(png, ppm * 25.4, x0, y0)
+    finally:
+        os.remove(png)
+    return polys
+
+def rounded_box(x1, y1, x2, y2, r):
+    r = max(0.0, min(r, (x2 - x1) / 2 - 1e-3, (y2 - y1) / 2 - 1e-3))
+    b = box(x1, y1, x2, y2)
+    return b.buffer(-r, join_style=2).buffer(r, quad_segs=16) if r > 0 else b
+
+def auto_label_clearance(cutouts, fps, a):
+    """How far from a pot's centre its label must start, so the knob and scale don't hide it."""
+    if a.auto_art != 'on':
+        return {}
+    out = {}
+    for c in cutouts:
+        if c.get('shadow') or not c.get('circle') or ':mount' in c.get('key', ''):
+            continue
+        kind = part_kind(c, fps.get(c['id']))
+        if kind in ('pot', 'encoder'):
+            out[c['id']] = auto_scale_radius(a, c['id']) + 0.4
+        elif kind == 'button' and a.art_rings == 'on':
+            out[c['id']] = c['circle'][2] + 1.6 + 0.3
+    return out
+
+def auto_scale_radius(a, fid=None):
+    """Outer radius of a pot's knob plus its scale."""
+    mode = (a._art_edits.get(fid, {}).get('scale') if fid else None) or a.art_scale
+    r = a.knob_size / 2 + 0.6
+    if mode in ('ticks', 'numbers', 'bipolar'):
+        r += 1.5
+    if mode in ('numbers', 'bipolar'):
+        r += 0.5 + a.scale_text
+    return r
+
+def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log):
+    """Artwork made from the panel itself: pot scales, rings round buttons, outputs in filled boxes, a border and a
+    title. Returns silkscreen polygons; labels that get cut out of an output box are taken off the plain labels."""
+    from shapely.ops import unary_union
+    from shapely.geometry import Point
+    font, bold = a.label_font, a.label_bold == 'on'
+    sbold = bold or not font            # KiCad's own font has no file: use a bold sans, thin strokes don't survive silkscreen
+    holes = unary_union([g['geom'] for g in groups]) if groups else Point(0, 0).buffer(0)
+    keep_out = holes.buffer(0.4)
+    inside = outline.buffer(-0.6)
+    label_box = {L['fid']: box(L['x'] - L['w'] / 2, L['y'] - L['h'] / 2, L['x'] + L['w'] / 2, L['y'] + L['h'] / 2)
+                 for L in placed}
+    parts = {}
+    for c in cutouts:
+        if c.get('shadow') or ':mount' in c.get('key', '') or c['rule'] in ('Mounting hole',) or c['id'] not in fps:
+            continue
+        parts.setdefault(c['id'], []).append(c)
+    shapes, dropped = [], 0
+    def other_labels(fid):
+        return unary_union([b for f, b in label_box.items() if f != fid]) if len(label_box) > 1 else None
+
+    # 1. pot scales
+    for fid, cs in parts.items():
+        c = next((x for x in cs if x.get('circle')), None)
+        if not c or part_kind(c, fps.get(fid)) != 'pot':
+            continue
+        mode = edits.get(fid, {}).get('scale') or a.art_scale
+        if mode not in ('ticks', 'numbers', 'bipolar'):
+            continue
+        cx, cy, _ = c['circle']
+        r0 = a.knob_size / 2 + 0.6
+        others = holes.difference(c['geom'].buffer(0.01)).buffer(0.5)
+        lab = other_labels(fid)
+        sweep = math.radians(a.pot_sweep)
+        for i in range(11):
+            th = -sweep / 2 + sweep * i / 10                      # clockwise from 12 o'clock
+            dx, dy = math.sin(th), -math.cos(th)
+            major = i in (0, 10) or (i == 5 and mode == 'bipolar')
+            ln = 1.5 if major else 0.9
+            tick = LineString([(cx + dx * r0, cy + dy * r0), (cx + dx * (r0 + ln), cy + dy * (r0 + ln))]).buffer(
+                0.15 if not major else 0.2, cap_style=2)
+            if tick.intersects(others) or not inside.contains(tick) or (lab and tick.intersects(lab)):
+                dropped += 1; continue
+            shapes.append(tick)
+            word = None
+            if mode == 'numbers':
+                word = str(i)
+            elif mode == 'bipolar' and i in (0, 5, 10):
+                word = {0: '-', 5: '0', 10: '+'}[i]
+            if word:
+                rr = r0 + 1.5 + 0.5 + a.scale_text / 2 + (0.3 if len(word) > 1 else 0)
+                ts = text_shapes(word, cx + dx * rr, cy + dy * rr, a.scale_text, font, True)
+                u = unary_union(ts) if ts else None
+                if u is None or u.intersects(others) or not inside.contains(u) or (lab and u.intersects(lab)):
+                    dropped += 1; continue
+                shapes += ts
+
+    # 2. rings round buttons
+    if a.art_rings == 'on':
+        for fid, cs in parts.items():
+            c = next((x for x in cs if x.get('circle')), None)
+            if not c or part_kind(c, fps.get(fid)) != 'button':
+                continue
+            cx, cy, r = c['circle']
+            ring = Point(cx, cy).buffer(r + 1.6, quad_segs=32).difference(Point(cx, cy).buffer(r + 0.8, quad_segs=32))
+            clash = holes.difference(c['geom'].buffer(0.01)).buffer(0.4)
+            ring = ring.difference(clash).intersection(inside)
+            if not ring.is_empty:
+                shapes.append(ring)
+
+    # 3. outputs in a filled box, the label cut out of it
+    knocked = set()
+    if a.art_outputs == 'on':
+        tabs = []
+        for fid, cs in parts.items():
+            c = next((x for x in cs if x.get('circle')), None)
+            if not c or part_kind(c, fps.get(fid)) != 'jack':
+                continue
+            L = next((x for x in placed if x['fid'] == fid), None)
+            io = edits.get(fid, {}).get('io')
+            out = io == 'out' or (io != 'in' and L is not None and re.search(r'\bOUT', L['text'], re.I))
+            if not out:
+                continue
+            own = unary_union([x['geom'] for x in cs])
+            bx = list(own.buffer(1.2).bounds)
+            txt = text_shapes(L['text'], L['x'], L['y'], L['h'], font, sbold) if L else []
+            if txt:
+                lb = unary_union(txt).buffer(0.8, join_style=2).bounds     # the real text, not the estimate
+                bx = [min(bx[0], lb[0]), min(bx[1], lb[1]), max(bx[2], lb[2]), max(bx[3], lb[3])]
+            tab = rounded_box(*bx, 1.0)
+            if txt:
+                tab = tab.difference(unary_union(txt))
+                knocked.add(fid)
+            others = holes.difference(own.buffer(0.01)).buffer(0.5)
+            if tab.intersection(others).area > 0.05:
+                log.append(f"NOTE  the output box for {fps[fid].ref} runs into a nearby hole - it's trimmed there. "
+                           "Move the label or the part if it looks odd")
+            tabs.append(tab.difference(own.buffer(0.3)).difference(others))
+        if tabs:
+            shapes.append(unary_union(tabs).intersection(inside))
+
+    # 4. border
+    if a.art_border == 'on':
+        inner = outline.buffer(-(border_in_ := (max(1.5, a.screw_inset + a.screw_dia / 2 + 1.0) if a.screws != 'none' else 1.5)),
+                               join_style=1)
+        if not inner.is_empty:
+            band = inner.difference(inner.buffer(-0.6, join_style=1))
+            band = band.difference(holes.buffer(0.8))
+            for f, b in label_box.items():
+                if f not in knocked:
+                    band = band.difference(b.buffer(0.6))
+            shapes.append(band)
+
+    # 5. title along the top, maker along the bottom: the first spot that's free
+    taken = unary_union([holes.buffer(0.8)] + [b.buffer(0.6) for f, b in label_box.items() if f not in knocked]
+                        + [g.buffer(0.6) for g in shapes])
+    x1, y1, x2, y2 = outline.bounds
+    border_in = (max(1.5, a.screw_inset + a.screw_dia / 2 + 1.0) if a.screws != 'none' else 1.5) + 0.6
+    edge = border_in + 1.2 if a.art_border == 'on' else 2.0
+    region = outline.buffer(-edge + 0.01)
+    def place(text, h, spots, what):
+        if not text.strip():
+            return
+        sh = text_shapes(text, 0, 0, h, a.title_font or font, a.title_bold == 'on' if what == 'title' else sbold)
+        if not sh:
+            return
+        u = unary_union(sh); bx = u.bounds; w = bx[2] - bx[0]
+        for sx, sy in spots(w):
+            moved = [shapely_translate(p, sx, sy) for p in sh]
+            mu = unary_union(moved)
+            if region.contains(mu) and not mu.intersects(taken):
+                shapes.extend(moved); return
+        log.append(f"WARN  no free space for the {what} '{text}' - make the panel bigger, the text smaller, or turn it off")
+    m = edge + 0.4
+    th = a.title_size
+    place(a.art_title, th, lambda w: [((x1 + x2) / 2, y1 + m + th / 2), (x1 + m + w / 2, y1 + m + th / 2),
+                                      (x2 - m - w / 2, y1 + m + th / 2), ((x1 + x2) / 2, y2 - m - th / 2)], 'title')
+    ms = max(1.5, a.label_size * 0.8)
+    place(a.art_maker, ms, lambda w: [(x2 - m - w / 2, y2 - m - ms / 2), (x1 + m + w / 2, y2 - m - ms / 2),
+                                      ((x1 + x2) / 2, y2 - m - ms / 2)], 'maker name')
+
+    if dropped:
+        log.append(f"NOTE  auto artwork: left out {dropped} scale mark{'s' if dropped > 1 else ''} that would hit a hole, a label "
+                   "or the edge")
+    polys = []
+    for g in shapes:
+        g = g.intersection(inside)
+        for p in (g.geoms if hasattr(g, 'geoms') else [g]):
+            if p.geom_type == 'Polygon' and p.area > 1e-4:
+                polys += fracture(p)
+    return polys, knocked
+
+def shapely_translate(g, dx, dy):
+    from shapely.affinity import translate
+    return translate(g, dx, dy)
+
 # ---------------------------------------------------------------- gerbers
 GERBER_LAYERS = 'F.Cu,B.Cu,F.Mask,B.Mask,F.SilkS,B.SilkS,Edge.Cuts'
 
@@ -1654,6 +1922,20 @@ def main(argv=None, preview=None):
     ap.add_argument('--label-font', help='a font installed on your computer, e.g. Arial ("" = KiCad\'s own font, default)')
     ap.add_argument('--label-bold', choices=['on', 'off'])
     ap.add_argument('--label-caps', choices=['on', 'off'], help='ALL CAPS labels')
+    ap.add_argument('--auto-art', choices=['on', 'off'], help='make artwork for you: pot scales, rings, output boxes, border, title')
+    ap.add_argument('--art-style', help=argparse.SUPPRESS)   # the window's style name, kept with the settings
+    ap.add_argument('--art-scale', choices=['none', 'ticks', 'numbers', 'bipolar'], help='pot scales (default ticks)')
+    ap.add_argument('--art-rings', choices=['on', 'off'], help='rings round push buttons')
+    ap.add_argument('--art-outputs', choices=['on', 'off'], help="jacks whose label says OUT get a filled box, the label cut out of it")
+    ap.add_argument('--art-border', choices=['on', 'off'], help='a line round the panel, inside the case screws')
+    ap.add_argument('--art-title', help='title along the top of the panel')
+    ap.add_argument('--art-maker', help='your name or brand, small, along the bottom')
+    ap.add_argument('--title-size', type=float, help='title height, mm (default 5)')
+    ap.add_argument('--title-font', help='font for the title ("" = the label font)')
+    ap.add_argument('--title-bold', choices=['on', 'off'])
+    ap.add_argument('--knob-size', type=float, help='knob diameter, mm: the pot scale starts outside it (default 13)')
+    ap.add_argument('--pot-sweep', type=float, help='how far the pots turn, degrees (default 300)')
+    ap.add_argument('--scale-text', type=float, help='size of the numbers on pot scales, mm (default 1.4)')
     ap.add_argument('--artwork', choices=['on', 'off'],
                     help="import the 'Artwork' layer of <panel>_artwork.svg (made in Inkscape from the template) onto the silkscreen")
     ap.add_argument('--artwork-file', help='a different artwork SVG to import (default: <panel>_artwork.svg in the Front Panel folder)')
@@ -1682,7 +1964,9 @@ def main(argv=None, preview=None):
     defaults = dict(margin=0.0, corner_radius=0.0, screw_dia=2.2, screw_inset=3.5, screw_slot=0.0, rail_slot=0.0, screws='none',
                     min_web=1.0, svg=False, grow=0.0, panel_layer='User.1', check_uncut='on',
                     artwork='off', artwork_file='',
-                    labels='off', label_size=2.0, label_gap=1.5, label_pos='above', label_font='', label_bold='off', label_caps='off')
+                    labels='off', label_size=2.0, label_gap=1.5, label_pos='above', label_font='', label_bold='off', label_caps='off',
+                    auto_art='off', art_style='', art_scale='ticks', art_rings='on', art_outputs='off', art_border='off', art_title='',
+                    art_maker='', title_size=5.0, title_font='', title_bold='on', knob_size=13.0, pot_sweep=300.0, scale_text=1.4)
     for k, d in defaults.items():          # explicit option > saved (with --again) > built-in default
         if getattr(a, k) is None:
             setattr(a, k, saved.get(k, d))
@@ -1866,13 +2150,25 @@ def main(argv=None, preview=None):
     problems += case_warn + rail_warn
     shapes = [g for g in groups if not g['manual']]
     placed, label_rows = [], []
+    a._art_edits = label_edits
+    part_fps = {fp.uuid: fp for fp in map(Footprint, kids(pcb, 'footprint')) if fp.uuid}
+    part_fps.update({c['id']: c['fp'] for c in cutouts + manual if c.get('fp')})
     if a.labels == 'on':
         n0 = len(log)
         placed, label_rows = make_labels(pcb, cutouts + manual, groups, outline, a, label_edits, log,
-                                         no_hole=set(cfg.get('_none_ids', set())) | set(ignore_uncut))
+                                         no_hole=set(cfg.get('_none_ids', set())) | set(ignore_uncut),
+                                         clear=auto_label_clearance(cutouts + manual, part_fps, a))
         problems += sum(1 for l in log[n0:] if l.startswith('WARN'))
         log.append(f"labels {len(placed)} on the silkscreen ({sum(1 for r in label_rows if r['hide'])} hidden, "
                    f"{sum(1 for r in label_rows if not r['hide'] and not r['text'].strip())} with no text)")
+    a._auto, knocked = [], set()
+    if a.auto_art == 'on':
+        n0 = len(log)
+        a._auto, knocked = auto_artwork(cutouts + manual, part_fps, groups, outline, placed, a, label_edits, log)
+        problems += sum(1 for l in log[n0:] if l.startswith('WARN'))
+        log.append(f"auto  {len(a._auto)} shapes of artwork made for you"
+                   + (f" ({len(knocked)} label{'s' if len(knocked) > 1 else ''} cut out of output boxes)" if knocked else ''))
+    placed = [L for L in placed if L['fid'] not in knocked]     # those are in the artwork now, cut out of their box
     a._markers = part_markers(pcb, set(cfg.get('_none_ids', set())) | set(ignore_uncut), outline)
     # the template and the artwork file's guides first, so the artwork is rendered on the panel's current page
     if preview is None and (a.svg or a.make_artwork_file or os.path.exists(artwork_path_for(out_path))):
@@ -1906,6 +2202,7 @@ def main(argv=None, preview=None):
                        f"(or use --make-artwork-file), draw on its Artwork layer in Inkscape, save, then generate")
         else:
             art = import_artwork(art_svg, outline, log, os.path.dirname(out_path) if os.path.isdir(os.path.dirname(out_path)) else None)
+    art = art + a._auto
     if preview is not None and a.make_artwork_file:      # the window's 'Create artwork file' button: no panel written
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         svg_path = re.sub(r'\.kicad_pcb$', '', out_path) + '_template.svg'
@@ -1952,7 +2249,10 @@ def main(argv=None, preview=None):
                                 panel_layer=a.panel_layer, svg=bool(a.svg), check_uncut=a.check_uncut,
                                 labels=a.labels, label_size=a.label_size, label_gap=a.label_gap, label_pos=a.label_pos,
                                 label_font=a.label_font, label_bold=a.label_bold, label_caps=a.label_caps,
-                                artwork=a.artwork, artwork_file=a.artwork_file)},
+                                artwork=a.artwork, artwork_file=a.artwork_file,
+                                **{k: getattr(a, k) for k in ('auto_art', 'art_style', 'art_scale', 'art_rings', 'art_outputs', 'art_border',
+                                                              'art_title', 'art_maker', 'title_size', 'title_font', 'title_bold',
+                                                              'knob_size', 'pot_sweep', 'scale_text')})},
               open(mem_path, 'w', encoding='utf-8'), indent=1)
 
 
