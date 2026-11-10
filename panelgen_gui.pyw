@@ -12,7 +12,7 @@ DEFAULTS = dict(margin=0.0, margin_top=0.0, margin_right=0.0, margin_bottom=0.0,
                 screws='none', screw_dia=2.2, screw_inset=3.5, screw_slot=0.0, rail_slot=0.0,
                 corner_radius=0.0, grow=0.0, svg=False, check_uncut='on',
                 artwork='off', labels='off', label_size=2.0, label_gap=1.5, label_pos='above', label_font='', label_bold='off', label_caps='off',
-                auto_art='off', art_style='Classic synth', art_scale='ticks', art_rings='on', art_outputs='off', art_border='off',
+                extras='on', auto_art='off', art_style='Classic synth', art_scale='ticks', art_rings='on', art_outputs='off', art_border='off',
                 art_border_radius=0.0, art_groups='off', art_tabs='off',
                 art_title='', art_maker='', title_size=5.0, knob_size=13.0)
 ART_STYLES = {   # what each style switches on
@@ -114,6 +114,7 @@ class App(tk.Tk):
         v['svg'] = tk.BooleanVar(); v['open'] = tk.BooleanVar(value=self.cfg.get('open_after', True))
         v['uncut_check'] = tk.BooleanVar(value=True)
         v['art_on'] = tk.BooleanVar()
+        v['extras_on'] = tk.BooleanVar(value=True)
         v['auto_on'] = tk.BooleanVar(); v['art_style'] = tk.StringVar(value='Classic synth')
         v['art_scale'] = tk.StringVar(value='Ticks'); v['art_rings'] = tk.BooleanVar(value=True)
         v['art_outputs'] = tk.BooleanVar(); v['art_border'] = tk.BooleanVar()
@@ -369,7 +370,11 @@ class App(tk.Tk):
         # your own text and pictures, and whatever is selected in the preview
         s = self.section('extras', 'Your text and pictures', 'Add your own, then click anything in the preview (text, '
                                                              'label, picture, title, tab) to change it here.')
-        row = ttk.Frame(s); row.pack(fill='x')
+        c = ttk.Checkbutton(s, text='Put my text and pictures on the panel', variable=v['extras_on'], command=self.refresh_states)
+        c.pack(anchor='w', pady=(0, 6))
+        Tip(c, "Untick to leave them off the panel (and the preview) without losing them - tick again and they're back. "
+               "Handy when you switch to Inkscape artwork that already has its own text.")
+        row = self.extras_row = ttk.Frame(s); row.pack(fill='x')
         b = ttk.Button(row, text='Add text…', command=self.start_add_text); b.pack(side='left')
         Tip(b, 'Click this, then click on the panel where the text goes. Drag any text, label, picture or the title to move '
                'it: it snaps into line with other labels, to the middle of holes and to the middle of gaps (hold Alt to '
@@ -549,6 +554,8 @@ class App(tk.Tk):
         self.show(self.label_detail, v['labels_on'].get(), fill='x')
         self.show(self.art_detail, v['art_on'].get(), fill='x')
         self.show(self.auto_detail, v['auto_on'].get(), fill='x')
+        for w in self.extras_row.winfo_children():
+            w.state(['!disabled'] if v['extras_on'].get() else ['disabled'])
         en(self.w_bradius, v['art_border'].get())
         self.art_state()
         en(self.w_margin, v['expand'].get() and not v['per_side'].get())
@@ -760,6 +767,7 @@ class App(tk.Tk):
             v['art_on'].set(s['artwork'] == 'on')
             v['labels_on'].set(s['labels'] == 'on')
             v['auto_on'].set(s['auto_art'] == 'on')
+            v['extras_on'].set(s.get('extras', 'on') != 'off')
             v['art_style'].set(s.get('art_style') or 'Custom')
             v['art_scale'].set(next((k for k, x in SCALES.items() if x == s['art_scale']), 'Ticks'))
             v['art_rings'].set(s['art_rings'] == 'on'); v['art_outputs'].set(s['art_outputs'] == 'on')
@@ -863,6 +871,7 @@ class App(tk.Tk):
                      '--label-bold', 'on' if v['label_bold'].get() else 'off', '--label-caps', 'on' if v['label_caps'].get() else 'off']
         else:
             args += ['--labels', 'off']
+        args += ['--extras', 'on' if v['extras_on'].get() else 'off']
         if v['auto_on'].get():
             ts, ks = self.number('title_size', 'title size'), self.number('knob_size', 'knob size')
             if ts < 1:
@@ -1246,6 +1255,7 @@ class App(tk.Tk):
             return
         import uuid
         self.ui.setdefault('texts', []).append(dict(id=uuid.uuid4().hex[:8], text=txt.strip(), x=round(x, 2), y=round(y, 2)))
+        self.vars['extras_on'].set(True)                # something you just added should show
         self.persist_ui(); self.update_preview()
 
     def snap(self, t, dx, dy, free=False):
@@ -1504,6 +1514,7 @@ class App(tk.Tk):
             messagebox.showerror('Panel Generator', f"Couldn't copy the picture into the Front Panel folder ({e})"); return
         x1, y1, x2, y2 = self.pv['panel_box']
         cx, cy = at or ((x1 + x2) / 2, (y1 + y2) / 2)
+        self.vars['extras_on'].set(True)
         self.ui.setdefault('images', []).append(dict(id=uuid.uuid4().hex[:8], file=name, x=round(cx, 2),
                                                      y=round(cy, 2), w=round(min(20.0, (x2 - x1) / 4), 1)))
         self.persist_ui(); self.update_preview()

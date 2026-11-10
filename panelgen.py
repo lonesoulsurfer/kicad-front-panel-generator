@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.25.1"
+VERSION = "0.25.2"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -2253,6 +2253,7 @@ def main(argv=None, preview=None):
     ap.add_argument('--label-font', help='a font installed on your computer, e.g. Arial ("" = KiCad\'s own font, default)')
     ap.add_argument('--label-bold', choices=['on', 'off'])
     ap.add_argument('--label-caps', choices=['on', 'off'], help='ALL CAPS labels')
+    ap.add_argument('--extras', choices=['on', 'off'], help='put your own text and pictures on the panel (default on)')
     ap.add_argument('--auto-art', choices=['on', 'off'], help='make artwork for you: pot scales, rings, output boxes, border, title')
     ap.add_argument('--art-style', help=argparse.SUPPRESS)   # the window's style name, kept with the settings
     ap.add_argument('--art-scale', choices=['none', 'ticks', 'numbers', 'bipolar'], help='pot scales (default ticks)')
@@ -2300,7 +2301,7 @@ def main(argv=None, preview=None):
                     min_web=1.0, svg=False, grow=0.0, panel_layer='User.1', check_uncut='on',
                     artwork='off', artwork_file='',
                     labels='off', label_size=2.0, label_gap=1.5, label_pos='above', label_font='', label_bold='off', label_caps='off',
-                    auto_art='off', art_style='', art_scale='ticks', art_rings='on', art_outputs='off', art_border='off', art_border_radius=0.0,
+                    extras='on', auto_art='off', art_style='', art_scale='ticks', art_rings='on', art_outputs='off', art_border='off', art_border_radius=0.0,
                     art_groups='off', art_tabs='off', art_title='',
                     art_maker='', title_size=5.0, title_font='', title_bold='on', title_vertical='off', knob_size=13.0, pot_sweep=300.0, scale_text=1.4)
     for k, d in defaults.items():          # explicit option > saved (with --again) > built-in default
@@ -2493,12 +2494,15 @@ def main(argv=None, preview=None):
     a._art_edits = label_edits
     part_fps = {fp.uuid: fp for fp in map(Footprint, kids(pcb, 'footprint')) if fp.uuid}
     part_fps.update({c['id']: c['fp'] for c in cutouts + manual if c.get('fp')})
-    if a.labels == 'on' or texts:
+    # your own text and pictures can be left off the panel without losing them
+    shown_texts = texts if a.extras == 'on' else []
+    shown_images = images if a.extras == 'on' else []
+    if a.labels == 'on' or shown_texts:
         n0 = len(log)
         placed, label_rows = make_labels(pcb, cutouts + manual, groups, outline, a, label_edits, log,
                                          no_hole=set(cfg.get('_none_ids', set())) | set(ignore_uncut),
                                          clear=auto_label_clearance(cutouts + manual, part_fps, a),
-                                         texts=texts, pcb_labels=a.labels == 'on')
+                                         texts=shown_texts, pcb_labels=a.labels == 'on')
         problems += sum(1 for l in log[n0:] if l.startswith('WARN'))
         log.append(f"labels {len(placed)} on the silkscreen ({sum(1 for r in label_rows if r['hide'])} hidden, "
                    f"{sum(1 for r in label_rows if not r['hide'] and not r['text'].strip())} with no text)")
@@ -2510,7 +2514,7 @@ def main(argv=None, preview=None):
         problems += sum(1 for l in log[n0:] if l.startswith('WARN'))
         log.append(f"auto  {len(a._auto)} shapes of artwork made for you"
                    + (f" ({len(knocked)} label{'s' if len(knocked) > 1 else ''} cut out of output boxes)" if knocked else ''))
-    tb_polys, tb_knocked = text_boxes([L for L in placed if L['fid'] not in knocked], texts, label_edits, a, groups, outline, log)
+    tb_polys, tb_knocked = text_boxes([L for L in placed if L['fid'] not in knocked], shown_texts, label_edits, a, groups, outline, log)
     a._auto += tb_polys
     knocked |= tb_knocked
     placed = [L for L in placed if L['fid'] not in knocked]     # those are in the artwork now, cut out of their box
@@ -2548,8 +2552,8 @@ def main(argv=None, preview=None):
         else:
             art = import_artwork(art_svg, outline, log, os.path.dirname(out_path) if os.path.isdir(os.path.dirname(out_path)) else None)
     art = art + a._auto
-    if images:
-        art = art + image_items(images, os.path.dirname(out_path), outline, groups, log)
+    if shown_images:
+        art = art + image_items(shown_images, os.path.dirname(out_path), outline, groups, log)
     if preview is not None and a.make_artwork_file:      # the window's 'Create artwork file' button: no panel written
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         svg_path = re.sub(r'\.kicad_pcb$', '', out_path) + '_template.svg'
@@ -2566,7 +2570,7 @@ def main(argv=None, preview=None):
                      art_items=a._art_items, texts=texts, art_pos=a._art_pos,
                      knocked=[dict(fid=f, **v) for f, v in a._knock_boxes.items()], tab_boxes=a._tab_boxes,
                      images=[dict(id=i['id'], box=i['_box'], w=i['w'], invert=i.get('invert', False), rot=i.get('rot', 0))
-                             for i in images if '_box' in i])
+                             for i in shown_images if '_box' in i])
         return 1 if any(l.startswith('ERROR') for l in log) else 0
 
     uuids, items, generated = [], [], {}
@@ -2604,7 +2608,7 @@ def main(argv=None, preview=None):
                                 labels=a.labels, label_size=a.label_size, label_gap=a.label_gap, label_pos=a.label_pos,
                                 label_font=a.label_font, label_bold=a.label_bold, label_caps=a.label_caps,
                                 artwork=a.artwork, artwork_file=a.artwork_file,
-                                **{k: getattr(a, k) for k in ('auto_art', 'art_style', 'art_scale', 'art_rings', 'art_outputs', 'art_border',
+                                **{k: getattr(a, k) for k in ('extras', 'auto_art', 'art_style', 'art_scale', 'art_rings', 'art_outputs', 'art_border',
                                                               'art_border_radius', 'art_groups', 'art_tabs',
                                                               'art_title', 'art_maker', 'title_size', 'title_font', 'title_bold', 'title_vertical',
                                                               'knob_size', 'pot_sweep', 'scale_text')})},

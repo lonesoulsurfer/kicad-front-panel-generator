@@ -83,7 +83,7 @@ You can use this and Inkscape together: the made artwork appears in the Inkscape
 
 ### 5. Add your own text, pictures and boxes (optional)
 
-Everything here is done in the preview, with the settings under **Your text and pictures** on the left.
+Everything here is done in the preview, with the settings under **Your text and pictures** on the left. Untick **Put my text and pictures on the panel** to leave them all off (for example when you switch to Inkscape artwork that has its own text); tick it again and they're back.
 
 - **Move anything by dragging it:** a label, your text, a picture or the title. It snaps into line with the other labels, to the middle of holes, half way between two holes (a MIDI label over its IN and OUT jacks), and to the middle of the gap between two things. Hold **Alt** to place it freely.
 - **Click anything to change it.** Its settings appear on the left: text, size, put it back, hide or delete.

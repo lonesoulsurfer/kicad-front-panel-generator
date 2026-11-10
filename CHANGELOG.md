@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.25.2
+
+- **Put my text and pictures on the panel** tick box (in *Your text and pictures*): untick to leave your own text, its boxes and your pictures off without losing them.
+
 ## 0.25.1
 
 - A box stretched over other texts takes them in: one long bar under a row of keys, each name cut out where it is.
