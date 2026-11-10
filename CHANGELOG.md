@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.25.3
+
+- **Undo covers everything:** settings on the left (panel size, margins, holes, labels, artwork options) as well as changes in the preview. The history is kept when you generate.
+
 ## 0.25.2
 
 - **Put my text and pictures on the panel** tick box (in *Your text and pictures*): untick to leave your own text, its boxes and your pictures off without losing them.

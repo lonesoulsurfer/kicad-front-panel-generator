@@ -126,7 +126,7 @@ class App(tk.Tk):
         v['label_gap'] = tk.StringVar(value='1.5'); v['label_size'] = tk.StringVar(value='2')
         v['label_font'] = tk.StringVar(value=KICAD_FONT); v['label_bold'] = tk.BooleanVar(); v['label_caps'] = tk.BooleanVar()
         self.ui = {'ignore': {}, 'label_edits': {}, 'texts': [], 'art_pos': {}, 'images': []}   # ignored parts, label changes, your texts, moved title, pictures
-        self.undo_stack, self.ui_prev = [], None
+        self.undo_stack, self.state_prev, self.restoring = [], None, False
         self.editor = None
         self.mode, self.pv, self.after_id, self.loading = None, None, None, False
         self.stamp = None
@@ -427,8 +427,8 @@ class App(tk.Tk):
         fb = ttk.Button(ph, text='Fit', command=self.fit_view, width=5); fb.pack(side='right', padx=(0, 6))
         self.w_undo = ttk.Button(ph, text='Undo', command=self.undo, width=6); self.w_undo.pack(side='right', padx=(0, 6))
         self.w_undo.state(['disabled'])
-        Tip(self.w_undo, 'Take back the last change: a move, a text, a picture, a box, a label edit (Ctrl+Z). '
-                         'Settings on the left are changed back by hand.')
+        Tip(self.w_undo, 'Take back the last change (Ctrl+Z): a setting on the left, or a move, text, picture, box '
+                         'or label edit in the preview. Up to 50 steps.')
         self.bind_all('<Control-z>', self.undo); self.bind_all('<Control-Z>', self.undo)
 
         Tip(fb, 'Show the whole panel again. Mouse wheel zooms in and out where the pointer is; drag to move around; '
@@ -914,6 +914,7 @@ class App(tk.Tk):
 
     def update_preview(self):
         self.after_id = None
+        self.record_state()
         try:
             args = self.build_args()
         except ValueError as e:
@@ -1681,7 +1682,7 @@ class App(tk.Tk):
             self.ui = {'ignore': dict(mem.get('ignore_uncut', {})), 'label_edits': dict(mem.get('label_edits', {})),
                        'texts': [dict(t) for t in mem.get('texts', [])], 'art_pos': dict(mem.get('art_pos', {})),
                        'images': [dict(i) for i in mem.get('images', [])]}
-            self.reset_undo()
+            self.state_prev = self.snapshot()          # keep the history; changes made in KiCad become the new start
         self.fill_restore()
         panel, _ = panel_paths(board)
         self.stamp = (mtime(board), mtime(panel), mtime(self.art_file()))
@@ -1771,36 +1772,60 @@ class App(tk.Tk):
         else:
             self.fill_restore(); self.update_preview()
 
-    def reset_undo(self):
+    # ------------------------------------------------------------------ undo: settings on the left and changes in the preview
+    def snapshot(self):
         import copy
-        self.undo_stack, self.ui_prev = [], copy.deepcopy(self.ui)
+        return copy.deepcopy(self.ui), {k: v.get() for k, v in self.vars.items()}
+
+    def reset_undo(self):
+        self.undo_stack, self.state_prev, self.restoring = [], self.snapshot(), False
         if hasattr(self, 'w_undo'):
             self.w_undo.state(['disabled'])
 
+    def record_state(self):
+        """Remember how things were before this change, so Undo can put them back."""
+        if getattr(self, 'restoring', False) or self.loading or getattr(self, 'state_prev', None) is None:
+            return
+        cur = self.snapshot()
+        if cur != self.state_prev:
+            self.undo_stack.append(self.state_prev)
+            del self.undo_stack[:-50]
+            if hasattr(self, 'w_undo'):
+                self.w_undo.state(['!disabled'])
+        self.state_prev = cur
+
     def undo(self, _=None):
-        """Take back the last change made in the preview or the left panel (moves, texts, pictures, boxes, labels)."""
-        if _ is not None and isinstance(self.focus_get(), (ttk.Entry, tk.Entry)):
+        """Take back the last change: a setting on the left, or a move, text, picture, box or label edit in the preview."""
+        if _ is not None and isinstance(self.focus_get(), (ttk.Entry, tk.Entry, ttk.Combobox)):
             return                                     # Ctrl+Z in a text box undoes the typing, not this
+        self.record_state()                            # a change still waiting for the preview counts too
         if not getattr(self, 'undo_stack', None):
             return
         import copy
-        self.ui = self.undo_stack.pop()
-        self.ui_prev = copy.deepcopy(self.ui)
+        ui, vals = self.undo_stack.pop()
+        self.restoring, self.loading = True, True
+        try:
+            for k, val in vals.items():
+                if k in self.vars and self.vars[k].get() != val:
+                    self.vars[k].set(val)
+            self.ui = copy.deepcopy(ui)
+        finally:
+            self.loading = False
+        self.state_prev = self.snapshot()
         self.persist_ui(record=False)
         if not self.undo_stack:
             self.w_undo.state(['disabled'])
         self.sel = None
+        if self.after_id:
+            self.after_cancel(self.after_id); self.after_id = None
+        self.refresh_states()
         self.update_preview()
+        self.restoring = False
 
     def persist_ui(self, record=True):
         """Save ignored parts and label edits into the panel's memory file straight away (if there is one yet)."""
-        import copy
-        if record and getattr(self, 'ui_prev', None) is not None and self.ui_prev != self.ui:
-            self.undo_stack.append(self.ui_prev)
-            del self.undo_stack[:-50]
-            if hasattr(self, 'w_undo'):
-                self.w_undo.state(['!disabled'])
-        self.ui_prev = copy.deepcopy(self.ui)
+        if record:
+            self.record_state()
         b = self.board.get()
         if not b:
             return
