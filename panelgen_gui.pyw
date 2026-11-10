@@ -24,6 +24,9 @@ STYLE_KEYS = ('scale', 'rings', 'outputs', 'border', 'groups', 'tabs')
 TITLE_DIRS = {'Across': 'off', 'Stacked': 'stacked', 'On its side': 'on'}
 SCALES = {'None': 'none', 'Ticks': 'ticks', 'Numbers 0-10': 'numbers', 'Centre zero (- 0 +)': 'bipolar'}
 KICAD_FONT = "KiCad's own font"
+HOLE_SIZES = ('3.2  ·  3 mm LED or M3 screw', '5.2  ·  5 mm LED or small toggle', '6.2  ·  3.5 mm jack', '6.5  ·  mini toggle switch',
+              '7.5  ·  pot or encoder', '10  ·  6.35 mm jack', '2.7  ·  M2.5 screw', '2.2  ·  M2 screw')
+SHAPE_NAMES = {'hole': 'hole', 'rect': 'rectangle', 'slot': 'slot'}
 ALT_MASK = 0x20000 if sys.platform == 'win32' else 0x0008   # Alt held (on Windows, 0x0008 is Num Lock)
 
 # preview colours
@@ -126,7 +129,7 @@ class App(tk.Tk):
         v['labels_on'] = tk.BooleanVar(); v['label_pos'] = tk.StringVar(value='above')
         v['label_gap'] = tk.StringVar(value='1.5'); v['label_size'] = tk.StringVar(value='2')
         v['label_font'] = tk.StringVar(value=KICAD_FONT); v['label_bold'] = tk.BooleanVar(); v['label_caps'] = tk.BooleanVar()
-        self.ui = {'ignore': {}, 'label_edits': {}, 'texts': [], 'art_pos': {}, 'images': []}   # ignored parts, label changes, your texts, moved title, pictures
+        self.ui = {'ignore': {}, 'label_edits': {}, 'texts': [], 'art_pos': {}, 'images': [], 'shapes': []}   # ignored parts, label changes, your texts, moved title, pictures
         self.undo_stack, self.state_prev, self.restoring = [], None, False
         self.editor = None
         self.mode, self.pv, self.after_id, self.loading = None, None, None, False
@@ -238,6 +241,26 @@ class App(tk.Tk):
         row = self.corner_row = ttk.Frame(s); row.pack(fill='x', pady=(8, 0))
         c = ttk.Checkbutton(row, text='Rounded corners, radius', variable=v['round'], command=self.refresh_states); c.pack(side='left')
         self.w_radius = self.num(row, 'radius'); ttk.Label(row, text='mm').pack(side='left')
+
+        # holes you add yourself
+        s = self.section('holes', 'Extra holes', "Holes, rectangles and slots for things that aren't on the PCB "
+                                                 '(a wired jack, a switch, a window).')
+        row = ttk.Frame(s); row.pack(fill='x')
+        ttk.Label(row, text='Hole size').pack(side='left')
+        self.hole_size = tk.StringVar(value=HOLE_SIZES[2])
+        cb = ttk.Combobox(row, textvariable=self.hole_size, values=HOLE_SIZES, width=30); cb.pack(side='left', padx=4)
+        ttk.Label(row, text='mm').pack(side='left')
+        Tip(cb, 'Pick a usual size or type your own in mm. These are common sizes: check them against your own parts.')
+        row = ttk.Frame(s); row.pack(fill='x', pady=(6, 0))
+        for kind, txt in (('hole', 'Add hole'), ('rect', 'Add rectangle'), ('slot', 'Add slot')):
+            b = ttk.Button(row, text=txt, command=lambda k=kind: self.start_add(k)); b.pack(side='left', padx=(0, 6))
+            Tip(b, 'Click this, then click on the panel where it goes (or right-click the panel). It snaps into line with '
+                   'the other holes; hold Alt to place it freely. Then set its exact place and size here.')
+        ttk.Label(s, text='Drag a box round holes you added to select several, then move, line up, space or copy them together.',
+                  style='Dim.TLabel', wraplength=390, justify='left').pack(anchor='w', pady=(4, 0))
+        self.hole_box = ttk.Frame(s); self.hole_box.pack(fill='x', pady=(8, 0))
+        self.shape_sel, self.last_size = [], {'rect': (20.0, 10.0), 'slot': (10.0, 3.2)}
+        self.measuring, self.measure = False, []
 
         # 2b rail holes (Eurorack)
         s = self.section('rail', 'Rail holes', '3.2 mm holes at the standard Eurorack positions. 4 holes from 10HP up.')
@@ -427,14 +450,18 @@ class App(tk.Tk):
         self.chip = tk.Label(ph, text='', font=self.f_head, padx=8, pady=1); self.chip.pack(side='left', padx=10)
         rb = ttk.Button(ph, text='Refresh', command=self.update_preview); rb.pack(side='right')
         fb = ttk.Button(ph, text='Fit', command=self.fit_view, width=5); fb.pack(side='right', padx=(0, 6))
+        self.w_measure = ttk.Button(ph, text='Measure', command=self.toggle_measure, width=9)
+        self.w_measure.pack(side='right', padx=(0, 6))
+        Tip(self.w_measure, 'A ruler: click two points in the preview to see how far apart they are. It snaps to the middle '
+                            'and edge of holes and to the panel edges (hold Alt for anywhere). Esc or click again to finish.')
         self.w_undo = ttk.Button(ph, text='Undo', command=self.undo, width=6); self.w_undo.pack(side='right', padx=(0, 6))
         self.w_undo.state(['disabled'])
         Tip(self.w_undo, 'Take back the last change (Ctrl+Z): a setting on the left, or a move, text, picture, box '
                          'or label edit in the preview. Up to 50 steps.')
         self.bind_all('<Control-z>', self.undo); self.bind_all('<Control-Z>', self.undo)
 
-        Tip(fb, 'Show the whole panel again. Mouse wheel zooms in and out where the pointer is; drag to move around; '
-                'double-click also fits.')
+        Tip(fb, 'Show the whole panel again. Mouse wheel zooms in and out where the pointer is; drag with the right '
+                '(or middle) mouse button to move around; double-click also fits.')
         self.zoom_lbl = ttk.Label(ph, text='', style='Dim.TLabel'); self.zoom_lbl.pack(side='right', padx=6)
         Tip(rb, 'The preview updates by itself when you change a setting or save the PCB in KiCad.')
         self.canvas = tk.Canvas(right, bg=C_BG, highlightthickness=1, highlightbackground='#d5dbe1')
@@ -447,7 +474,15 @@ class App(tk.Tk):
         pc.bind('<Button-4>', self.wheel_zoom); pc.bind('<Button-5>', self.wheel_zoom)
         pc.bind('<ButtonPress-1>', self.press); pc.bind('<B1-Motion>', self.motion)
         pc.bind('<ButtonRelease-1>', self.release); pc.bind('<Double-Button-1>', lambda e: self.fit_view())
-        pc.bind('<Button-3>', self.context_menu); pc.bind('<Button-2>', self.context_menu)
+        for n in (2, 3):                 # right or middle button: drag moves the view, a click opens the menu
+            pc.bind(f'<ButtonPress-{n}>', self.pan_press); pc.bind(f'<B{n}-Motion>', self.pan_motion)
+            pc.bind(f'<ButtonRelease-{n}>', self.pan_release)
+        pc.bind('<Motion>', self.measure_motion)
+        self.pan = None
+        typing = lambda: isinstance(self.focus_get(), (ttk.Entry, tk.Entry, ttk.Combobox))
+        self.bind_all('<Delete>', lambda e: None if typing() else self.shapes_delete())
+        self.bind_all('<Control-d>', lambda e: None if typing() else self.shapes_duplicate())
+        self.bind_all('<Escape>', self.escape)
         self.adding = False
         self.hover = ttk.Label(right, text='Hover over a cutout to see what it is.', style='Dim.TLabel')
         self.hover.grid(row=2, column=0, sticky='w', pady=(3, 0))
@@ -506,9 +541,9 @@ class App(tk.Tk):
 
     def renumber(self):
         """Show the sections that apply to this kind of panel, numbered in order."""
-        show = {'g_panel', 'pcb', 'open', 'restore', 'g_art', 'labels', 'auto', 'extras', 'art', 'g_out'} | \
+        show = {'g_panel', 'pcb', 'holes', 'open', 'restore', 'g_art', 'labels', 'auto', 'extras', 'art', 'g_out'} | \
                ({'rail'} if self.mode == 'eurorack' else {'size', 'case'})
-        order = ['g_panel', 'pcb', 'size', 'rail', 'case', 'open', 'restore', 'g_art', 'labels', 'auto', 'extras', 'art']
+        order = ['g_panel', 'pcb', 'size', 'rail', 'case', 'holes', 'open', 'restore', 'g_art', 'labels', 'auto', 'extras', 'art']
         n = 0
         for k in order:
             f, badge = self.sections[k]
@@ -784,7 +819,8 @@ class App(tk.Tk):
             v['label_bold'].set(s['label_bold'] == 'on'); v['label_caps'].set(s['label_caps'] == 'on')
             self.ui = {'ignore': dict(mem.get('ignore_uncut', {})), 'label_edits': dict(mem.get('label_edits', {})),
                        'texts': [dict(t) for t in mem.get('texts', [])], 'art_pos': dict(mem.get('art_pos', {})),
-                       'images': [dict(i) for i in mem.get('images', [])]}
+                       'images': [dict(i) for i in mem.get('images', [])],
+                       'shapes': [dict(i) for i in mem.get('shapes', [])]}
             self.reset_undo()
         finally:
             self.loading = False
@@ -954,7 +990,7 @@ class App(tk.Tk):
         self.set_chip(pv)
         self.show_status()
         self.draw()
-        self.show_selected()
+        self.show_selected(); self.show_shapes()
         if self.editor and self.editor.winfo_exists():
             self.editor.refresh()
         if self.result_is_preview:
@@ -1059,7 +1095,8 @@ class App(tk.Tk):
                 text=f"{r}  ·  no cutout - click if it doesn't need one, or see Result for how to add one"))
             c.tag_bind(i, '<Leave>', lambda e: self.hover.config(text='Hover over a cutout to see what it is.'))
         fam = pv.get('label_font') or tkfont.nametofont('TkDefaultFont').actual('family')
-        self.targets = [(tuple(tb['box']), 'tab', tb) for tb in pv.get('tab_boxes', [])]   # things you can drag, topmost last
+        self.targets = [(tuple(a['box']), 'shape', a) for a in pv.get('added', [])]       # things you can drag, topmost last
+        self.targets += [(tuple(tb['box']), 'tab', tb) for tb in pv.get('tab_boxes', [])]
         for L in pv.get('labels', []):
             self.targets.append(((L['x'] - L['w'] / 2, L['y'] - L['h'] / 2, L['x'] + L['w'] / 2, L['y'] + L['h'] / 2),
                                  'text' if L.get('own') else 'label', L))
@@ -1081,6 +1118,11 @@ class App(tk.Tk):
         if sel:                                    # what's selected: its box, so you can see what the left panel is changing
             b = sel[0]
             c.create_rectangle(X(b[0]) - 3, Y(b[1]) - 3, X(b[2]) + 3, Y(b[3]) + 3, outline='#2563eb', width=2, dash=(5, 2))
+        for a in pv.get('added', []):
+            if a['id'] in self.shape_sel:
+                b = a['box']
+                c.create_rectangle(X(b[0]) - 3, Y(b[1]) - 3, X(b[2]) + 3, Y(b[3]) + 3, outline='#2563eb', width=2, dash=(5, 2))
+        self.draw_measure()
         for ref, (bx1, by1, bx2, by2) in pv.get('rail_bad', []):
             c.create_rectangle(X(bx1), Y(by1), X(bx2), Y(by2), outline=C_ERR, width=2, dash=(4, 2))
             c.create_text(X(bx2) + 10, Y(by1) - 2, text=f'{ref} hits the rail', anchor='nw', fill=C_ERR_TXT, font=self.f_small)
@@ -1118,6 +1160,9 @@ class App(tk.Tk):
         return None
 
     def press(self, e):
+        if self.measuring:
+            self.drag = None
+            return
         t = None if self.adding else self.target_at(e)
         if not self.adding and getattr(self, 'cur_view', None):     # near the edge of a tab or box: grab the edge, not the text
             x, y = self.to_mm(e)
@@ -1139,7 +1184,17 @@ class App(tk.Tk):
             edge = min(t[2]['edges'], key=lambda k: dist[k])
             self.drag = ('item', e.x, e.y, t, False, 0, 0, edge)
             return
-        self.drag = ('item', e.x, e.y, t, False) if t else (e.x, e.y, False)
+        if t and t[1] == 'shape':                       # one of several selected holes: they all move together
+            i = t[2]['id']
+            if getattr(e, 'state', 0) & 0x0001:         # Shift: add to or take from the selection
+                self.shape_sel = [k for k in self.shape_sel if k != i] if i in self.shape_sel else self.shape_sel + [i]
+                self.sel = None; self.drag = None
+                self.draw(); self.show_selected(); self.show_shapes()
+                return
+            if i not in self.shape_sel:
+                self.shape_sel = [i]; self.sel = None
+                self.draw(); self.show_selected(); self.show_shapes()
+        self.drag = ('item', e.x, e.y, t, False) if t else ('band', e.x, e.y, False)
 
     def motion(self, e):
         if not self.drag or not getattr(self, 'cur_view', None):
@@ -1185,19 +1240,23 @@ class App(tk.Tk):
                 c.create_line(ox + gx * sc, 0, ox + gx * sc, c.winfo_height(), fill='#ff4fd8', dash=(3, 3), tags='dragbox')
             if gy is not None:
                 c.create_line(0, oy + gy * sc, c.winfo_width(), oy + gy * sc, fill='#ff4fd8', dash=(3, 3), tags='dragbox')
-            c.create_rectangle(ox + (b[0] + dx) * sc, oy + (b[1] + dy) * sc, ox + (b[2] + dx) * sc, oy + (b[3] + dy) * sc,
-                               outline='#ffd28a', dash=(4, 2), width=2, tags='dragbox')
+            for b in ([a['box'] for a in self.pv.get('added', []) if a['id'] in self.shape_sel] if t[1] == 'shape' else [b]):
+                c.create_rectangle(ox + (b[0] + dx) * sc, oy + (b[1] + dy) * sc, ox + (b[2] + dx) * sc, oy + (b[3] + dy) * sc,
+                                   outline='#ffd28a', dash=(4, 2), width=2, tags='dragbox')
+            if t[1] == 'shape':
+                px1, py1 = self.pv['panel_box'][:2]
+                b = t[0]
+                self.hover.config(text=f"{(b[0] + b[2]) / 2 + dx - px1:.2f} mm from the left edge, "
+                                       f"{(b[1] + b[3]) / 2 + dy - py1:.2f} mm from the top edge (to its middle)")
             self.drag = ('item', x0, y0, t, True, dx, dy)
             c.config(cursor='fleur')
             return
-        x0, y0, moved = self.drag
+        _, x0, y0, moved = self.drag                    # a box round the holes you added, to select them
         if not moved and abs(e.x - x0) + abs(e.y - y0) < 4:
             return
-        sc, ox, oy = self.cur_view
-        self.view = (sc, ox + e.x - x0, oy + e.y - y0)
-        self.drag = (e.x, e.y, True)
-        self.canvas.config(cursor='fleur')
-        self.draw()
+        self.canvas.delete('dragbox')
+        self.canvas.create_rectangle(x0, y0, e.x, e.y, outline='#2563eb', dash=(4, 2), tags='dragbox')
+        self.drag = ('band', x0, y0, True)
 
     def release(self, e):
         if self.drag and self.drag[0] == 'item':
@@ -1219,35 +1278,60 @@ class App(tk.Tk):
                 self.select(t); self.persist_ui(); self.update_preview()
                 return
             if moved:
-                self.select(t)
+                if t[1] != 'shape':
+                    self.select(t)
                 self.move_target(t, round(dx, 3), round(dy, 3))
                 return
-            self.select(t)
+            if t[1] != 'shape':
+                self.select(t)
+            else:                                      # a click on one of several: just that one
+                self.shape_sel = [t[2]['id']]
+                self.draw(); self.show_shapes(reveal=True)
             return
-        else:
-            moved = self.drag and self.drag[2]
-            self.drag = None
-            self.canvas.config(cursor='')
-        if moved:
+        if self.measuring:
+            if getattr(self, 'cur_view', None) and self.pv and 'message' not in self.pv:
+                p = self.measure_point(e)
+                self.measure = [p] if len(self.measure) != 1 else [self.measure[0], p]
+                self.draw()
+            return
+        band = self.drag if self.drag and self.drag[0] == 'band' and self.drag[3] else None
+        self.drag = None
+        self.canvas.config(cursor='')
+        self.canvas.delete('dragbox')
+        if band and getattr(self, 'cur_view', None):
+            sc, ox, oy = self.cur_view
+            ax, bx = sorted(((band[1] - ox) / sc, (e.x - ox) / sc))
+            ay, by = sorted(((band[2] - oy) / sc, (e.y - oy) / sc))
+            self.shape_sel = [a['id'] for a in (self.pv or {}).get('added', [])
+                              if ax <= (a['box'][0] + a['box'][2]) / 2 <= bx and ay <= (a['box'][1] + a['box'][3]) / 2 <= by]
+            self.sel = None
+            self.draw(); self.show_selected(); self.show_shapes(reveal=True)
+            if not self.shape_sel:
+                self.hover.config(text='The box selects holes you added under Extra holes. To move around the panel, '
+                                       'drag with the right mouse button.')
             return
         if self.adding:
-            self.adding = False
+            kind, self.adding = self.adding, False
             self.canvas.config(cursor='')
             x, y = self.to_mm(e)
-            dx, dy, _, _ = self.snap(((x, y, x, y), 'new', None), 0, 0)
-            self.add_text_at(x + dx, y + dy)
+            if kind == 'text':
+                dx, dy, _, _ = self.snap(((x, y, x, y), 'new', None), 0, 0)
+                self.add_text_at(x + dx, y + dy)
+            else:
+                self.add_shape_at(kind, x, y, free=bool(getattr(e, 'state', 0) & ALT_MASK))
             return
         for i in reversed(self.canvas.find_overlapping(e.x, e.y, e.x, e.y)):
             if i in self.clicks:
                 self.clicks[i](); return
-        if self.sel:                                   # a click on nothing: nothing selected
+        if self.sel or self.shape_sel:                 # a click on nothing: nothing selected
             self.select(None)
 
     # ------------------------------------------------------------------ texts you add, and moving things
     def start_add_text(self):
         if not self.pv or 'message' in self.pv:
             return
-        self.adding = True
+        self.end_measure()
+        self.adding = 'text'
         self.canvas.config(cursor='crosshair')
         self.hover.config(text='Click on the panel where the text should go.')
 
@@ -1270,7 +1354,11 @@ class App(tk.Tk):
             return dx, dy, None, None
         thr = 8 / self.cur_view[0]                     # 8 pixels, in mm
         xs, ys = [], []
-        for sh in self.pv.get('shapes', []):
+        moving = {'add:' + i for i in self.shape_sel} if kind == 'shape' else set()
+        holes = [sh for sh in self.pv.get('shapes', []) if sh.get('key') not in moving]
+        if kind in ('shape', 'newshape'):
+            ys.append((self.pv['panel_box'][1] + self.pv['panel_box'][3]) / 2)
+        for sh in holes:
             g = sh['geom'].bounds
             xs.append((g[0] + g[2]) / 2); ys.append((g[1] + g[3]) / 2)
         for L in self.pv.get('labels', []):
@@ -1292,7 +1380,7 @@ class App(tk.Tk):
         xs.append((x1 + x2) / 2)
         # half way between two neighbouring holes in a row or a column (MIDI over its IN and OUT jacks)
         cs = sorted(((sh['geom'].bounds[0] + sh['geom'].bounds[2]) / 2, (sh['geom'].bounds[1] + sh['geom'].bounds[3]) / 2)
-                    for sh in self.pv.get('shapes', []))
+                    for sh in holes)
         for i, (ax, ay) in enumerate(cs):
             for bx_, by_ in cs[i + 1:]:
                 if abs(ay - by_) < 1.0 and 0 < bx_ - ax < 40:
@@ -1304,7 +1392,7 @@ class App(tk.Tk):
                         ys.append((ay + by_) / 2)
         # the middle of the gap between whatever is either side of it (e.g. between a screen and an edge tab)
         w2, h2 = (b[2] - b[0]) / 2, (b[3] - b[1]) / 2
-        obst = [sh['geom'].bounds for sh in self.pv.get('shapes', [])] + boxes + \
+        obst = [sh['geom'].bounds for sh in holes] + boxes + \
                [(L['x'] - L['w'] / 2, L['y'] - L['h'] / 2, L['x'] + L['w'] / 2, L['y'] + L['h'] / 2)
                 for L in self.pv.get('labels', []) if not (d is not None and L is d)]
         row = [o for o in obst if o[1] < cy + h2 and o[3] > cy - h2]
@@ -1319,6 +1407,11 @@ class App(tk.Tk):
         by = min(ys, key=lambda v: abs(v - cy), default=None)
         gx = bx if bx is not None and abs(bx - cx) <= thr else None
         gy = by if by is not None and abs(by - cy) <= thr else None
+        if kind in ('shape', 'newshape'):              # not lined up with anything: whole half millimetres from the panel corner
+            if gx is None:
+                dx += round((cx - x1) * 2) / 2 + x1 - cx
+            if gy is None:
+                dy += round((cy - y1) * 2) / 2 + y1 - cy
         return dx + (gx - cx if gx is not None else 0), dy + (gy - cy if gy is not None else 0), gx, gy
 
     # ------------------------------------------------------------------ what's selected, changed in the left panel
@@ -1328,20 +1421,25 @@ class App(tk.Tk):
 
     def select(self, t):
         self.sel = self.sel_key(t) if t else None
-        self.draw(); self.show_selected()
-        if self.sel:                                   # bring the section into view, if it isn't
-            f, _ = self.sections['extras']
-            cv = self.left.master
-            try:
-                cv.update_idletasks()
-                total = max(1, self.left.winfo_height())
-                top, bot = cv.yview()
-                y0, y1 = self.sel_box.winfo_rooty() - self.left.winfo_rooty(), None
-                y1 = y0 + max(60, self.sel_box.winfo_height())
-                if y0 / total < top or y1 / total > bot:
-                    cv.yview_moveto(max(0.0, (f.winfo_y() - 10) / total))
-            except tk.TclError:
-                pass
+        self.shape_sel = []
+        self.draw(); self.show_selected(); self.show_shapes()
+        if self.sel:
+            self.reveal('extras', self.sel_box)
+
+    def reveal(self, section, widget):
+        """Bring a section of the left panel into view, if the part that matters isn't."""
+        f, _ = self.sections[section]
+        cv = self.left.master
+        try:
+            cv.update_idletasks()
+            total = max(1, self.left.winfo_height())
+            top, bot = cv.yview()
+            y0 = widget.winfo_rooty() - self.left.winfo_rooty()
+            y1 = y0 + max(60, widget.winfo_height())
+            if y0 / total < top or y1 / total > bot:
+                cv.yview_moveto(max(0.0, (f.winfo_y() - 10) / total))
+        except tk.TclError:
+            pass
 
     def selected_target(self):
         if not self.sel or not getattr(self, 'targets', None):
@@ -1476,6 +1574,324 @@ class App(tk.Tk):
             ttk.Button(box, text='Back to its own size', command=lambda: (self.ui['label_edits'].pop(d['key'], None),
                                                                           self.persist_ui(), self.update_preview())).pack(anchor='w', pady=(6, 0))
 
+    # ------------------------------------------------------------------ holes, rectangles and slots you add
+    def hole_dia(self):
+        import re
+        m = re.match(r'\s*(\d+(?:[.,]\d+)?)', self.hole_size.get())
+        if not m or not 0.3 <= float(m.group(1).replace(',', '.')) <= 200:
+            raise ValueError('Hole size: type a size in mm, e.g. 6.2')
+        return float(m.group(1).replace(',', '.'))
+
+    def start_add(self, kind):
+        if not self.pv or 'message' in self.pv:
+            return
+        if kind == 'hole':
+            try:
+                self.hole_dia()
+            except ValueError as e:
+                messagebox.showinfo('Panel Generator', str(e)); return
+        self.end_measure()
+        self.adding = kind
+        self.canvas.config(cursor='crosshair')
+        self.hover.config(text=f'Click on the panel where the middle of the {SHAPE_NAMES[kind]} goes. Esc to cancel.')
+
+    def add_shape_at(self, kind, x, y, free=False):
+        import uuid
+        if kind == 'hole':
+            try:
+                d = self.hole_dia()
+            except ValueError as e:
+                messagebox.showinfo('Panel Generator', str(e)); return
+            new, w, h = dict(d=d), d, d
+        else:
+            w, h = self.last_size[kind]
+            new = dict(w=w, h=h)
+        dx, dy, _, _ = self.snap(((x - w / 2, y - h / 2, x + w / 2, y + h / 2), 'newshape', None), 0, 0, free=free)
+        new.update(id=uuid.uuid4().hex[:8], kind=kind, x=round(x + dx, 3), y=round(y + dy, 3))
+        self.ui.setdefault('shapes', []).append(new)
+        self.shape_sel, self.sel = [new['id']], None
+        self.persist_ui(); self.update_preview()
+        self.show_shapes(reveal=True)
+
+    def own_shapes(self):
+        return [o for o in self.ui.get('shapes', []) if o['id'] in self.shape_sel]
+
+    def shapes_delete(self):
+        if not self.shape_sel:
+            return
+        self.ui['shapes'] = [o for o in self.ui.get('shapes', []) if o['id'] not in self.shape_sel]
+        self.shape_sel = []
+        self.persist_ui(); self.update_preview()
+
+    def shapes_duplicate(self):
+        """Copy the selected holes, keeping their sizes and spacing: the copy goes alongside, selected, ready to drag."""
+        sel = self.own_shapes()
+        if not sel or not self.pv or 'message' in self.pv:
+            return
+        import uuid
+        boxes = {a['id']: a['box'] for a in self.pv.get('added', [])}
+        bs = [boxes[o['id']] for o in sel if o['id'] in boxes]
+        if not bs:
+            return
+        x1, y1, x2, y2 = min(b[0] for b in bs), min(b[1] for b in bs), max(b[2] for b in bs), max(b[3] for b in bs)
+        px1, py1, px2, py2 = self.pv['panel_box']
+        cxs, cys = sorted(o['x'] for o in sel), sorted(o['y'] for o in sel)
+        # carry the pattern on: two holes in a row are copied one more step along the row
+        row = len(sel) > 1 and cys[-1] - cys[0] < 0.01
+        col = len(sel) > 1 and cxs[-1] - cxs[0] < 0.01
+        gap = 4.0
+        if row:
+            step = (cxs[-1] - cxs[0]) / (len(sel) - 1)
+            dx, dy = cxs[-1] - cxs[0] + step, 0.0
+        elif col:
+            step = (cys[-1] - cys[0]) / (len(sel) - 1)
+            dx, dy = 0.0, cys[-1] - cys[0] + step
+        else:
+            dx, dy = x2 - x1 + gap, 0.0
+        if x2 + dx > px2 - 1 and not col:               # no room to the right: go underneath instead
+            dx, dy = 0.0, y2 - y1 + gap
+        if y2 + dy > py2 - 1:
+            dx, dy = (-(x2 - x1 + gap), 0.0) if x1 - (x2 - x1 + gap) > px1 else (gap, gap)
+        new = [dict(o, id=uuid.uuid4().hex[:8], x=round(o['x'] + dx, 3), y=round(o['y'] + dy, 3)) for o in sel]
+        self.ui['shapes'] += new
+        self.shape_sel = [o['id'] for o in new]
+        self.persist_ui(); self.update_preview()
+        self.hover.config(text='Copied - drag the copy where it goes; it snaps into line with the other holes.')
+
+    def shapes_line_up(self, axis):
+        sel = self.own_shapes()
+        if len(sel) < 2:
+            return
+        first = min(sel, key=lambda o: (o['x'], o['y']) if axis == 'y' else (o['y'], o['x']))
+        for o in sel:
+            o[axis] = first[axis]
+        self.persist_ui(); self.update_preview()
+
+    def shapes_spacing(self):
+        """(axis, spacing or None): the way the selected holes run, and their centre-to-centre spacing if it's even."""
+        sel = self.own_shapes()
+        if len(sel) < 2:
+            return None, None
+        axis = 'x' if max(o['x'] for o in sel) - min(o['x'] for o in sel) >= max(o['y'] for o in sel) - min(o['y'] for o in sel) else 'y'
+        v = sorted(o[axis] for o in sel)
+        steps = [b - a for a, b in zip(v, v[1:])]
+        return axis, (steps[0] if max(steps) - min(steps) < 0.006 else None)
+
+    def shapes_set_spacing(self, pitch):
+        axis, _ = self.shapes_spacing()
+        if axis is None:
+            return
+        sel = sorted(self.own_shapes(), key=lambda o: o[axis])
+        for n, o in enumerate(sel):
+            o[axis] = round(sel[0][axis] + n * pitch, 3)
+        self.persist_ui(); self.update_preview()
+
+    def show_shapes(self, reveal=False):
+        box = getattr(self, 'hole_box', None)
+        if box is None:
+            return
+        for w in box.winfo_children():
+            w.destroy()
+        added = {a['id']: a for a in (self.pv or {}).get('added', [])} if self.pv and 'message' not in self.pv else {}
+        self.shape_sel = [i for i in self.shape_sel if i in added]
+        sel = self.own_shapes()
+        if not sel:
+            n = len(added)
+            ttk.Label(box, text=(f"{n} added. Click one in the preview to change it." if n else 'None added yet.'),
+                      style='Dim.TLabel', wraplength=390, justify='left').pack(anchor='w')
+            return
+        px1, py1 = self.pv['panel_box'][:2]
+        def entry(row, label, value, apply, unit='mm', width=7):
+            ttk.Label(row, text=label).pack(side='left')
+            var = tk.StringVar(value=value)
+            e = ttk.Entry(row, textvariable=var, width=width); e.pack(side='left', padx=4)
+            def done(_=None):
+                try:
+                    x = float(var.get().replace('mm', '').replace(',', '.').strip())
+                except ValueError:
+                    return
+                apply(x)
+            e.bind('<Return>', done); e.bind('<FocusOut>', done)
+            ttk.Label(row, text=unit).pack(side='left', padx=(0, 10))
+        def change(o, key, x, lo=0.3, hi=500):
+            x = round(max(lo, min(hi, x)), 3)
+            if abs(x - float(o.get(key, 0) or 0)) > 1e-6:
+                o[key] = x
+                if o['kind'] != 'hole':
+                    self.last_size[o['kind']] = (o['w'], o['h'])
+                self.persist_ui(); self.update_preview()
+        if len(sel) == 1:
+            o = sel[0]
+            ttk.Label(box, text=added[o['id']]['ref'], style='Head.TLabel').pack(anchor='w')
+            row = ttk.Frame(box); row.pack(fill='x', pady=(4, 0))
+            entry(row, 'From the left edge', f"{o['x'] - px1:.2f}".rstrip('0').rstrip('.'), lambda x: change(o, 'x', x + px1, -1e4, 1e4))
+            entry(row, 'from the top', f"{o['y'] - py1:.2f}".rstrip('0').rstrip('.'), lambda x: change(o, 'y', x + py1, -1e4, 1e4))
+            ttk.Label(box, text='Measured from the panel edges to the middle of it.', style='Dim.TLabel').pack(anchor='w')
+            row = ttk.Frame(box); row.pack(fill='x', pady=(4, 0))
+            if o['kind'] == 'hole':
+                entry(row, 'Hole size', f"{o['d']:g}", lambda x: change(o, 'd', x))
+            elif o['kind'] == 'rect':
+                entry(row, 'Width', f"{o['w']:g}", lambda x: change(o, 'w', x), width=6)
+                entry(row, 'Height', f"{o['h']:g}", lambda x: change(o, 'h', x), width=6)
+                entry(row, 'Corners', f"{float(o.get('r', 0) or 0):g}", lambda x: change(o, 'r', x, 0, 100), width=4)
+            else:
+                entry(row, 'Length', f"{max(o['w'], o['h']):g}", lambda x: change(o, 'w' if o['w'] >= o['h'] else 'h', x), width=6)
+                entry(row, 'Width', f"{min(o['w'], o['h']):g}", lambda x: change(o, 'h' if o['w'] >= o['h'] else 'w', x), width=6)
+                def turn():
+                    o['w'], o['h'] = o['h'], o['w']
+                    self.last_size['slot'] = (o['w'], o['h'])
+                    self.persist_ui(); self.update_preview()
+                ttk.Button(row, text='Turn 90°', command=turn).pack(side='left')
+        else:
+            ttk.Label(box, text=f'{len(sel)} selected', style='Head.TLabel').pack(anchor='w')
+            row = ttk.Frame(box); row.pack(fill='x', pady=(4, 0))
+            b = ttk.Button(row, text='Line up in a row', command=lambda: self.shapes_line_up('y')); b.pack(side='left')
+            Tip(b, 'Puts them all at the same height as the one furthest left.')
+            b = ttk.Button(row, text='Line up in a column', command=lambda: self.shapes_line_up('x')); b.pack(side='left', padx=6)
+            Tip(b, 'Puts them all under the top one.')
+            axis, pitch = self.shapes_spacing()
+            row = ttk.Frame(box); row.pack(fill='x', pady=(4, 0))
+            entry(row, 'Spacing', '' if pitch is None else f"{pitch:.2f}".rstrip('0').rstrip('.'),
+                  lambda x: self.shapes_set_spacing(max(0.0, min(500.0, x))),
+                  unit='mm middle to middle, ' + ('left to right' if axis == 'x' else 'top to bottom'))
+            ttk.Label(box, text='Empty = they are not evenly spaced. Type a spacing and the first one stays where it is.',
+                      style='Dim.TLabel', wraplength=390, justify='left').pack(anchor='w')
+        row = ttk.Frame(box); row.pack(fill='x', pady=(6, 0))
+        b = ttk.Button(row, text='Copy', command=self.shapes_duplicate); b.pack(side='left')
+        Tip(b, 'Makes a copy alongside with the same sizes and spacing (Ctrl+D). Holes in a row are carried on along the row. '
+               'Then drag the copy where it goes.')
+        ttk.Button(row, text='Delete', command=self.shapes_delete).pack(side='left', padx=6)
+        if reveal:
+            self.reveal('holes', box)
+
+    # ------------------------------------------------------------------ moving the view, and the ruler
+    def pan_press(self, e):
+        self.pan = (e.x, e.y, False)
+
+    def pan_motion(self, e):
+        if not self.pan or not getattr(self, 'cur_view', None):
+            return
+        x0, y0, moved = self.pan
+        if not moved and abs(e.x - x0) + abs(e.y - y0) < 4:
+            return
+        sc, ox, oy = self.cur_view
+        self.view = (sc, ox + e.x - x0, oy + e.y - y0)
+        self.pan = (e.x, e.y, True)
+        self.canvas.config(cursor='fleur')
+        self.draw()
+
+    def pan_release(self, e):
+        moved = self.pan and self.pan[2]
+        self.pan = None
+        self.canvas.config(cursor='crosshair' if (self.measuring or self.adding) else '')
+        if not moved:
+            if self.adding or self.measuring:
+                self.escape()
+            else:
+                self.context_menu(e)
+
+    def escape(self, _=None):
+        if self.adding:
+            self.adding = False
+            self.canvas.config(cursor='')
+            self.hover.config(text='Hover over a cutout to see what it is.')
+        elif self.measuring:
+            self.end_measure()
+        elif self.shape_sel or self.sel:
+            self.select(None)
+
+    def toggle_measure(self):
+        if self.measuring:
+            return self.end_measure()
+        if not self.pv or 'message' in self.pv:
+            return
+        self.adding = False
+        self.measuring, self.measure = True, []
+        self.w_measure.config(text='Stop')
+        self.canvas.config(cursor='crosshair')
+        self.hover.config(text='Ruler: click where to measure from, then where to. Esc to finish.')
+
+    def end_measure(self):
+        if not self.measuring:
+            return
+        self.measuring, self.measure = False, []
+        self.w_measure.config(text='Measure')
+        self.canvas.config(cursor='')
+        self.hover.config(text='Hover over a cutout to see what it is.')
+        self.draw()
+
+    def measure_point(self, e):
+        """Where the ruler lands: the middle of a hole, the edge of a hole, a panel edge or corner - else just there."""
+        x, y = self.to_mm(e)
+        if getattr(e, 'state', 0) & ALT_MASK:
+            return x, y
+        thr = 8 / self.cur_view[0]
+        x1, y1, x2, y2 = self.pv['panel_box']
+        pts = [(x1, y1), (x2, y1), (x1, y2), (x2, y2)]
+        for sh in self.pv.get('shapes', []):
+            b = sh['geom'].bounds
+            pts.append(((b[0] + b[2]) / 2, (b[1] + b[3]) / 2))
+        near = min(pts, key=lambda p: (p[0] - x) ** 2 + (p[1] - y) ** 2)
+        if (near[0] - x) ** 2 + (near[1] - y) ** 2 <= thr ** 2:
+            return near
+        try:
+            from shapely.geometry import Point
+            best = None
+            for sh in self.pv.get('shapes', []):
+                for g in (sh['geom'].geoms if hasattr(sh['geom'], 'geoms') else [sh['geom']]):
+                    ring = g.exterior
+                    q = ring.interpolate(ring.project(Point(x, y)))
+                    d = (q.x - x) ** 2 + (q.y - y) ** 2
+                    if d <= (thr * 0.75) ** 2 and (best is None or d < best[0]):
+                        best = (d, (q.x, q.y))
+            if best:
+                return best[1]
+        except ImportError:
+            pass
+        for edge in (x1, x2):
+            if abs(x - edge) <= thr:
+                x = edge
+        for edge in (y1, y2):
+            if abs(y - edge) <= thr:
+                y = edge
+        return x, y
+
+    def measure_motion(self, e):
+        if not self.measuring or len(self.measure) != 1 or not getattr(self, 'cur_view', None) or not self.pv or 'message' in self.pv:
+            return
+        self.draw_measure(self.measure_point(e))
+
+    def draw_measure(self, live=None):
+        c = self.canvas
+        c.delete('ruler')
+        pts = list(self.measure) + ([live] if live and len(self.measure) == 1 else [])
+        if not self.measuring or not pts or not getattr(self, 'cur_view', None):
+            return
+        sc, ox, oy = self.cur_view
+        X = lambda v: ox + v * sc
+        Y = lambda v: oy + v * sc
+        col = '#ff4fd8'
+        for px, py in pts:
+            c.create_line(X(px) - 6, Y(py), X(px) + 6, Y(py), fill=col, tags='ruler')
+            c.create_line(X(px), Y(py) - 6, X(px), Y(py) + 6, fill=col, tags='ruler')
+        if len(pts) < 2:
+            return
+        (ax, ay), (bx, by) = pts
+        dx, dy = bx - ax, by - ay
+        dist = (dx * dx + dy * dy) ** 0.5
+        c.create_line(X(ax), Y(ay), X(bx), Y(by), fill=col, width=2, tags='ruler')
+        txt = f'{dist:.2f} mm'
+        if abs(dx) > 0.005 and abs(dy) > 0.005:
+            txt += f'   ({abs(dx):.2f} across, {abs(dy):.2f} down)'
+            c.create_line(X(ax), Y(ay), X(bx), Y(ay), X(bx), Y(by), fill=col, dash=(2, 3), tags='ruler')
+        tx, ty = (X(ax) + X(bx)) / 2, (Y(ay) + Y(by)) / 2
+        upright = abs(dy) > abs(dx)                    # keep the figure off the line and off what's being measured
+        i = c.create_text(tx + (10 if upright else 0), ty - (0 if upright else 14), text=txt, fill='#ffffff',
+                          font=self.f_head, tags='ruler', anchor='w' if upright else 'center')
+        r = c.create_rectangle(*[v + o for v, o in zip(c.bbox(i), (-4, -2, 4, 2))], fill='#7a1f6b', outline=col, tags='ruler')
+        c.tag_raise(i, r)
+        self.hover.config(text='Ruler: ' + txt + '  ·  click to measure something else, Esc to finish')
+
     def box_choice(self, parent, current, apply):
         """Box round a text or label: none, a line round it, or a filled bar with the text cut out."""
         names = {'No box': None, 'Line round it': 'outline', 'Filled bar (text cut out)': 'filled'}
@@ -1562,6 +1978,10 @@ class App(tk.Tk):
             o = self.own_image(d['id'])
             if o:
                 o['x'] = round(o['x'] + dx, 2); o['y'] = round(o['y'] + dy, 2)
+        elif kind == 'shape':
+            for o in self.ui.get('shapes', []):
+                if o['id'] in self.shape_sel:
+                    o['x'] = round(o['x'] + dx, 3); o['y'] = round(o['y'] + dy, 3)
         else:
             e = self.ui['label_edits'].setdefault(d['fid'], {})
             e['dx'] = round(e.get('dx', 0.0) + dx, 3); e['dy'] = round(e.get('dy', 0.0) + dy, 3)
@@ -1579,13 +1999,27 @@ class App(tk.Tk):
                 self.add_text_at(x + dx, y + dy)
             m.add_command(label='Add text here…', command=here_text)
             m.add_command(label='Add picture here…', command=lambda: self.add_picture(at=(x, y)))
+            m.add_separator()
+            try:
+                m.add_command(label=f'Add {self.hole_dia():g} mm hole here', command=lambda: self.add_shape_at('hole', x, y))
+            except ValueError:
+                pass
+            m.add_command(label='Add rectangle here', command=lambda: self.add_shape_at('rect', x, y))
+            m.add_command(label='Add slot here', command=lambda: self.add_shape_at('slot', x, y))
             if self.undo_stack:
                 m.add_separator(); m.add_command(label='Undo', command=self.undo)
             m.tk_popup(e.x_root, e.y_root)
             return
         _, kind, d = t
         m = tk.Menu(self, tearoff=0)
-        if kind == 'text':
+        if kind == 'shape':
+            if d['id'] not in self.shape_sel:
+                self.shape_sel = [d['id']]; self.sel = None
+                self.draw(); self.show_selected(); self.show_shapes()
+            n = len(self.shape_sel)
+            m.add_command(label='Copy' if n == 1 else f'Copy these {n}', command=self.shapes_duplicate)
+            m.add_command(label='Delete' if n == 1 else f'Delete these {n}', command=self.shapes_delete)
+        elif kind == 'text':
             m.add_command(label='Change text…', command=lambda: self.text_change(d['fid']))
             m.add_command(label='Text size…', command=lambda: self.text_size(d['fid']))
             m.add_command(label='Delete', command=lambda: self.text_delete(d['fid']))
@@ -1646,6 +2080,8 @@ class App(tk.Tk):
         state = {'ok': '', 'warn': '  ·  too close to something (see Result)', 'error': '  ·  problem (see Result)'}[s['status']]
         who = 'your own cutout in the panel' if s['manual'] else s['rule']
         parts = [s['label']] + ([who] if who.lower() not in s['label'].lower() else []) + [size]
+        if str(s.get('key') or '').startswith('add:'):
+            parts.append('drag to move, click to change it on the left')
         self.hover.config(text='  ·  '.join(parts) + state)
 
     # ------------------------------------------------------------------ generate
@@ -1683,7 +2119,8 @@ class App(tk.Tk):
         if mem:
             self.ui = {'ignore': dict(mem.get('ignore_uncut', {})), 'label_edits': dict(mem.get('label_edits', {})),
                        'texts': [dict(t) for t in mem.get('texts', [])], 'art_pos': dict(mem.get('art_pos', {})),
-                       'images': [dict(i) for i in mem.get('images', [])]}
+                       'images': [dict(i) for i in mem.get('images', [])],
+                       'shapes': [dict(i) for i in mem.get('shapes', [])]}
             self.state_prev = self.snapshot()          # keep the history; changes made in KiCad become the new start
         self.fill_restore()
         panel, _ = panel_paths(board)
@@ -1817,7 +2254,7 @@ class App(tk.Tk):
         self.persist_ui(record=False)
         if not self.undo_stack:
             self.w_undo.state(['disabled'])
-        self.sel = None
+        self.sel = None; self.shape_sel = []
         if self.after_id:
             self.after_cancel(self.after_id); self.after_id = None
         self.refresh_states()
@@ -1837,6 +2274,7 @@ class App(tk.Tk):
             return               # no panel yet: saved with the first Generate
         mem['ignore_uncut'] = self.ui['ignore']; mem['label_edits'] = self.ui['label_edits']
         mem['texts'] = self.ui.get('texts', []); mem['art_pos'] = self.ui.get('art_pos', {}); mem['images'] = self.ui.get('images', [])
+        mem['shapes'] = self.ui.get('shapes', [])
         try:
             with open(mem_path, 'w', encoding='utf-8') as f:
                 json.dump(mem, f, indent=1)

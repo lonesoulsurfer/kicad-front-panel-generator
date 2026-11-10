@@ -44,7 +44,18 @@ By default the panel is the same size as your PCB. Use the settings on the left 
 - **Rounded corners**: sets the corner radius.
 - **Case mounting holes**: screw holes to fix the panel to your case, in the corners or in the corners and the middle of each side. Set the hole size and how far its centre sits from the edge. The line underneath tells you how much panel is left between the hole and the edge. Pick **Slots** instead of round holes if you want some play to line the panel up.
 
-Every change shows in the preview straight away. Use the **mouse wheel** to zoom in, **drag** to move around, and **Fit** to see the whole panel again. Hover over any hole to see which part it's for and how big it is.
+Every change shows in the preview straight away. Use the **mouse wheel** to zoom in, **drag with the right mouse button** to move around, and **Fit** to see the whole panel again. Hover over any hole to see which part it's for and how big it is.
+
+**Extra holes** are for things that aren't on the PCB, such as a jack or switch wired to the board, or a window:
+
+- Pick a **hole size** from the list (or type your own), click **Add hole**, then click the panel where it goes. **Add rectangle** and **Add slot** work the same way. You can also right-click the panel and add one there.
+- It snaps into line with the other holes; where there's nothing to line up with, it lands on a whole half millimetre. Hold **Alt** to place it freely.
+- Click it and its settings appear on the left: how far its middle is from the panel's **left edge** and **top edge**, and its size. Type exact numbers there.
+- **Several at once:** drag a box round holes you added (or Shift-click them) to select them, then drag them together, **line them up** in a row or column, or type their **spacing**, middle to middle.
+- **Copy** (Ctrl+D) repeats the selection with the same sizes and spacing. Two holes in a row become four, evenly spaced; drag the copy if it belongs somewhere else. **Delete** removes them.
+- **Measure** (above the preview) is a ruler: click two points to see how far apart they are. It snaps to the middle and the edge of holes and to the panel edges. Press Esc when you're done.
+
+Extra holes are checked like every other hole (too close to an edge, overlapping a part), and stay where they are relative to the PCB if you later make the panel bigger.
 
 The colours in the preview tell you what to check:
 

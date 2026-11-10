@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.26.0
+
+- **Extra holes:** add round holes (usual sizes in a list, or your own), rectangles and slots in the window, for things that aren't on the PCB. Click to place, or right-click the panel. They snap into line with the other holes.
+- **Exact place and size** on the left, measured from the panel's left and top edges to the middle of the hole.
+- **Select several** by dragging a box round them (or Shift-click), then move them together, line them up in a row or column, or type their spacing.
+- **Copy** (Ctrl+D) repeats the selection with the same sizes and spacing; **Delete** removes it.
+- **Measure:** a ruler in the preview that snaps to hole middles, hole edges and panel edges.
+- **Moving around the preview is now a drag with the right (or middle) mouse button.** A left drag on an empty spot draws the selection box.
+
 ## 0.25.4
 
 - **Stacked title:** the letters one under another, each the right way up. *Standing up* is now called *On its side*.

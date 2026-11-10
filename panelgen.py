@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.25.4"
+VERSION = "0.26.0"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -503,6 +503,30 @@ def manual_cutouts(tree, names=None):
                     'geom': g, 'manual': True})
     return out
 
+def added_cutouts(shapes):
+    """Holes, rectangles and slots you added in the window. x, y is the middle, in the PCB's own coordinates."""
+    out, n = [], {}
+    for sh in shapes:
+        try:
+            kind, x, y = sh.get('kind', 'hole'), float(sh['x']), float(sh['y'])
+            if kind == 'hole':
+                d = max(0.3, float(sh.get('d', 3.2)))
+                geom, circ, what = Point(x, y).buffer(d / 2, quad_segs=64), (x, y, d / 2), 'hole'
+            elif kind == 'slot':
+                w, h = max(0.3, float(sh.get('w', 10))), max(0.3, float(sh.get('h', 3.2)))
+                geom, circ, what = slot_geom(x, y, 0, w, h), None, 'slot'
+                if abs(w - h) < 1e-9:
+                    circ = (x, y, w / 2)
+            else:
+                w, h = max(0.3, float(sh.get('w', 20))), max(0.3, float(sh.get('h', 10)))
+                geom, circ, what = rounded_box(x - w / 2, y - h / 2, x + w / 2, y + h / 2, float(sh.get('r', 0) or 0)), None, 'rectangle'
+        except (KeyError, TypeError, ValueError):
+            continue
+        n[what] = n.get(what, 0) + 1
+        out.append({'id': f"add:{sh['id']}", 'key': f"add:{sh['id']}", 'ref': f"Added {what} {n[what]}", 'rule': f'added {what}',
+                    'merge': False, 'geom': geom, 'circle': circ})
+    return out
+
 # ---------------------------------------------------------------- checks
 def merge_and_check(cutouts, outline, min_web, log, merge_tol=None):
     """Merge touching mergeable cutouts; flag overlaps, thin webs, cutouts off the panel."""
@@ -923,7 +947,7 @@ def fill_preview(pv, groups, outline, panel_box, a, log, problems, eurorack, pcb
     pv.update(outline=outline, panel_box=panel_box, pcb_box=pcb_box, eurorack=eurorack, rail=ER_RAIL,
               rail_bad=rail_bad, uncut=list(uncut), log=list(log), problems=problems, label_font=a.label_font,
               label_bold=a.label_bold == 'on', **extra,
-              shapes=[dict(geom=g['geom'], label=fmt_refs_plain(g), rule=g.get('rule') or 'slot',
+              shapes=[dict(geom=g['geom'], label=fmt_refs_plain(g), rule=g.get('rule') or 'slot', key=g.get('key'),
                            manual=g.get('manual', False), status=st) for g, st in zip(groups, status)])
 
 # footprint names that usually mean "this pokes through the panel"
@@ -2331,6 +2355,7 @@ def main(argv=None, preview=None):
     texts = [dict(t) for t in ui.get('texts', mem0.get('texts', []))]
     images = [dict(i) for i in ui.get('images', mem0.get('images', []))]
     a._art_pos = dict(ui.get('art_pos', mem0.get('art_pos', {})))
+    added = [dict(s) for s in ui.get('shapes', mem0.get('shapes', []))]
     cfg = json.load(open(a.rules))
     cfg['grow'] = a.grow
     pcb_text, pcb = read_board(a.pcb)
@@ -2414,6 +2439,7 @@ def main(argv=None, preview=None):
             geom, circ = Point(hx, hy).buffer(ER_HOLE_DIA / 2, quad_segs=64), (hx, hy, ER_HOLE_DIA / 2)
         cutouts.append({'id': f'RAIL-{name}', 'key': f'rail:{name}', 'ref': f'RAIL-{name}', 'rule': 'rail slot' if rslot else 'rail hole',
                         'merge': False, 'geom': geom, 'circle': circ})
+    cutouts += added_cutouts(added)
     if spots:
         # rule of thumb: keep at least one hole-width of panel between a screw hole and the edge
         edge = min(outline.exterior.distance(g) for g in case_geoms)
@@ -2488,6 +2514,10 @@ def main(argv=None, preview=None):
         names = {u: v['ref'] for v in kept.values() for u in v['uuids']}
         manual = manual_cutouts(parse(existing_text + ')'), names)
 
+    # a hole you added here and then deleted in KiCad is simply gone (nothing to bring back)
+    for k in [k for k, v in suppressed.items() if all(str(m).startswith('add:') for m in v['member_keys'])]:
+        gone = {str(m)[4:] for m in suppressed.pop(k)['member_keys']}
+        added = [s for s in added if s['id'] not in gone]
     off = {k for v in list(suppressed.values()) + list(kept.values()) for k in v['member_keys']}
     for v in suppressed.values():
         log.append(f"off   {v['ref']} @({v['at'][0]:.2f}, {v['at'][1]:.2f}) - deleted in panel (--restore {v['ref']} to bring back)")
@@ -2578,6 +2608,8 @@ def main(argv=None, preview=None):
                      rail_bad=rail_bad, uncut=uncut, labels=placed, label_rows=label_rows,
                      label_edits=label_edits, ignore_uncut=ignore_uncut, artwork=art, markers=a._markers,
                      art_items=a._art_items, texts=texts, art_pos=a._art_pos,
+                     added=[dict(s, box=list(c['geom'].bounds), ref=c['ref']) for s in added
+                            for c in cutouts if c['key'] == f"add:{s['id']}"],
                      knocked=[dict(fid=f, **v) for f, v in a._knock_boxes.items()], tab_boxes=a._tab_boxes,
                      images=[dict(id=i['id'], box=i['_box'], w=i['w'], invert=i.get('invert', False), rot=i.get('rot', 0))
                              for i in shown_images if '_box' in i])
@@ -2610,7 +2642,7 @@ def main(argv=None, preview=None):
                'labels_generated': {L['fid']: dict(uuid=L['uuid'], at=[L['x'], L['y']], auto=list(L['auto']), text=L['text'],
                                                     ref=L['ref']) for L in placed if not L.get('own')},
                'label_edits': label_edits, 'ignore_uncut': ignore_uncut, 'texts': texts, 'art_pos': a._art_pos,
-               'images': [{k: v for k, v in i.items() if not k.startswith('_')} for i in images],
+               'images': [{k: v for k, v in i.items() if not k.startswith('_')} for i in images], 'shapes': added,
                'settings': dict(margin=a.margin, **{f'margin_{k}': v for k, v in m.items()},
                                 screws=a.screws, screw_dia=a.screw_dia, screw_inset=a.screw_inset, screw_slot=a.screw_slot, rail_slot=a.rail_slot,
                                 corner_radius=a.corner_radius, grow=a.grow, min_web=a.min_web,

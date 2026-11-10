@@ -224,6 +224,12 @@ Add `Eurorack.pretty` as a footprint library (same way as PanelParts). It has a 
 
 Widths for 3, 5, 7, 9, 11, 13, 15, 17, 19, 24, 26, 32 and 36HP aren't in Doepfer's table and are estimated; the run prints a CHECK line for those. Rebuild the templates after changing the spec with `py make_eurorack.py`.
 
+## Extra holes added in the window
+
+*Extra holes* in the window adds round holes, rectangles (with optional rounded corners) and slots without opening KiCad. They are saved in the panel's `.panelgen.json` under `shapes` (middle `x`, `y` in the PCB's own coordinates, so they keep their place relative to the PCB when the panel size changes; the window shows them from the panel's top-left corner). They go through the same checks as every other cutout and are written to Edge.Cuts with the rest. Delete one in KiCad and it is gone for good; resize one in KiCad and your version is kept, like any generated cutout.
+
+For a part with several holes that must not drift apart (a USB-C charge port and its screws), use a panel-only footprint instead:
+
 ## Panel-only parts (jacks, charge port, extra screws)
 
 Add `PanelParts.pretty` as a footprint library. Place its parts in the **panel** file and position them exactly using KiCad's properties (X/Y), Align and Distribute.
