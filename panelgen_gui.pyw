@@ -153,6 +153,7 @@ class App(tk.Tk):
             sv_ttk.set_theme('light')
             themed = True
         except Exception:
+            self.theme_error = traceback.format_exc()
             st = ttk.Style(self)
             for t in ('vista', 'clam'):
                 if t in st.theme_names():
@@ -2564,4 +2565,15 @@ class LabelEditor(tk.Toplevel):
 
 
 if __name__ == '__main__':
+    if '--selftest' in sys.argv:         # used by the build: does the packaged app start, with its proper look?
+        os.environ['APPDATA'] = os.path.abspath('selftest_appdata')
+        CONFIG = os.path.join(os.environ['APPDATA'], 'panelgen', 'gui.json')
+        try:
+            app = App(None); app.update()
+            ok, why = app.themed, getattr(app, 'theme_error', '')
+            app.destroy()
+        except Exception:
+            ok, why = False, traceback.format_exc()
+        open('selftest.txt', 'w', encoding='utf-8').write(('ok' if ok else 'FAIL') + '\n' + why)
+        sys.exit(0 if ok else 3)
     App(sys.argv[1] if len(sys.argv) > 1 else None).mainloop()
