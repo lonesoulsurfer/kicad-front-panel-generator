@@ -1,10 +1,13 @@
 name: Build Windows app
 
-# Push a tag like v0.18.0 to build and publish a release.
+# Releases publish themselves: when a push to main changes VERSION in panelgen.py to one that has no release yet,
+# this tests it on Windows, builds the zip and publishes release v<VERSION> (as a pre-release) with CHANGELOG.md's notes.
+# If a test fails, nothing is published. Any other push to main is tested only.
 # "Run workflow" on the Actions tab makes a test build (download it from the run's Artifacts).
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths: ['panelgen.py', 'panelgen_gui.pyw', 'panel_rules.json', 'requirements.txt', 'tools/**', '.github/workflows/build.yml']
   workflow_dispatch:
 
 permissions:
@@ -25,8 +28,32 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller==6.11.1
 
+      - name: Which version is this, and is it released yet?
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ver = (Select-String -Path panelgen.py -Pattern '^VERSION = "(.+)"').Matches[0].Groups[1].Value
+          gh release view "v$ver" --repo $env:GITHUB_REPOSITORY *> $null
+          $new = if ($LASTEXITCODE -ne 0 -and $env:GITHUB_EVENT_NAME -eq 'push') { 'yes' } else { 'no' }
+          $global:LASTEXITCODE = 0
+          "VER=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "PUBLISH=$new" | Out-File -FilePath $env:GITHUB_ENV -Append
+          # this version's part of the changelog becomes the release notes
+          $notes = @(); $on = $false
+          foreach ($l in Get-Content CHANGELOG.md) {
+            if ($l -match '^## ') { if ($on) { break }; $on = ($l.Trim() -eq "## $ver"); continue }
+            if ($on) { $notes += $l }
+          }
+          if (-not $notes) { $notes = @("Version $ver.") }
+          $notes | Set-Content notes.md -Encoding utf8
+          Write-Host "version $ver, publish: $new"
+
       - name: Check the engine works on the example board
         run: python panelgen.py examples/eurorack/Eurorack_8HP_test.kicad_pcb -o ci_check.kicad_pcb
+
+      - name: Check the window works (mouse, extra holes, ruler, undo, generate)
+        run: python tools/ci_smoke.py
 
       - name: Build PanelGenerator.exe
         run: pyinstaller --noconfirm --clean --windowed --name PanelGenerator --collect-data sv_ttk --hidden-import panelgen panelgen_gui.pyw
@@ -37,7 +64,7 @@ jobs:
           $out = "dist/PanelGenerator"
           Copy-Item panel_rules.json, README.md, LICENSE $out
           Copy-Item -Recurse PanelParts.pretty, Eurorack.pretty, examples $out
-          $ver = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { "test-$($env:GITHUB_SHA.Substring(0,7))" }
+          $ver = if ($env:PUBLISH -eq 'yes') { "v$($env:VER)" } else { "test-$($env:GITHUB_SHA.Substring(0,7))" }
           Compress-Archive -Path $out -DestinationPath "PanelGenerator-$ver-windows.zip"
           "ZIP=PanelGenerator-$ver-windows.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
@@ -47,9 +74,12 @@ jobs:
           path: ${{ env.ZIP }}
 
       - name: Publish the release
-        if: github.ref_type == 'tag'
+        if: env.PUBLISH == 'yes'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ env.VER }}
+          target_commitish: ${{ github.sha }}
+          name: Panel Generator ${{ env.VER }}
+          body_path: notes.md
           files: ${{ env.ZIP }}
           prerelease: true
-          generate_release_notes: true
