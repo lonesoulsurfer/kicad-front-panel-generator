@@ -1,7 +1,7 @@
 name: Build Windows app
 
 # Releases publish themselves: when a push to main changes VERSION in panelgen.py to one that has no release yet,
-# this tests it on Windows, builds the zip and publishes release v<VERSION> (as a pre-release) with CHANGELOG.md's notes.
+# this tests it on Windows, builds the zip and publishes release v<VERSION> as the latest release, with CHANGELOG.md's notes.
 # If a test fails, nothing is published. Any other push to main is tested only.
 # "Run workflow" on the Actions tab makes a test build (download it from the run's Artifacts).
 on:
@@ -82,4 +82,14 @@ jobs:
           name: Panel Generator ${{ env.VER }}
           body_path: notes.md
           files: ${{ env.ZIP }}
-          prerelease: true
+          prerelease: false
+          make_latest: true
+
+      - name: Make sure this version's release is a full one (shown on the repo's front page)
+        if: env.PUBLISH != 'yes' && github.event_name == 'push'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $pre = gh release view "v$($env:VER)" --repo $env:GITHUB_REPOSITORY --json isPrerelease --jq .isPrerelease
+          if ($pre -eq 'true') { gh release edit "v$($env:VER)" --repo $env:GITHUB_REPOSITORY --prerelease=false --latest }
