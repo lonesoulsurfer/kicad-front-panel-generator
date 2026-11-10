@@ -13,7 +13,7 @@ DEFAULTS = dict(margin=0.0, margin_top=0.0, margin_right=0.0, margin_bottom=0.0,
                 corner_radius=0.0, grow=0.0, svg=False, check_uncut='on',
                 artwork='off', labels='off', label_size=2.0, label_gap=1.5, label_pos='above', label_font='', label_bold='off', label_caps='off',
                 extras='on', auto_art='off', art_style='Classic synth', art_scale='ticks', art_rings='on', art_outputs='off', art_border='off',
-                art_border_radius=0.0, art_groups='off', art_tabs='off',
+                art_border_radius=0.0, art_border_gap=0.0, ring_width=0.8, ring_gap=0.8, art_groups='off', art_tabs='off',
                 art_title='', art_maker='', title_size=5.0, knob_size=13.0)
 ART_STYLES = {   # what each style switches on
     'Minimal': dict(scale='Ticks', rings=False, outputs=False, border=False, groups=False, tabs=False),
@@ -105,24 +105,23 @@ class App(tk.Tk):
         self.cfg = load_json(CONFIG)
         self.board = tk.StringVar(value=board or self.cfg.get('last_board', ''))
         v = self.vars = {}
-        v['expand'] = tk.BooleanVar(); v['margin'] = tk.StringVar(value='10')
+        v['margin'] = tk.StringVar(value='0')
         v['per_side'] = tk.BooleanVar()
         for s in ('top', 'right', 'bottom', 'left'):
-            v[s] = tk.StringVar(value='10')
+            v[s] = tk.StringVar(value='0')
         v['screws'] = tk.StringVar(value='none')
         v['screw_dia'] = tk.StringVar(value='2.2'); v['screw_inset'] = tk.StringVar(value='3.5')
         v['case_shape'] = tk.StringVar(value='round'); v['slot'] = tk.StringVar(value='4')
         v['rail_shape'] = tk.StringVar(value='round'); v['rslot'] = tk.StringVar(value='5')
-        v['round'] = tk.BooleanVar(); v['radius'] = tk.StringVar(value='3')
-        v['grow_on'] = tk.BooleanVar(); v['grow'] = tk.StringVar(value='0.5')
+        v['radius'] = tk.StringVar(value='0')
         v['svg'] = tk.BooleanVar(); v['open'] = tk.BooleanVar(value=self.cfg.get('open_after', True))
-        v['uncut_check'] = tk.BooleanVar(value=True)
         v['art_on'] = tk.BooleanVar()
         v['extras_on'] = tk.BooleanVar(value=True)
         v['auto_on'] = tk.BooleanVar(); v['art_style'] = tk.StringVar(value='Classic synth')
         v['art_scale'] = tk.StringVar(value='Ticks'); v['art_rings'] = tk.BooleanVar(value=True)
         v['art_outputs'] = tk.BooleanVar(); v['art_border'] = tk.BooleanVar()
         v['art_groups'] = tk.BooleanVar(); v['art_tabs'] = tk.BooleanVar(); v['border_radius'] = tk.StringVar(value='0')
+        v['border_gap'] = tk.StringVar(value='0'); v['ring_width'] = tk.StringVar(value='0.8'); v['ring_gap'] = tk.StringVar(value='0.8')
         v['art_title'] = tk.StringVar(); v['art_maker'] = tk.StringVar()
         v['title_size'] = tk.StringVar(value='5'); v['knob_size'] = tk.StringVar(value='13')
         v['title_dir'] = tk.StringVar(value='Across')
@@ -170,6 +169,9 @@ class App(tk.Tk):
         st.configure('Dim.TLabel', foreground=C_DIM, font=self.f_small)
         st.configure('Badge.TLabel', font=self.f_head)
         st.configure('Group.TLabel', font=self.f_head, foreground='#2563eb')
+        self.f_sub = tkfont.Font(family=fam, size=max(8, base.actual('size') - 1), weight='bold')
+        st.configure('Sub.TLabel', font=self.f_sub, foreground='#5b6b7d')
+        st.configure('Chev.TLabel', font=self.f_head, foreground='#5b6b7d')
         if not themed:
             st.configure('Card.TFrame', relief='solid', borderwidth=1)
             st.configure('Accent.TButton', font=self.f_head, padding=8)
@@ -184,8 +186,38 @@ class App(tk.Tk):
 
         bg = ttk.Style(self).lookup('TFrame', 'background') or C_BG
         lc = ttk.Frame(root); lc.grid(row=1, column=0, sticky='nsew', padx=(0, 10))
-        cv = tk.Canvas(lc, highlightthickness=0, width=520, bg=bg)
-        lsb = ttk.Scrollbar(lc, orient='vertical', command=cv.yview)
+        self.sections, self.switches = {}, {}
+        self.collapsed = set(self.cfg.get('collapsed', []))
+        self.tab = 'panel'
+
+        # always in view: the PCB, and the two halves of the job
+        top = ttk.Frame(lc); top.pack(fill='x')
+        s = self.section('pcb', 'Your PCB', None, parent=top, fold=False)
+        row = ttk.Frame(s); row.pack(fill='x')
+        self.board_name = tk.StringVar()
+        cb = self.board_box = ttk.Combobox(row, textvariable=self.board_name, state='readonly')
+        cb.pack(side='left', fill='x', expand=True)
+        cb.bind('<<ComboboxSelected>>', self.pick_recent)
+        self.board_tip = Tip(cb, 'The synth PCB with the parts on it. Save it in KiCad first.')
+        ttk.Button(row, text='Browse…', command=self.browse).pack(side='left', padx=(6, 0))
+        self.mode_lbl = ttk.Label(s, text='', style='Badge.TLabel'); self.mode_lbl.pack(anchor='w', pady=(6, 0))
+        Tip(self.mode_lbl, 'A PCB with a Eurorack_xHP template from Eurorack.pretty on it gets a standard Eurorack panel; '
+                           'any other PCB gets a panel fitted to its outline.')
+        self.mode_hint = ttk.Label(s, text='', style='Dim.TLabel', wraplength=440, justify='left')
+        self.mode_hint.pack(anchor='w')
+        tabs = ttk.Frame(top); tabs.pack(fill='x', pady=(4, 8))
+        tabs.columnconfigure(0, weight=1, uniform='t'); tabs.columnconfigure(1, weight=1, uniform='t')
+        self.tab_btn = {}
+        for i, (key, txt, tip) in enumerate((('panel', 'Panel', 'The board itself: its size, shape and holes.'),
+                                             ('art', 'Artwork', 'Everything printed on the panel: labels, your own text and '
+                                                                'pictures, scales, borders, Inkscape artwork.'))):
+            bt = self.tab_btn[key] = ttk.Button(tabs, text=txt, command=lambda k=key: self.show_tab(k))
+            bt.grid(row=0, column=i, sticky='ew', padx=(0, 3) if i == 0 else (3, 0), ipady=2)
+            Tip(bt, tip)
+
+        sc_ = ttk.Frame(lc); sc_.pack(fill='both', expand=True)
+        cv = tk.Canvas(sc_, highlightthickness=0, width=520, bg=bg)
+        lsb = ttk.Scrollbar(sc_, orient='vertical', command=cv.yview)
         cv.configure(yscrollcommand=lsb.set)
         cv.pack(side='left', fill='both', expand=True)
         left = ttk.Frame(cv, padding=(0, 0, 8, 0)); win = cv.create_window(0, 0, window=left, anchor='nw')
@@ -205,239 +237,216 @@ class App(tk.Tk):
         cv.bind('<Enter>', lambda e: [self.bind_all(x, wheel) for x in wheels])
         cv.bind('<Leave>', lambda e: [self.unbind_all(x) for x in wheels])
         self.left = left
-        self.sections = {}
+        field, sub, mm = self.field, self.sub, self.mm
 
-        self.group('g_panel', 'Panel', 'The board itself: its size, shape and holes.')
-        # 1 PCB
-        s = self.section('pcb', 'Your PCB', 'The synth PCB with the parts on it. Save it in KiCad first.')
-        row = ttk.Frame(s); row.pack(fill='x')
-        self.board_name = tk.StringVar()
-        cb = self.board_box = ttk.Combobox(row, textvariable=self.board_name, state='readonly')
-        cb.pack(side='left', fill='x', expand=True)
-        cb.bind('<<ComboboxSelected>>', self.pick_recent)
-        self.board_tip = Tip(cb, '')
-        ttk.Button(row, text='Browse…', command=self.browse).pack(side='left', padx=(6, 0))
-        self.mode_lbl = ttk.Label(s, text='', style='Badge.TLabel'); self.mode_lbl.pack(anchor='w', pady=(6, 0))
-        Tip(self.mode_lbl, 'A PCB with a Eurorack_xHP template from Eurorack.pretty on it gets a standard Eurorack panel; '
-                           'any other PCB gets a panel fitted to its outline.')
-        self.mode_hint = ttk.Label(s, text='', style='Dim.TLabel', wraplength=400, justify='left')
-        self.mode_hint.pack(anchor='w')
+        # ================================================================ PANEL
+        # size (fit to PCB)
+        s = self.section('size', 'Size and shape', 'The panel starts the same size as your PCB.')
+        f = self.form(s)
+        c = field(f, 'Extra round the PCB', 'Extra panel on every side, e.g. 10 mm to leave room for a case or wired jacks. '
+                                            '0 = the same size as the PCB.')
+        self.w_margin = mm(c, 'margin')
+        c = field(f, 'Each side')
+        self.w_per = ttk.Checkbutton(c, text='Set each side separately', variable=v['per_side'], command=self.refresh_states)
+        self.w_per.pack(side='left')
+        h2 = ttk.Frame(s); h2.pack(fill='x')                # holder for a block that comes and goes
+        sides = self.sides_row = self.form(h2)
+        self.w_sides = [mm(field(sides, side.capitalize()), side) for side in ('top', 'right', 'bottom', 'left')]
+        f = self.form(s)
+        c = field(f, 'Corner radius', 'Rounds the four corners of the panel. 0 = square corners.')
+        self.w_radius = mm(c, 'radius')
 
-        # 2a size (fit to PCB)
-        s = self.section('size', 'Panel size and shape', 'The panel starts as your PCB outline.')
-        row = ttk.Frame(s); row.pack(fill='x')
-        c = ttk.Checkbutton(row, text='Make the panel bigger than the PCB by', variable=v['expand'], command=self.refresh_states)
-        c.pack(side='left')
-        Tip(c, 'Extra panel around the PCB on every side, e.g. 10 mm to leave room for a case or wired jacks.')
-        self.w_margin = self.num(row, 'margin'); ttk.Label(row, text='mm').pack(side='left')
-        h1 = ttk.Frame(s); h1.pack(fill='x'); h2 = ttk.Frame(s); h2.pack(fill='x')     # holders for rows that come and go
-        self.w_per = ttk.Checkbutton(h1, text='Different amount on each side', variable=v['per_side'], command=self.refresh_states)
-        self.w_per.pack(anchor='w', padx=(26, 0), pady=(4, 0))
-        sides = self.sides_row = ttk.Frame(h2); sides.pack(anchor='w', padx=(26, 0), pady=(2, 0))
-        self.w_sides = []
-        for i, side in enumerate(('top', 'right', 'bottom', 'left')):
-            ttk.Label(sides, text=side.capitalize()).grid(row=0, column=2 * i, padx=(0 if i == 0 else 10, 3))
-            self.w_sides.append(self.num(sides, side, grid=(0, 2 * i + 1)))
-        row = self.corner_row = ttk.Frame(s); row.pack(fill='x', pady=(8, 0))
-        c = ttk.Checkbutton(row, text='Rounded corners, radius', variable=v['round'], command=self.refresh_states); c.pack(side='left')
-        self.w_radius = self.num(row, 'radius'); ttk.Label(row, text='mm').pack(side='left')
+        # rail holes (Eurorack)
+        s = self.section('rail', 'Rail holes', '3.2 mm holes at the standard Eurorack positions. 4 holes from 10HP up.')
+        f = self.form(s)
+        c = field(f, 'Shape')
+        ttk.Radiobutton(c, text='Round', value='round', variable=v['rail_shape'], command=self.refresh_states).pack(side='left', padx=(0, 12))
+        r_ = ttk.Radiobutton(c, text='Slots', value='slot', variable=v['rail_shape'], command=self.refresh_states)
+        r_.pack(side='left')
+        Tip(r_, 'Horizontal slots centred on the standard hole position, so the module can slide a little along the rail.')
+        c = field(f, 'Slot length', 'End to end.')
+        self.w_rslot = mm(c, 'rslot')
+
+        # case holes (fit to PCB)
+        s = self.section('case', 'Case mounting holes', 'Screw holes round the panel edge, for fixing it to a case.')
+        f = self.form(s)
+        c = field(f, 'Where')
+        for txt, val in (('None', 'none'), ('Corners', 'corners'), ('Corners + sides', 'corners+mid')):
+            r_ = ttk.Radiobutton(c, text=txt, value=val, variable=v['screws'], command=self.refresh_states)
+            r_.pack(side='left', padx=(0, 12))
+        Tip(r_, 'A hole in each corner and one in the middle of each side.')
+        h3 = ttk.Frame(s); h3.pack(fill='x')
+        det = self.case_detail = ttk.Frame(h3); det.pack(fill='x')
+        f = self.form(det)
+        self.w_dia = mm(field(f, 'Hole size'), 'screw_dia')
+        c = field(f, 'Edge to hole centre', 'Measured from the panel edge to the centre of the hole. For slots, to the centre '
+                                            'of the end nearest that edge.')
+        self.w_inset = mm(c, 'screw_inset')
+        c = field(f, 'Shape')
+        self.w_cround = ttk.Radiobutton(c, text='Round', value='round', variable=v['case_shape'], command=self.refresh_states)
+        self.w_cround.pack(side='left', padx=(0, 12))
+        self.w_cslot = ttk.Radiobutton(c, text='Slots', value='slot', variable=v['case_shape'], command=self.refresh_states)
+        self.w_cslot.pack(side='left')
+        Tip(self.w_cslot, 'Slots along the edge give the case screws some play. Corner slots run inwards from the corner position.')
+        self.w_slot = mm(field(f, 'Slot length', 'End to end.'), 'slot')
+        self.edge_info = tk.Label(det, text='', anchor='w', justify='left', wraplength=440, font=self.f_small)
+        self.edge_info.pack(anchor='w', pady=(4, 0))
 
         # holes you add yourself
         s = self.section('holes', 'Extra holes', "Holes, rectangles and slots for things that aren't on the PCB "
                                                  '(a wired jack, a switch, a window).')
-        row = ttk.Frame(s); row.pack(fill='x')
-        ttk.Label(row, text='Hole size').pack(side='left')
+        f = self.form(s)
+        c = field(f, 'Hole size', 'Pick a usual size or type your own in mm. These are common sizes: check them against your own parts.')
         self.hole_size = tk.StringVar(value=HOLE_SIZES[2])
-        cb = ttk.Combobox(row, textvariable=self.hole_size, values=HOLE_SIZES, width=30); cb.pack(side='left', padx=4)
-        ttk.Label(row, text='mm').pack(side='left')
-        Tip(cb, 'Pick a usual size or type your own in mm. These are common sizes: check them against your own parts.')
-        row = ttk.Frame(s); row.pack(fill='x', pady=(6, 0))
-        for kind, txt in (('hole', 'Add hole'), ('rect', 'Add rectangle'), ('slot', 'Add slot')):
-            b = ttk.Button(row, text=txt, command=lambda k=kind: self.start_add(k)); b.pack(side='left', padx=(0, 6))
-            Tip(b, 'Click this, then click on the panel where it goes (or right-click the panel). It snaps into line with '
-                   'the other holes; hold Alt to place it freely. Then set its exact place and size here.')
-        ttk.Label(s, text='Drag a box round holes you added to select several, then move, line up, space or copy them together.',
-                  style='Dim.TLabel', wraplength=390, justify='left').pack(anchor='w', pady=(4, 0))
-        self.hole_box = ttk.Frame(s); self.hole_box.pack(fill='x', pady=(8, 0))
+        ttk.Combobox(c, textvariable=self.hole_size, values=HOLE_SIZES, width=28).pack(side='left')
+        ttk.Label(c, text='mm').pack(side='left', padx=(4, 0))
+        c = field(f, 'Add')
+        for kind, txt in (('hole', 'Hole'), ('rect', 'Rectangle'), ('slot', 'Slot')):
+            bt = ttk.Button(c, text=txt, command=lambda k=kind: self.start_add(k)); bt.pack(side='left', padx=(0, 6))
+            Tip(bt, 'Click this, then click on the panel where it goes (or right-click the panel). It snaps into line with '
+                    'the other holes; hold Alt to place it freely. Then set its exact place and size here.')
+        sub(s, 'Selected')
+        self.hole_box = ttk.Frame(s); self.hole_box.pack(fill='x')
         self.shape_sel, self.last_size = [], {'rect': (20.0, 10.0), 'slot': (10.0, 3.2)}
         self.measuring, self.measure = False, []
 
-        # 2b rail holes (Eurorack)
-        s = self.section('rail', 'Rail holes', '3.2 mm holes at the standard Eurorack positions. 4 holes from 10HP up.')
-        ttk.Radiobutton(s, text='Round holes', value='round', variable=v['rail_shape'], command=self.refresh_states).pack(anchor='w')
-        row = ttk.Frame(s); row.pack(fill='x', pady=(2, 0))
-        c = ttk.Radiobutton(row, text='Slots, length', value='slot', variable=v['rail_shape'], command=self.refresh_states)
-        c.pack(side='left')
-        Tip(c, 'Horizontal slots centred on the standard hole position, so the module can slide a little along the rail.')
-        self.w_rslot = self.num(row, 'rslot'); ttk.Label(row, text='mm end to end').pack(side='left')
-
-        # 3 case holes (fit to PCB)
-        s = self.section('case', 'Case mounting holes', 'Screw holes round the panel edge, for fixing it to a case.')
+        # holes you removed
+        s = self.section('restore', 'Holes you removed or changed', 'Delete or resize a hole in the panel in KiCad and it stays '
+                                                                   'that way. Parts you said need no cutout are listed here too.')
         row = ttk.Frame(s); row.pack(fill='x')
-        for txt, val in (('None', 'none'), ('Corners', 'corners'), ('Corners + middle of each side', 'corners+mid')):
-            ttk.Radiobutton(row, text=txt, value=val, variable=v['screws'], command=self.refresh_states).pack(side='left', padx=(0, 12))
-        h3 = ttk.Frame(s); h3.pack(fill='x')
-        det = self.case_detail = ttk.Frame(h3); det.pack(fill='x')
-        g = ttk.Frame(det); g.pack(fill='x', pady=(6, 0))
-        ttk.Label(g, text='Hole size').grid(row=0, column=0, sticky='w')
-        self.w_dia = self.num(g, 'screw_dia', grid=(0, 1)); ttk.Label(g, text='mm').grid(row=0, column=2, sticky='w')
-        l = ttk.Label(g, text='Edge to hole centre'); l.grid(row=0, column=3, sticky='w', padx=(16, 0))
-        Tip(l, 'Measured from the panel edge to the centre of the hole. For slots, to the centre of the end nearest that edge.')
-        self.w_inset = self.num(g, 'screw_inset', grid=(0, 4)); ttk.Label(g, text='mm').grid(row=0, column=5, sticky='w')
-        row = ttk.Frame(det); row.pack(fill='x', pady=(6, 0))
-        self.w_cround = ttk.Radiobutton(row, text='Round', value='round', variable=v['case_shape'], command=self.refresh_states)
-        self.w_cround.pack(side='left', padx=(0, 12))
-        self.w_cslot = ttk.Radiobutton(row, text='Slots along the edge, length', value='slot', variable=v['case_shape'],
-                                       command=self.refresh_states)
-        self.w_cslot.pack(side='left')
-        Tip(self.w_cslot, 'Give the case screws some play. Corner slots run inwards from the corner position.')
-        self.w_slot = self.num(row, 'slot'); ttk.Label(row, text='mm').pack(side='left')
-        self.edge_info = tk.Label(det, text='', anchor='w', justify='left', wraplength=410, font=self.f_small)
-        self.edge_info.pack(anchor='w', pady=(4, 0))
+        self.restore_list = tk.Listbox(row, height=2, selectmode='extended', activestyle='none', relief='flat',
+                                       highlightthickness=1, highlightcolor='#c8ced5', highlightbackground='#c8ced5')
+        self.restore_list.pack(side='left', fill='x', expand=True)
+        ttk.Button(row, text='Bring back', command=self.restore).pack(side='left', padx=(6, 0), anchor='n')
 
-        # 4 openings
-        s = self.section('open', 'Openings', 'Pots, jacks, switches, screens and LEDs - sized from the PCB.')
-        row = ttk.Frame(s); row.pack(fill='x')
-        c = ttk.Checkbutton(row, text='Make every opening bigger by', variable=v['grow_on'], command=self.refresh_states)
-        c.pack(side='left')
-        Tip(c, 'Adds this much to every opening (screens, switches, pots, jacks, LEDs). Screw and mounting holes stay as they are.')
-        self.w_grow = self.num(row, 'grow'); ttk.Label(row, text='mm').pack(side='left')
-        c = ttk.Checkbutton(s, text='Warn about parts that seem to need a cutout but have none', variable=v['uncut_check'])
-        c.pack(anchor='w', pady=(4, 0))
-        Tip(c, 'Jacks, switches, pots, LEDs and screens with no rule get a dashed orange box in the preview. '
-               'Click one that really sits behind the panel to stop warning about it.')
-
-        self.group('g_art', 'Artwork', 'Everything printed on the panel: labels, scales, your own text and pictures.')
+        # ================================================================ ARTWORK
         # labels
-        s = self.section('labels', 'Labels', 'Optional: text for each control, printed on the panel\'s silkscreen.')
-        c = ttk.Checkbutton(s, text='Add labels from the PCB', variable=v['labels_on'], command=self.refresh_states)
-        c.pack(anchor='w')
-        Tip(c, "Each part's text comes from its Label field if it has one, otherwise its Value or Reference "
-               "(e.g. 'Cutoff', 'Play'). Change, hide or move any of them in Edit labels.")
+        s = self.section('labels', 'Labels', "A name next to each control, taken from the PCB.", switch='labels_on',
+                         tip="Each part's text comes from its Label field if it has one, otherwise its Value or Reference "
+                             "(e.g. 'Cutoff', 'Play'). Change, hide or move any of them in Edit labels.")
         h4 = ttk.Frame(s); h4.pack(fill='x')
         det = self.label_detail = ttk.Frame(h4); det.pack(fill='x')
-        g = ttk.Frame(det); g.pack(fill='x', pady=(6, 0))
-        ttk.Label(g, text='Position').grid(row=0, column=0, sticky='w')
-        pr = ttk.Frame(g); pr.grid(row=0, column=1, columnspan=3, sticky='w', padx=4)
-        ttk.Radiobutton(pr, text='Above', value='above', variable=v['label_pos']).pack(side='left', padx=(0, 8))
-        ttk.Radiobutton(pr, text='Below', value='below', variable=v['label_pos']).pack(side='left')
-        l = ttk.Label(g, text='Gap'); l.grid(row=0, column=4, sticky='w', padx=(14, 0))
-        Tip(l, 'Distance from the edge of the hole to the text. Keys in a merged switch slot follow their own side of the slot.')
-        self.num(g, 'label_gap', grid=(0, 5)); ttk.Label(g, text='mm').grid(row=0, column=6, sticky='w')
-        ttk.Label(g, text='Text size').grid(row=1, column=0, sticky='w', pady=(6, 0))
-        self.num(g, 'label_size', grid=(1, 1)); ttk.Label(g, text='mm').grid(row=1, column=2, sticky='w', pady=(6, 0))
-        l = ttk.Label(g, text='Font'); l.grid(row=1, column=4, sticky='w', padx=(14, 0), pady=(6, 0))
-        fonts = [KICAD_FONT] + sorted({f for f in tkfont.families() if not f.startswith('@')})
-        fc = ttk.Combobox(g, textvariable=v['label_font'], values=fonts, width=16, state='readonly')
-        fc.grid(row=1, column=5, columnspan=2, sticky='w', padx=4, pady=(6, 0))
-        Tip(fc, "KiCad's own font always works. Any other font has to be installed on the computer that opens the panel "
-                "(the gerbers carry the shapes, so the fab doesn't need it).")
-        row = ttk.Frame(det); row.pack(fill='x', pady=(6, 0))
-        ttk.Checkbutton(row, text='Bold', variable=v['label_bold']).pack(side='left', padx=(0, 12))
-        ttk.Checkbutton(row, text='ALL CAPS', variable=v['label_caps']).pack(side='left')
-        ttk.Button(row, text='Edit labels…', command=self.edit_labels).pack(side='right')
-
-        # artwork made for you
-        s = self.section('auto', 'Artwork made for you', 'Optional: pot scales, rings, output boxes, a border and a title, '
-                                                         'drawn from your panel. No Inkscape needed.')
-        c = ttk.Checkbutton(s, text='Make artwork for me', variable=v['auto_on'], command=self.refresh_states)
-        c.pack(anchor='w')
-        Tip(c, 'Everything is placed from the holes and labels on your panel, and checked against them. It also goes into '
-               "the Inkscape file on its own layer, so you can draw more on top if you like.")
-        h6 = ttk.Frame(s); h6.pack(fill='x')
-        det = self.auto_detail = ttk.Frame(h6); det.pack(fill='x')
-        g = ttk.Frame(det); g.pack(fill='x', pady=(6, 0))
-        ttk.Label(g, text='Style').grid(row=0, column=0, sticky='w')
-        sc = ttk.Combobox(g, textvariable=v['art_style'], values=list(ART_STYLES) + ['Custom'], width=14, state='readonly')
-        sc.grid(row=0, column=1, columnspan=3, sticky='w', padx=4)
-        sc.bind('<<ComboboxSelected>>', lambda e: self.apply_style())
-        Tip(sc, 'Minimal: ticks round the pots. Classic synth: numbered scales, rings round buttons, a border. '
-                "Modular: ticks, and outputs in filled boxes (any jack whose label says OUT). Change anything below after.")
-        ttk.Label(g, text='Title').grid(row=1, column=0, sticky='w', pady=(6, 0))
-        ttk.Entry(g, textvariable=v['art_title'], width=20).grid(row=1, column=1, columnspan=3, sticky='w', padx=4, pady=(6, 0))
-        l = ttk.Label(g, text='Size'); l.grid(row=1, column=4, sticky='w', padx=(10, 0), pady=(6, 0))
-        self.num(g, 'title_size', grid=(1, 5)); ttk.Label(g, text='mm').grid(row=1, column=6, sticky='w', pady=(6, 0))
-        td = ttk.Combobox(g, textvariable=v['title_dir'], values=list(TITLE_DIRS), width=13, state='readonly')
-        td.grid(row=1, column=7, sticky='w', padx=(6, 0), pady=(6, 0))
-        Tip(td, 'Across, along the top. Stacked: the letters one under another, each the right way up. '
-                'On its side: turned to read from the bottom. Drag it anywhere after.')
-        l = ttk.Label(g, text='Maker'); l.grid(row=2, column=0, sticky='w', pady=(6, 0))
-        Tip(l, 'Your name or brand, small, along the bottom. Leave empty for none.')
-        ttk.Entry(g, textvariable=v['art_maker'], width=20).grid(row=2, column=1, columnspan=3, sticky='w', padx=4, pady=(6, 0))
-        ttk.Label(g, text='Pot scale').grid(row=3, column=0, sticky='w', pady=(6, 0))
-        ps = ttk.Combobox(g, textvariable=v['art_scale'], values=list(SCALES), width=16, state='readonly')
-        ps.grid(row=3, column=1, columnspan=3, sticky='w', padx=4, pady=(6, 0))
-        Tip(ps, 'Marks round every pot, over a 300 degree turn. Change one pot (e.g. centre zero for a pan pot) in Edit labels.')
-        l = ttk.Label(g, text='Knob'); l.grid(row=3, column=4, sticky='w', padx=(10, 0), pady=(6, 0))
-        Tip(l, 'Knob diameter: the scale and the label start outside it, so the knob never hides them.')
-        self.num(g, 'knob_size', grid=(3, 5)); ttk.Label(g, text='mm').grid(row=3, column=6, sticky='w', pady=(6, 0))
-        row = ttk.Frame(det); row.pack(fill='x', pady=(6, 0))
-        ttk.Checkbutton(row, text='Rings round buttons', variable=v['art_rings']).pack(side='left', padx=(0, 12))
-        c = ttk.Checkbutton(row, text='Outputs in filled boxes', variable=v['art_outputs']); c.pack(side='left')
-        Tip(c, "Jacks whose label says OUT get a filled box with the label cut out of it - the usual way to tell outputs "
-               "from inputs. Set any jack to output or input in Edit labels.")
-        row = ttk.Frame(det); row.pack(fill='x', pady=(4, 0))
-        c = ttk.Checkbutton(row, text='Boxes round rows of controls', variable=v['art_groups']); c.pack(side='left', padx=(0, 12))
-        Tip(c, 'A box round 3 or more of the same control in a row or a column (pots, buttons, jacks), with their scales '
-               "and labels inside. Left out (with a note) when it would run into another part, a label or the edge.")
-        c = ttk.Checkbutton(row, text='Tabs for edge jacks', variable=v['art_tabs']); c.pack(side='left')
-        Tip(c, "Jacks on the panel edge (no hole, the plug goes in from the side) get a filled tab hanging from the edge "
-               "with their labels cut out. Neighbours share a tab; labels with the same first word (MIDI IN, MIDI OUT) "
-               "become IN / OUT with MIDI underneath.")
-        row = ttk.Frame(det); row.pack(fill='x', pady=(4, 0))
-        ttk.Checkbutton(row, text='Border', variable=v['art_border'], command=self.refresh_states).pack(side='left')
-        l = ttk.Label(row, text='corner radius'); l.pack(side='left', padx=(10, 0))
-        Tip(l, '0 = the border follows the panel corners. Any other value rounds the border corners by that much.')
-        self.w_bradius = self.num(row, 'border_radius'); ttk.Label(row, text='mm').pack(side='left')
-        for k in ('art_scale', 'art_rings', 'art_border', 'art_outputs', 'art_groups', 'art_tabs'):
-            v[k].trace_add('write', lambda *_: self.style_custom())
+        sub(det, 'Place', first=True)
+        f = self.form(det)
+        c = field(f, 'Position')
+        ttk.Radiobutton(c, text='Above the hole', value='above', variable=v['label_pos']).pack(side='left', padx=(0, 12))
+        ttk.Radiobutton(c, text='Below', value='below', variable=v['label_pos']).pack(side='left')
+        c = field(f, 'Gap from the hole', 'Distance from the edge of the hole to the text. Keys in a merged switch slot follow '
+                                          'their own side of the slot.')
+        mm(c, 'label_gap')
+        sub(det, 'Text')
+        f = self.form(det)
+        mm(field(f, 'Size'), 'label_size')
+        c = field(f, 'Font', "KiCad's own font always works. Any other font has to be installed on the computer that opens the "
+                             "panel (the gerbers carry the shapes, so the fab doesn't need it).")
+        fonts = [KICAD_FONT] + sorted({x for x in tkfont.families() if not x.startswith('@')})
+        ttk.Combobox(c, textvariable=v['label_font'], values=fonts, width=24, state='readonly').pack(side='left')
+        c = field(f, 'Style')
+        ttk.Checkbutton(c, text='Bold', variable=v['label_bold']).pack(side='left', padx=(0, 12))
+        ttk.Checkbutton(c, text='ALL CAPS', variable=v['label_caps']).pack(side='left')
+        sub(det, 'One at a time')
+        f = self.form(det)
+        c = field(f, 'Each label')
+        bt = ttk.Button(c, text='Edit labels…', command=self.edit_labels); bt.pack(side='left')
+        Tip(bt, 'A list of every label: change its text, hide it, set its own gap, or choose its artwork. '
+                'You can also click a label in the preview.')
 
         # your own text and pictures, and whatever is selected in the preview
-        s = self.section('extras', 'Your text and pictures', 'Add your own, then click anything in the preview (text, '
-                                                             'label, picture, title, tab) to change it here.')
-        c = ttk.Checkbutton(s, text='Put my text and pictures on the panel', variable=v['extras_on'], command=self.refresh_states)
-        c.pack(anchor='w', pady=(0, 6))
-        Tip(c, "Untick to leave them off the panel (and the preview) without losing them - tick again and they're back. "
-               "Handy when you switch to Inkscape artwork that already has its own text.")
-        row = self.extras_row = ttk.Frame(s); row.pack(fill='x')
-        b = ttk.Button(row, text='Add text…', command=self.start_add_text); b.pack(side='left')
-        Tip(b, 'Click this, then click on the panel where the text goes. Drag any text, label, picture or the title to move '
-               'it: it snaps into line with other labels, to the middle of holes and to the middle of gaps (hold Alt to '
-               'place it freely).')
-        b = ttk.Button(row, text='Add picture…', command=self.add_picture); b.pack(side='left', padx=6)
-        Tip(b, 'A PNG, JPG or SVG (a glider, a logo...). Its dark parts print, transparent parts never do. It is copied into '
-               'the Front Panel folder.')
-        self.sel_box = ttk.Frame(s); self.sel_box.pack(fill='x', pady=(8, 0))
+        s = self.section('extras', 'Your text and pictures', 'Things that are not on the PCB: what a key does, a logo.',
+                         switch='extras_on',
+                         tip="Switch off to leave them off the panel (and the preview) without losing them - switch on and "
+                             "they're back. Handy when you change to Inkscape artwork that already has its own text.")
+        f = self.form(s)
+        row = self.extras_row = field(f, 'Add')
+        bt = ttk.Button(row, text='Text…', command=self.start_add_text); bt.pack(side='left')
+        Tip(bt, 'Click this, then click on the panel where the text goes. Drag any text, label, picture or the title to move '
+                'it: it snaps into line with other labels, to the middle of holes and to the middle of gaps (hold Alt to '
+                'place it freely).')
+        bt = ttk.Button(row, text='Picture…', command=self.add_picture); bt.pack(side='left', padx=6)
+        Tip(bt, 'A PNG, JPG or SVG (a glider, a logo...). Its dark parts print, transparent parts never do. It is copied into '
+                'the Front Panel folder.')
+        sub(s, 'Selected')
+        self.sel_box = ttk.Frame(s); self.sel_box.pack(fill='x')
         self.sel = None
         self.show_selected()
 
-        # artwork
-        s = self.section('art', 'Artwork from Inkscape', 'Optional: your own graphics and text, drawn on a 1:1 copy of the panel.')
-        c = ttk.Checkbutton(s, text='Add my artwork to the silkscreen', variable=v['art_on'], command=self.refresh_states)
-        c.pack(anchor='w')
-        Tip(c, "Panel Generator makes an Inkscape file of the panel with the cutouts on a locked layer. Draw on its "
-               "'Artwork' layer: black prints, white cuts out of black (for white-on-black text). Inkscape renders it, "
-               "so every font and effect works.")
+        # artwork made for you
+        s = self.section('auto', 'Artwork made for you', 'Scales, rings, boxes, a border and a title, drawn from your panel. '
+                                                         'No Inkscape needed.', switch='auto_on',
+                         tip='Everything is placed from the holes and labels on your panel, and checked against them. It also '
+                             'goes into the Inkscape file on its own layer, so you can draw more on top if you like.')
+        h6 = ttk.Frame(s); h6.pack(fill='x')
+        det = self.auto_detail = ttk.Frame(h6); det.pack(fill='x')
+        f = self.form(det)
+        c = field(f, 'Style', 'Minimal: ticks round the pots. Classic synth: numbered scales, rings round buttons, a border. '
+                              'Modular: ticks, and outputs in filled boxes (any jack whose label says OUT). '
+                              'Change anything below after.')
+        sc = ttk.Combobox(c, textvariable=v['art_style'], values=list(ART_STYLES) + ['Custom'], width=24, state='readonly')
+        sc.pack(side='left')
+        sc.bind('<<ComboboxSelected>>', lambda e: self.apply_style())
+        sub(det, 'Title')
+        f = self.form(det)
+        ttk.Entry(field(f, 'Text'), textvariable=v['art_title'], width=27).pack(side='left')
+        mm(field(f, 'Size'), 'title_size')
+        c = field(f, 'Direction', 'Across, along the top. Stacked: the letters one under another, each the right way up. '
+                                  'On its side: turned to read from the bottom. Drag it anywhere after.')
+        ttk.Combobox(c, textvariable=v['title_dir'], values=list(TITLE_DIRS), width=24, state='readonly').pack(side='left')
+        c = field(f, 'Maker name', 'Your name or brand, small, along the bottom. Leave empty for none.')
+        ttk.Entry(c, textvariable=v['art_maker'], width=27).pack(side='left')
+        sub(det, 'Pots')
+        f = self.form(det)
+        c = field(f, 'Scale', 'Marks round every pot, over a 300 degree turn. Change one pot (e.g. centre zero for a pan pot) '
+                              'in Edit labels.')
+        ttk.Combobox(c, textvariable=v['art_scale'], values=list(SCALES), width=24, state='readonly').pack(side='left')
+        c = field(f, 'Knob size', 'Knob diameter: the scale and the label start outside it, so the knob never hides them.')
+        mm(c, 'knob_size')
+        sub(det, 'Buttons')
+        f = self.form(det)
+        c = field(f, 'Rings')
+        ttk.Checkbutton(c, text='A ring round each push button', variable=v['art_rings'], command=self.refresh_states).pack(side='left')
+        self.w_ringw = mm(field(f, 'Ring thickness', 'How thick the line of the ring is.'), 'ring_width')
+        self.w_ringg = mm(field(f, 'Gap from the hole', 'Between the edge of the button hole and the ring.'), 'ring_gap')
+        sub(det, 'Jacks and groups')
+        f = self.form(det)
+        c = field(f, 'Outputs', "Jacks whose label says OUT get a filled box with the label cut out of it - the usual way to "
+                                "tell outputs from inputs. Set any jack to output or input in Edit labels.")
+        ttk.Checkbutton(c, text='In filled boxes', variable=v['art_outputs']).pack(side='left')
+        c = field(f, 'Edge jacks', "Jacks on the panel edge (no hole, the plug goes in from the side) get a filled tab hanging "
+                                   "from the edge with their labels cut out. Neighbours share a tab; labels with the same first "
+                                   "word (MIDI IN, MIDI OUT) become IN / OUT with MIDI underneath.")
+        ttk.Checkbutton(c, text='In tabs on the edge', variable=v['art_tabs']).pack(side='left')
+        c = field(f, 'Rows of controls', 'A box round 3 or more of the same control in a row or a column (pots, buttons, jacks), '
+                                         'with their scales and labels inside. Left out (with a note) when it would run into '
+                                         'another part, a label or the edge.')
+        ttk.Checkbutton(c, text='A box round them', variable=v['art_groups']).pack(side='left')
+        sub(det, 'Border')
+        f = self.form(det)
+        c = field(f, 'Border')
+        ttk.Checkbutton(c, text='A line round the panel', variable=v['art_border'], command=self.refresh_states).pack(side='left')
+        c = field(f, 'Gap from the edge', 'From the edge of the panel to the border. 0 = automatic: 1.5 mm, or just inside the '
+                                          'case holes if there are any.')
+        self.w_bgap = mm(c, 'border_gap', note='0 = automatic')
+        c = field(f, 'Corner radius', '0 = the border follows the panel corners. Any other value rounds the border corners by that much.')
+        self.w_bradius = mm(c, 'border_radius', note='0 = follows the panel')
+        for k in ('art_scale', 'art_rings', 'art_border', 'art_outputs', 'art_groups', 'art_tabs'):
+            v[k].trace_add('write', lambda *_: self.style_custom())
+
+        # artwork from Inkscape
+        s = self.section('art', 'Artwork from Inkscape', 'Your own graphics and text, drawn on a 1:1 copy of the panel.',
+                         switch='art_on',
+                         tip="Panel Generator makes an Inkscape file of the panel with the cutouts on a locked layer. Draw on its "
+                             "'Artwork' layer: black prints, white cuts out of black (for white-on-black text). Inkscape renders "
+                             "it, so every font and effect works.")
         h5 = ttk.Frame(s); h5.pack(fill='x')
         det = self.art_detail = ttk.Frame(h5); det.pack(fill='x')
-        self.art_status = ttk.Label(det, text='', wraplength=410, justify='left'); self.art_status.pack(anchor='w', pady=(4, 0))
+        self.art_status = ttk.Label(det, text='', wraplength=440, justify='left'); self.art_status.pack(anchor='w', pady=(4, 0))
         row = ttk.Frame(det); row.pack(fill='x', pady=(6, 0))
         self.w_art_make = ttk.Button(row, text='Create artwork file', command=self.make_artwork)
         self.w_art_open = ttk.Button(row, text='Open in Inkscape', command=self.open_artwork)
         self.w_art_dir = ttk.Button(row, text='Show folder', command=self.open_folder)
         self.w_art_make.pack(side='left'); self.w_art_open.pack(side='left', padx=6); self.w_art_dir.pack(side='left')
         ttk.Label(det, text="Draw on the 'Artwork' layer, save in Inkscape, and the preview updates by itself.",
-                  style='Dim.TLabel', wraplength=410).pack(anchor='w', pady=(4, 0))
-
-
-        # 6 holes you removed
-        s = self.section('restore', 'Holes you removed or changed', 'Delete or resize a hole in the panel and it stays that way. '
-                                                                   'Parts you said need no cutout are listed here too.')
-        row = ttk.Frame(s); row.pack(fill='x')
-        self.restore_list = tk.Listbox(row, height=2, selectmode='extended', activestyle='none', relief='flat',
-                                       highlightthickness=1, highlightcolor='#c8ced5', highlightbackground='#c8ced5')
-        self.restore_list.pack(side='left', fill='x', expand=True)
-        ttk.Button(row, text='Bring back', command=self.restore).pack(side='left', padx=(6, 0), anchor='n')
+                  style='Dim.TLabel', wraplength=440).pack(anchor='w', pady=(4, 0))
 
         self.left_end = ttk.Frame(left); self.left_end.pack(fill='x')
 
@@ -453,7 +462,7 @@ class App(tk.Tk):
         self.w_measure = ttk.Button(ph, text='Measure', command=self.toggle_measure, width=9)
         self.w_measure.pack(side='right', padx=(0, 6))
         Tip(self.w_measure, 'A ruler: click two points in the preview to see how far apart they are. It snaps to the middle '
-                            'and edge of holes and to the panel edges (hold Alt for anywhere). Esc or click again to finish.')
+                            'and edge of holes and to the panel edges (hold Alt for anywhere). Hold Ctrl to keep it dead level or straight up and down. Esc or click again to finish.')
         self.w_undo = ttk.Button(ph, text='Undo', command=self.undo, width=6); self.w_undo.pack(side='right', padx=(0, 6))
         self.w_undo.state(['disabled'])
         Tip(self.w_undo, 'Take back the last change (Ctrl+Z): a setting on the left, or a move, text, picture, box '
@@ -519,46 +528,109 @@ class App(tk.Tk):
         self.out.configure(state='disabled')
         self.renumber()
 
-    def group(self, key, title, sub):
-        """A heading over a few related sections."""
-        f = ttk.Frame(self.left)
-        ttk.Label(f, text=title.upper(), style='Group.TLabel').pack(anchor='w')
-        ttk.Label(f, text=sub, style='Dim.TLabel', wraplength=430, justify='left').pack(anchor='w')
-        ttk.Separator(f).pack(fill='x', pady=(3, 0))
-        self.sections[key] = (f, None)
+    LABEL_W = 150            # every setting's name sits in a column this wide, so the boxes line up
 
-    def section(self, key, title, sub):
-        f = ttk.Frame(self.left, style='Card.TFrame', padding=(10, 8)); f.pack(fill='x', pady=(0, 7))
+    def section(self, key, title, sub, parent=None, switch=None, tip=None, fold=True):
+        """A card: a heading you can click to fold it away, an on/off switch if the whole thing is optional, and a body."""
+        f = ttk.Frame(parent or self.left, style='Card.TFrame', padding=(12, 8))
+        if parent is not None:
+            f.pack(fill='x', pady=(0, 4))
         h = ttk.Frame(f); h.pack(fill='x')
-        cbg = ttk.Style(self).lookup('Card.TFrame', 'background') or ttk.Style(self).lookup('TFrame', 'background') or C_BG
-        badge = tk.Canvas(h, width=22, height=22, highlightthickness=0, bg=cbg)
-        badge.pack(side='left', padx=(0, 8))
-        ttk.Label(h, text=title, style='Head.TLabel').pack(side='left')
-        ttk.Label(f, text=sub, style='Dim.TLabel', wraplength=390, justify='left').pack(anchor='w', padx=(30, 0))
-        body = ttk.Frame(f); body.pack(fill='x', padx=(30, 0), pady=(3, 0))
-        self.sections[key] = (f, badge)
+        chev = ttk.Label(h, text='', style='Chev.TLabel', width=2)
+        t = ttk.Label(h, text=title, style='Head.TLabel')
+        if fold:
+            chev.pack(side='left')
+        t.pack(side='left')
+        if switch:
+            sw = ttk.Checkbutton(h, variable=self.vars[switch], command=lambda: self.switched(key, switch),
+                                 style='Switch.TCheckbutton' if self.themed else 'TCheckbutton')
+            sw.pack(side='right')
+            self.switches[key] = switch
+            if tip:
+                Tip(sw, tip)
+        holder = ttk.Frame(f); holder.pack(fill='x')
+        body = ttk.Frame(holder); body.pack(fill='x', pady=(4, 2))
+        if sub:
+            ttk.Label(body, text=sub, style='Dim.TLabel', wraplength=440, justify='left').pack(anchor='w', pady=(0, 6))
+        self.sections[key] = (f, chev, holder)
+        if fold:
+            for w in (chev, t, h):
+                w.bind('<Button-1>', lambda e, k=key: self.fold(k))
+                w.configure(cursor='hand2')
         return body
 
+    def fold(self, key, to=None):
+        """Fold a section away to its heading, or open it again."""
+        shut = (key not in self.collapsed) if to is None else to
+        (self.collapsed.add if shut else self.collapsed.discard)(key)
+        self.cfg['collapsed'] = sorted(self.collapsed)
+        self.save_cfg()
+        self.show_folds()
+
+    def switched(self, key, var):
+        if self.vars[var].get():
+            self.collapsed.discard(key)          # switching something on opens it
+        self.refresh_states()
+
+    def show_folds(self):
+        for key, (f, chev, body) in self.sections.items():
+            # an optional section that's switched off has nothing to show: it reads as shut
+            off = key in self.switches and key != 'extras' and not self.vars[self.switches[key]].get()
+            shut = key in self.collapsed or off
+            chev.config(text='▸' if shut else '▾')
+            if shut and body.winfo_manager():          # (an empty frame keeps its old height, so the holder itself goes)
+                body.pack_forget()
+            elif not shut and not body.winfo_manager():
+                body.pack(fill='x')
+
+    def form(self, parent):
+        """A block of settings: names down the left, their boxes lined up down the right."""
+        f = ttk.Frame(parent); f.pack(fill='x')
+        f.columnconfigure(0, minsize=self.LABEL_W)
+        f._rows = 0
+        return f
+
+    def field(self, form, label, tip=None):
+        l = ttk.Label(form, text=label); l.grid(row=form._rows, column=0, sticky='w', pady=3)
+        cell = ttk.Frame(form); cell.grid(row=form._rows, column=1, sticky='w', pady=3)
+        form._rows += 1
+        if tip:
+            Tip(l, tip)
+        return cell
+
+    def sub(self, parent, text, first=False):
+        """A small heading inside a section."""
+        f = ttk.Frame(parent); f.pack(fill='x', pady=(2 if first else 10, 2))
+        ttk.Label(f, text=text.upper(), style='Sub.TLabel').pack(side='left')
+        ttk.Separator(f).pack(side='left', fill='x', expand=True, padx=(8, 0))
+
+    def mm(self, cell, key, note=None):
+        e = ttk.Entry(cell, textvariable=self.vars[key], width=7); e.pack(side='left')
+        ttk.Label(cell, text='mm').pack(side='left', padx=(4, 0))
+        if note:
+            ttk.Label(cell, text=note, style='Dim.TLabel').pack(side='left', padx=(10, 0))
+        return e
+
+    TABS = {'panel': ('size', 'rail', 'case', 'holes', 'restore'), 'art': ('labels', 'extras', 'auto', 'art')}
+
+    def show_tab(self, tab):
+        if tab != self.tab:
+            self.tab = tab
+            self.left.master.yview_moveto(0)
+        self.renumber()
+
     def renumber(self):
-        """Show the sections that apply to this kind of panel, numbered in order."""
-        show = {'g_panel', 'pcb', 'holes', 'open', 'restore', 'g_art', 'labels', 'auto', 'extras', 'art', 'g_out'} | \
-               ({'rail'} if self.mode == 'eurorack' else {'size', 'case'})
-        order = ['g_panel', 'pcb', 'size', 'rail', 'case', 'holes', 'open', 'restore', 'g_art', 'labels', 'auto', 'extras', 'art']
-        n = 0
-        for k in order:
-            f, badge = self.sections[k]
-            f.pack_forget()
-        for k in order:
-            f, badge = self.sections[k]
-            if badge is None:                     # a group heading
-                f.pack(fill='x', pady=(10 if k != 'g_panel' else 0, 6), before=self.left_end)
-                continue
-            if k in show:
-                n += 1
-                f.pack(fill='x', pady=(0, 7), before=self.left_end)
-                badge.delete('all')
-                badge.create_oval(1, 1, 21, 21, fill='#2563eb', outline='')
-                badge.create_text(11, 11, text=str(n), fill='white', font=self.f_small)
+        """Show the sections of the tab you're on that apply to this kind of panel."""
+        hide = {'size', 'case'} if self.mode == 'eurorack' else {'rail'}
+        for k, (f, _, _) in self.sections.items():
+            if k != 'pcb':
+                f.pack_forget()
+        for k in self.TABS[self.tab]:
+            if k not in hide:
+                self.sections[k][0].pack(fill='x', pady=(0, 7), before=self.left_end)
+        for k, bt in self.tab_btn.items():
+            bt.configure(style='Accent.TButton' if k == self.tab else 'TButton')
+        self.show_folds()
 
     def num(self, parent, key, grid=None):
         e = ttk.Entry(parent, textvariable=self.vars[key], width=6)
@@ -585,27 +657,23 @@ class App(tk.Tk):
         v = self.vars
         def en(w, on):
             w.state(['!disabled'] if on else ['disabled'])
-        self.show(self.w_per, v['expand'].get(), anchor='w', padx=(26, 0), pady=(4, 0))
-        self.show(self.sides_row, v['expand'].get() and v['per_side'].get(), anchor='w', padx=(26, 0), pady=(2, 0))
+        self.show(self.sides_row, v['per_side'].get(), fill='x')
         self.show(self.case_detail, v['screws'].get() != 'none', fill='x')
         self.show(self.label_detail, v['labels_on'].get(), fill='x')
         self.show(self.art_detail, v['art_on'].get(), fill='x')
         self.show(self.auto_detail, v['auto_on'].get(), fill='x')
         for w in self.extras_row.winfo_children():
             w.state(['!disabled'] if v['extras_on'].get() else ['disabled'])
-        en(self.w_bradius, v['art_border'].get())
+        en(self.w_bradius, v['art_border'].get()); en(self.w_bgap, v['art_border'].get())
+        en(self.w_ringw, v['art_rings'].get()); en(self.w_ringg, v['art_rings'].get())
         self.art_state()
-        en(self.w_margin, v['expand'].get() and not v['per_side'].get())
-        en(self.w_per, v['expand'].get())
-        for w in self.w_sides:
-            en(w, v['expand'].get() and v['per_side'].get())
+        en(self.w_margin, not v['per_side'].get())
+        self.show_folds()
         on = v['screws'].get() != 'none'
         for w in (self.w_dia, self.w_inset, self.w_cround, self.w_cslot):
             en(w, on)
         en(self.w_slot, on and v['case_shape'].get() == 'slot')
         en(self.w_rslot, v['rail_shape'].get() == 'slot')
-        en(self.w_radius, v['round'].get())
-        en(self.w_grow, v['grow_on'].get())
         self.show_edge()
 
     # ------------------------------------------------------------------ artwork
@@ -779,10 +847,8 @@ class App(tk.Tk):
         self.loading = True
         try:
             sides = [s['margin_top'], s['margin_right'], s['margin_bottom'], s['margin_left']]
-            v['expand'].set(any(x > 0 for x in sides))
             v['per_side'].set(len(set(sides)) > 1)
-            if any(x > 0 for x in sides):
-                v['margin'].set(f"{max(sides):g}")
+            v['margin'].set(f"{max(sides):g}")
             for name, val in zip(('top', 'right', 'bottom', 'left'), sides):
                 v[name].set(f"{val:g}")
             v['screws'].set(s['screws'])
@@ -793,14 +859,8 @@ class App(tk.Tk):
             v['rail_shape'].set('slot' if s['rail_slot'] > 0 else 'round')
             if s['rail_slot'] > 0:
                 v['rslot'].set(f"{s['rail_slot']:g}")
-            v['round'].set(s['corner_radius'] > 0)
-            if s['corner_radius'] > 0:
-                v['radius'].set(f"{s['corner_radius']:g}")
-            v['grow_on'].set(s['grow'] > 0)
-            if s['grow'] > 0:
-                v['grow'].set(f"{s['grow']:g}")
+            v['radius'].set(f"{s['corner_radius']:g}")
             v['svg'].set(bool(s['svg']))
-            v['uncut_check'].set(s['check_uncut'] != 'off')
             v['art_on'].set(s['artwork'] == 'on')
             v['labels_on'].set(s['labels'] == 'on')
             v['auto_on'].set(s['auto_art'] == 'on')
@@ -810,7 +870,8 @@ class App(tk.Tk):
             v['art_rings'].set(s['art_rings'] == 'on'); v['art_outputs'].set(s['art_outputs'] == 'on')
             v['art_border'].set(s['art_border'] == 'on')
             v['art_groups'].set(s['art_groups'] == 'on'); v['art_tabs'].set(s['art_tabs'] == 'on')
-            v['border_radius'].set(f"{s['art_border_radius']:g}")
+            v['border_radius'].set(f"{s['art_border_radius']:g}"); v['border_gap'].set(f"{s['art_border_gap']:g}")
+            v['ring_width'].set(f"{s['ring_width']:g}"); v['ring_gap'].set(f"{s['ring_gap']:g}")
             v['art_title'].set(s['art_title']); v['art_maker'].set(s['art_maker'])
             v['title_size'].set(f"{s['title_size']:g}"); v['knob_size'].set(f"{s['knob_size']:g}")
             v['title_dir'].set(next((k for k, x in TITLE_DIRS.items() if x == s.get('title_vertical', 'off')), 'Across'))
@@ -879,15 +940,12 @@ class App(tk.Tk):
             args += ['--margin', '0', '--screws', 'none',
                      '--rail-slot', f"{self.number('rslot', 'rail slot length'):g}" if v['rail_shape'].get() == 'slot' else '0']
         else:
-            if v['expand'].get():
-                if v['per_side'].get():
-                    for s in ('top', 'right', 'bottom', 'left'):
-                        args += [f'--margin-{s}', f"{self.number(s, s + ' margin'):g}"]
-                    args += ['--margin', '0']
-                else:
-                    args += ['--margin', f"{self.number('margin', 'panel size'):g}"]
-            else:
+            if v['per_side'].get():
+                for s in ('top', 'right', 'bottom', 'left'):
+                    args += [f'--margin-{s}', f"{self.number(s, s + ' margin'):g}"]
                 args += ['--margin', '0']
+            else:
+                args += ['--margin', f"{self.number('margin', 'extra round the PCB'):g}"]
             if v['screws'].get() != 'none':
                 args += ['--screws', v['screws'].get(),
                          '--screw-dia', f"{self.number('screw_dia', 'case hole size'):g}",
@@ -895,10 +953,8 @@ class App(tk.Tk):
                          '--screw-slot', f"{self.number('slot', 'slot length'):g}" if v['case_shape'].get() == 'slot' else '0']
             else:
                 args += ['--screws', 'none']
-            args += ['--corner-radius', f"{self.number('radius', 'corner radius'):g}" if v['round'].get() else '0']
-        args += ['--grow', f"{self.number('grow', 'opening size increase'):g}" if v['grow_on'].get() else '0']
-        if not v['uncut_check'].get():
-            args.append('--no-uncut-check')
+            args += ['--corner-radius', f"{self.number('radius', 'corner radius'):g}"]
+        args += ['--grow', '0']
         if v['labels_on'].get():
             size = self.number('label_size', 'label text size')
             if size < 0.5:
@@ -921,6 +977,9 @@ class App(tk.Tk):
                      '--art-outputs', 'on' if v['art_outputs'].get() else 'off',
                      '--art-border', 'on' if v['art_border'].get() else 'off',
                      '--art-border-radius', f"{self.number('border_radius', 'border corner radius'):g}" if v['art_border'].get() else '0',
+                     '--art-border-gap', f"{self.number('border_gap', 'border gap from the edge'):g}" if v['art_border'].get() else '0',
+                     '--ring-width', f"{max(0.15, self.number('ring_width', 'ring thickness')):g}",
+                     '--ring-gap', f"{self.number('ring_gap', 'ring gap'):g}",
                      '--art-groups', 'on' if v['art_groups'].get() else 'off', '--art-tabs', 'on' if v['art_tabs'].get() else 'off',
                      '--art-title', v['art_title'].get(), '--art-maker', v['art_maker'].get(),
                      '--title-size', f'{ts:g}', '--knob-size', f'{ks:g}',
@@ -1428,9 +1487,13 @@ class App(tk.Tk):
 
     def reveal(self, section, widget):
         """Bring a section of the left panel into view, if the part that matters isn't."""
-        f, _ = self.sections[section]
+        f = self.sections[section][0]
         cv = self.left.master
         try:
+            tab = next(t for t, keys in self.TABS.items() if section in keys)
+            if tab != self.tab or section in self.collapsed:
+                self.collapsed.discard(section)
+                self.show_tab(tab)
             cv.update_idletasks()
             total = max(1, self.left.winfo_height())
             top, bot = cv.yview()
@@ -1459,9 +1522,9 @@ class App(tk.Tk):
                       style='Dim.TLabel', wraplength=390, justify='left').pack(anchor='w')
             return
         _, kind, d = t
-        def entry(row, value, apply, width=8):
+        def entry(row, value, apply, width=7):
             var = tk.StringVar(value=value)
-            e = ttk.Entry(row, textvariable=var, width=width); e.pack(side='left', padx=4)
+            e = ttk.Entry(row, textvariable=var, width=width); e.pack(side='left', padx=(0, 4))
             done = lambda _=None: apply(var.get())
             e.bind('<Return>', done); e.bind('<FocusOut>', done)
             return e
@@ -1471,19 +1534,19 @@ class App(tk.Tk):
             except ValueError:
                 return None
             return max(lo, min(hi, x))
-        head = ttk.Label(box, text='', style='Head.TLabel'); head.pack(anchor='w')
+        head = ttk.Label(box, text='', style='Head.TLabel'); head.pack(anchor='w', pady=(0, 2))
+        form = self.form(box)
+        fld = lambda label, tip=None: self.field(form, label, tip)
         if kind == 'image':
             o = self.own_image(d['id'])
             head.config(text=f"Picture: {o['file'] if o else ''}")
-            row = ttk.Frame(box); row.pack(fill='x', pady=(4, 0))
-            ttk.Label(row, text='Width').pack(side='left')
+            row = fld('Width')
             def setw(v):
                 x = num(v, 1, 500)
                 if o and x and abs(x - o['w']) > 1e-6:
                     o['w'] = round(x, 2); self.persist_ui(); self.update_preview()
             entry(row, f"{d['w']:g}", setw); ttk.Label(row, text='mm  (the height follows)').pack(side='left')
-            row = ttk.Frame(box); row.pack(fill='x', pady=(4, 0))
-            ttk.Label(row, text='Turn').pack(side='left')
+            row = fld('Turn')
             def setr(v):
                 x = num(v, -360, 360)
                 if o is not None and x is not None and abs(x - float(o.get('rot', 0))) > 1e-6:
@@ -1492,38 +1555,35 @@ class App(tk.Tk):
             ttk.Button(row, text='↺ 90', width=5, command=lambda: setr(str(float(o.get('rot', 0)) - 90))).pack(side='left', padx=(8, 4))
             ttk.Button(row, text='↻ 90', width=5, command=lambda: setr(str(float(o.get('rot', 0)) + 90))).pack(side='left')
             inv = self._sel_inv = tk.BooleanVar(value=bool(d.get('invert')))     # kept, or Tk forgets it
-            ttk.Checkbutton(box, text='Print the light parts instead (for white-on-black pictures)', variable=inv,
-                            command=lambda: self.image_invert(d['id'])).pack(anchor='w', pady=(4, 0))
+            ttk.Checkbutton(fld('Print'), text='The light parts instead of the dark', variable=inv,
+                            command=lambda: self.image_invert(d['id'])).pack(side='left')
             ttk.Button(box, text='Delete picture', command=lambda: (self.image_delete(d['id']), self.select(None))).pack(anchor='w', pady=(6, 0))
         elif kind == 'text':
             o = self.own_text(d['fid'])
             head.config(text='Your text')
-            row = ttk.Frame(box); row.pack(fill='x', pady=(4, 0))
-            ttk.Label(row, text='Text').pack(side='left')
+            row = fld('Text')
             def sett(v):
                 if o and v.strip() and v.strip() != o['text']:
                     o['text'] = v.strip(); self.persist_ui(); self.update_preview()
-            entry(row, o['text'] if o else '', sett, width=24)
-            row = ttk.Frame(box); row.pack(fill='x', pady=(4, 0))
-            ttk.Label(row, text='Size').pack(side='left')
+            entry(row, o['text'] if o else '', sett, width=27)
+            row = fld('Size')
             def sets(v):
                 x = num(v, 0.8, 30)
                 if o and x and abs(x - float(o.get('size') or 0)) > 1e-6:
                     o['size'] = round(x, 2); self.persist_ui(); self.update_preview()
             entry(row, f"{d['h']:g}", sets); ttk.Label(row, text='mm').pack(side='left')
-            self.box_choice(box, o.get('box') if o else None, lambda v: (o.__setitem__('box', v) if v else o.pop('box', None),
+            self.box_choice(fld('Box'), o.get('box') if o else None, lambda v: (o.__setitem__('box', v) if v else o.pop('box', None),
                                                                          self.persist_ui(), self.update_preview()))
             ttk.Button(box, text='Delete text', command=lambda: (self.text_delete(d['fid']), self.select(None))).pack(anchor='w', pady=(6, 0))
         elif kind == 'label':
             head.config(text=f"Label: {d.get('ref', '')}")
             fid = d['fid']
             if not fid.startswith('tabword:'):
-                row = ttk.Frame(box); row.pack(fill='x', pady=(4, 0))
-                ttk.Label(row, text='Text').pack(side='left')
+                row = fld('Text')
                 def setl(v):
                     if v.strip() and v != d.get('text'):
                         self.ui['label_edits'].setdefault(fid, {})['text'] = v; self.persist_ui(); self.update_preview()
-                entry(row, d.get('text', ''), setl, width=24)
+                entry(row, d.get('text', ''), setl, width=27)
             if not fid.startswith('tabword:'):
                 def setbox(v, fid=fid):
                     e = self.ui['label_edits'].setdefault(fid, {})
@@ -1532,7 +1592,7 @@ class App(tk.Tk):
                     else:
                         e.pop('box', None)
                     self.persist_ui(); self.update_preview()
-                self.box_choice(box, self.ui['label_edits'].get(fid, {}).get('box'), setbox)
+                self.box_choice(fld('Box'), self.ui['label_edits'].get(fid, {}).get('box'), setbox)
             row = ttk.Frame(box); row.pack(fill='x', pady=(6, 0))
             ttk.Button(row, text='Put back where it was', command=lambda: self.label_reset(fid)).pack(side='left')
             if not fid.startswith('tabword:'):
@@ -1549,10 +1609,8 @@ class App(tk.Tk):
         elif kind == 'tab':
             head.config(text={'edge': 'Edge tab: ', 'output': 'Output box: ', 'textbox': 'Box round '}.get(d['kind'], '') + d.get('ref', ''))
             g = self.ui['label_edits'].get(d['key'], {})
-            row = ttk.Frame(box); row.pack(fill='x', pady=(4, 0))
-            ttk.Label(row, text='Make bigger by').pack(side='left')
             for edge in d['edges']:
-                ttk.Label(row, text={'l': 'left', 'r': 'right', 't': 'top', 'b': 'bottom'}[edge]).pack(side='left', padx=(6, 0))
+                row = fld('Bigger on the ' + {'l': 'left', 'r': 'right', 't': 'top', 'b': 'bottom'}[edge])
                 def setg(v, edge=edge):
                     x = num(v, 0, 50)
                     if x is None:
@@ -1566,8 +1624,7 @@ class App(tk.Tk):
                         if not gg:
                             self.ui['label_edits'].pop(d['key'], None)
                         self.persist_ui(); self.update_preview()
-                entry(row, f"{g.get(edge, 0.0):g}", setg, width=4)
-            ttk.Label(row, text='mm').pack(side='left')
+                entry(row, f"{g.get(edge, 0.0):g}", setg); ttk.Label(row, text='mm').pack(side='left')
             ttk.Label(box, text='Or drag an edge of it in the preview: it snaps to the edges of the other tabs and boxes'
                                + (', and to key labels and hole edges - stretch a bar over two keys.' if d['kind'] == 'textbox' else '.'),
                       style='Dim.TLabel', wraplength=390, justify='left').pack(anchor='w', pady=(4, 0))
@@ -1701,10 +1758,10 @@ class App(tk.Tk):
                       style='Dim.TLabel', wraplength=390, justify='left').pack(anchor='w')
             return
         px1, py1 = self.pv['panel_box'][:2]
-        def entry(row, label, value, apply, unit='mm', width=7):
-            ttk.Label(row, text=label).pack(side='left')
+        def entry(form, label, value, apply, note=None, tip=None):
+            cell = self.field(form, label, tip)
             var = tk.StringVar(value=value)
-            e = ttk.Entry(row, textvariable=var, width=width); e.pack(side='left', padx=4)
+            e = ttk.Entry(cell, textvariable=var, width=7); e.pack(side='left')
             def done(_=None):
                 try:
                     x = float(var.get().replace('mm', '').replace(',', '.').strip())
@@ -1712,7 +1769,10 @@ class App(tk.Tk):
                     return
                 apply(x)
             e.bind('<Return>', done); e.bind('<FocusOut>', done)
-            ttk.Label(row, text=unit).pack(side='left', padx=(0, 10))
+            ttk.Label(cell, text='mm').pack(side='left', padx=(4, 0))
+            if note:
+                ttk.Label(cell, text=note, style='Dim.TLabel').pack(side='left', padx=(10, 0))
+            return cell
         def change(o, key, x, lo=0.3, hi=500):
             x = round(max(lo, min(hi, x)), 3)
             if abs(x - float(o.get(key, 0) or 0)) > 1e-6:
@@ -1720,43 +1780,42 @@ class App(tk.Tk):
                 if o['kind'] != 'hole':
                     self.last_size[o['kind']] = (o['w'], o['h'])
                 self.persist_ui(); self.update_preview()
+        nice = lambda x: f"{x:.2f}".rstrip('0').rstrip('.')
         if len(sel) == 1:
             o = sel[0]
-            ttk.Label(box, text=added[o['id']]['ref'], style='Head.TLabel').pack(anchor='w')
-            row = ttk.Frame(box); row.pack(fill='x', pady=(4, 0))
-            entry(row, 'From the left edge', f"{o['x'] - px1:.2f}".rstrip('0').rstrip('.'), lambda x: change(o, 'x', x + px1, -1e4, 1e4))
-            entry(row, 'from the top', f"{o['y'] - py1:.2f}".rstrip('0').rstrip('.'), lambda x: change(o, 'y', x + py1, -1e4, 1e4))
-            ttk.Label(box, text='Measured from the panel edges to the middle of it.', style='Dim.TLabel').pack(anchor='w')
-            row = ttk.Frame(box); row.pack(fill='x', pady=(4, 0))
+            ttk.Label(box, text=added[o['id']]['ref'], style='Head.TLabel').pack(anchor='w', pady=(0, 2))
+            f = self.form(box)
+            tip = 'Measured from the edge of the panel to the middle of it.'
+            entry(f, 'From the left edge', nice(o['x'] - px1), lambda x: change(o, 'x', x + px1, -1e4, 1e4), 'to its middle', tip)
+            entry(f, 'From the top edge', nice(o['y'] - py1), lambda x: change(o, 'y', x + py1, -1e4, 1e4), 'to its middle', tip)
             if o['kind'] == 'hole':
-                entry(row, 'Hole size', f"{o['d']:g}", lambda x: change(o, 'd', x))
+                entry(f, 'Hole size', f"{o['d']:g}", lambda x: change(o, 'd', x))
             elif o['kind'] == 'rect':
-                entry(row, 'Width', f"{o['w']:g}", lambda x: change(o, 'w', x), width=6)
-                entry(row, 'Height', f"{o['h']:g}", lambda x: change(o, 'h', x), width=6)
-                entry(row, 'Corners', f"{float(o.get('r', 0) or 0):g}", lambda x: change(o, 'r', x, 0, 100), width=4)
+                entry(f, 'Width', f"{o['w']:g}", lambda x: change(o, 'w', x))
+                entry(f, 'Height', f"{o['h']:g}", lambda x: change(o, 'h', x))
+                entry(f, 'Corner radius', f"{float(o.get('r', 0) or 0):g}", lambda x: change(o, 'r', x, 0, 100), '0 = square')
             else:
-                entry(row, 'Length', f"{max(o['w'], o['h']):g}", lambda x: change(o, 'w' if o['w'] >= o['h'] else 'h', x), width=6)
-                entry(row, 'Width', f"{min(o['w'], o['h']):g}", lambda x: change(o, 'h' if o['w'] >= o['h'] else 'w', x), width=6)
+                entry(f, 'Length', f"{max(o['w'], o['h']):g}", lambda x: change(o, 'w' if o['w'] >= o['h'] else 'h', x), 'end to end')
+                entry(f, 'Width', f"{min(o['w'], o['h']):g}", lambda x: change(o, 'h' if o['w'] >= o['h'] else 'w', x))
                 def turn():
                     o['w'], o['h'] = o['h'], o['w']
                     self.last_size['slot'] = (o['w'], o['h'])
                     self.persist_ui(); self.update_preview()
-                ttk.Button(row, text='Turn 90°', command=turn).pack(side='left')
+                ttk.Button(self.field(f, 'Direction'), text='Turn 90°', command=turn).pack(side='left')
         else:
-            ttk.Label(box, text=f'{len(sel)} selected', style='Head.TLabel').pack(anchor='w')
-            row = ttk.Frame(box); row.pack(fill='x', pady=(4, 0))
-            b = ttk.Button(row, text='Line up in a row', command=lambda: self.shapes_line_up('y')); b.pack(side='left')
+            ttk.Label(box, text=f'{len(sel)} selected', style='Head.TLabel').pack(anchor='w', pady=(0, 2))
+            f = self.form(box)
+            row = self.field(f, 'Line up')
+            b = ttk.Button(row, text='In a row', command=lambda: self.shapes_line_up('y')); b.pack(side='left')
             Tip(b, 'Puts them all at the same height as the one furthest left.')
-            b = ttk.Button(row, text='Line up in a column', command=lambda: self.shapes_line_up('x')); b.pack(side='left', padx=6)
+            b = ttk.Button(row, text='In a column', command=lambda: self.shapes_line_up('x')); b.pack(side='left', padx=6)
             Tip(b, 'Puts them all under the top one.')
             axis, pitch = self.shapes_spacing()
-            row = ttk.Frame(box); row.pack(fill='x', pady=(4, 0))
-            entry(row, 'Spacing', '' if pitch is None else f"{pitch:.2f}".rstrip('0').rstrip('.'),
-                  lambda x: self.shapes_set_spacing(max(0.0, min(500.0, x))),
-                  unit='mm middle to middle, ' + ('left to right' if axis == 'x' else 'top to bottom'))
-            ttk.Label(box, text='Empty = they are not evenly spaced. Type a spacing and the first one stays where it is.',
-                      style='Dim.TLabel', wraplength=390, justify='left').pack(anchor='w')
-        row = ttk.Frame(box); row.pack(fill='x', pady=(6, 0))
+            entry(f, 'Spacing', '' if pitch is None else nice(pitch), lambda x: self.shapes_set_spacing(max(0.0, min(500.0, x))),
+                  'middle to middle, ' + ('across' if axis == 'x' else 'down'),
+                  'Empty = they are not evenly spaced. Type a spacing and the first one stays where it is.')
+        f = self.form(box)
+        row = self.field(f, 'This' if len(sel) == 1 else 'These')
         b = ttk.Button(row, text='Copy', command=self.shapes_duplicate); b.pack(side='left')
         Tip(b, 'Makes a copy alongside with the same sizes and spacing (Ctrl+D). Holes in a row are carried on along the row. '
                'Then drag the copy where it goes.')
@@ -1809,7 +1868,7 @@ class App(tk.Tk):
         self.measuring, self.measure = True, []
         self.w_measure.config(text='Stop')
         self.canvas.config(cursor='crosshair')
-        self.hover.config(text='Ruler: click where to measure from, then where to. Esc to finish.')
+        self.hover.config(text='Ruler: click where to measure from, then where to. Hold Ctrl to keep it straight. Esc to finish.')
 
     def end_measure(self):
         if not self.measuring:
@@ -1821,7 +1880,15 @@ class App(tk.Tk):
         self.draw()
 
     def measure_point(self, e):
-        """Where the ruler lands: the middle of a hole, the edge of a hole, a panel edge or corner - else just there."""
+        """Where the ruler lands. Ctrl (or Shift) keeps the second point dead level with, or straight above, the first."""
+        p = self.measure_snap(e)
+        if getattr(e, 'state', 0) & 0x0005 and len(self.measure) == 1:
+            ax, ay = self.measure[0]
+            p = (p[0], ay) if abs(p[0] - ax) >= abs(p[1] - ay) else (ax, p[1])
+        return p
+
+    def measure_snap(self, e):
+        """The middle of a hole, the edge of a hole, a panel edge or corner - else just where the pointer is."""
         x, y = self.to_mm(e)
         if getattr(e, 'state', 0) & ALT_MASK:
             return x, y
@@ -1894,12 +1961,11 @@ class App(tk.Tk):
 
     def box_choice(self, parent, current, apply):
         """Box round a text or label: none, a line round it, or a filled bar with the text cut out."""
-        names = {'No box': None, 'Line round it': 'outline', 'Filled bar (text cut out)': 'filled'}
-        row = ttk.Frame(parent); row.pack(fill='x', pady=(4, 0))
-        ttk.Label(row, text='Box').pack(side='left')
+        names = {'No box': None, 'A line round it': 'outline', 'A filled bar, text cut out': 'filled'}
+        row = parent
         var = self._sel_box = tk.StringVar(value=next((k for k, v in names.items() if v == current), 'No box'))
         cb = ttk.Combobox(row, textvariable=var, values=list(names), state='readonly', width=24)
-        cb.pack(side='left', padx=4)
+        cb.pack(side='left')
         cb.bind('<<ComboboxSelected>>', lambda e: apply(names[var.get()]))
         Tip(cb, 'For a key with two jobs, or one that needs two keys pressed: put the text in a box, then click the box and '
                 'drag its ends to stretch it over the keys. It snaps to key labels and to other boxes. Any text it reaches over goes into it too (one long bar under a row of keys).')

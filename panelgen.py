@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.26.0"
+VERSION = "0.27.0"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -1649,8 +1649,14 @@ def auto_label_clearance(cutouts, fps, a):
         if kind in ('pot', 'encoder'):
             out[c['id']] = auto_scale_radius(a, c['id']) + 0.4
         elif kind == 'button' and a.art_rings == 'on':
-            out[c['id']] = c['circle'][2] + 1.6 + 0.3
+            out[c['id']] = c['circle'][2] + a.ring_gap + a.ring_width + 0.3
     return out
+
+def border_inset(a):
+    """How far the border sits in from the panel edge: what you set, or just inside the case screws."""
+    if a.art_border_gap > 0:
+        return a.art_border_gap
+    return max(1.5, a.screw_inset + a.screw_dia / 2 + 1.0) if a.screws != 'none' else 1.5
 
 def auto_scale_radius(a, fid=None):
     """Outer radius of a pot's knob plus its scale."""
@@ -1728,7 +1734,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             if not c or part_kind(c, fps.get(fid)) != 'button':
                 continue
             cx, cy, r = c['circle']
-            ring = Point(cx, cy).buffer(r + 1.6, quad_segs=32).difference(Point(cx, cy).buffer(r + 0.8, quad_segs=32))
+            ring = Point(cx, cy).buffer(r + a.ring_gap + a.ring_width, quad_segs=48).difference(Point(cx, cy).buffer(r + a.ring_gap, quad_segs=48))
             clash = holes.difference(c['geom'].buffer(0.01)).buffer(0.4)
             ring = ring.difference(clash).intersection(inside)
             if not ring.is_empty:
@@ -1894,7 +1900,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             parts_geo = []
             for i in run:
                 cx, cy, r = i['c']
-                rr = auto_scale_radius(a, i['fid']) if i['kind'] == 'pot' else r + (1.6 if i['kind'] == 'button' and a.art_rings == 'on' else 0.6)
+                rr = auto_scale_radius(a, i['fid']) if i['kind'] == 'pot' else r + (a.ring_gap + a.ring_width if i['kind'] == 'button' and a.art_rings == 'on' else 0.6)
                 parts_geo.append(Point(cx, cy).buffer(rr))
                 if i['fid'] in label_box:
                     parts_geo.append(label_box[i['fid']])
@@ -1912,8 +1918,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
 
     # 6. border
     if a.art_border == 'on':
-        inner = outline.buffer(-(border_in_ := (max(1.5, a.screw_inset + a.screw_dia / 2 + 1.0) if a.screws != 'none' else 1.5)),
-                               join_style=1)
+        inner = outline.buffer(-border_inset(a), join_style=1)
         if a.art_border_radius > 0 and not inner.is_empty:       # its own rounded corners
             R = a.art_border_radius
             inner = inner.buffer(-R, join_style=2).buffer(R, quad_segs=16)
@@ -1931,7 +1936,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
     taken = unary_union([holes.buffer(0.8)] + [b.buffer(0.6) for f, b in label_box.items() if f not in knocked]
                         + [g.buffer(0.6) for g in shapes])
     x1, y1, x2, y2 = outline.bounds
-    border_in = (max(1.5, a.screw_inset + a.screw_dia / 2 + 1.0) if a.screws != 'none' else 1.5) + 0.6
+    border_in = border_inset(a) + 0.6
     edge = border_in + 1.2 if a.art_border == 'on' else 2.0
     region = outline.buffer(-edge + 0.01)
     a._art_items = []
@@ -2294,6 +2299,9 @@ def main(argv=None, preview=None):
     ap.add_argument('--art-outputs', choices=['on', 'off'], help="jacks whose label says OUT get a filled box, the label cut out of it")
     ap.add_argument('--art-border', choices=['on', 'off'], help='a line round the panel, inside the case screws')
     ap.add_argument('--art-border-radius', type=float, help='round the corners of the border, mm (0 = follow the panel)')
+    ap.add_argument('--art-border-gap', type=float, help='panel edge to the border, mm (0 = automatic: 1.5, or just inside the case screws)')
+    ap.add_argument('--ring-width', type=float, help='line thickness of the rings round buttons, mm (default 0.8)')
+    ap.add_argument('--ring-gap', type=float, help='gap between a button hole and its ring, mm (default 0.8)')
     ap.add_argument('--art-groups', choices=['on', 'off'], help='a box round rows or columns of 3+ of the same control')
     ap.add_argument('--art-tabs', choices=['on', 'off'], help='a filled tab, labels cut out, for jacks on the panel edge')
     ap.add_argument('--art-title', help='title along the top of the panel')
@@ -2335,7 +2343,7 @@ def main(argv=None, preview=None):
                     min_web=1.0, svg=False, grow=0.0, panel_layer='User.1', check_uncut='on',
                     artwork='off', artwork_file='',
                     labels='off', label_size=2.0, label_gap=1.5, label_pos='above', label_font='', label_bold='off', label_caps='off',
-                    extras='on', auto_art='off', art_style='', art_scale='ticks', art_rings='on', art_outputs='off', art_border='off', art_border_radius=0.0,
+                    extras='on', auto_art='off', art_style='', art_scale='ticks', art_rings='on', art_outputs='off', art_border='off', art_border_radius=0.0, art_border_gap=0.0, ring_width=0.8, ring_gap=0.8,
                     art_groups='off', art_tabs='off', art_title='',
                     art_maker='', title_size=5.0, title_font='', title_bold='on', title_vertical='off', knob_size=13.0, pot_sweep=300.0, scale_text=1.4)
     for k, d in defaults.items():          # explicit option > saved (with --again) > built-in default
@@ -2651,7 +2659,7 @@ def main(argv=None, preview=None):
                                 label_font=a.label_font, label_bold=a.label_bold, label_caps=a.label_caps,
                                 artwork=a.artwork, artwork_file=a.artwork_file,
                                 **{k: getattr(a, k) for k in ('extras', 'auto_art', 'art_style', 'art_scale', 'art_rings', 'art_outputs', 'art_border',
-                                                              'art_border_radius', 'art_groups', 'art_tabs',
+                                                              'art_border_radius', 'art_border_gap', 'ring_width', 'ring_gap', 'art_groups', 'art_tabs',
                                                               'art_title', 'art_maker', 'title_size', 'title_font', 'title_bold', 'title_vertical',
                                                               'knob_size', 'pot_sweep', 'scale_text')})},
               open(mem_path, 'w', encoding='utf-8'), indent=1)

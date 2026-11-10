@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.27.0
+
+- **Clearer left side:** two tabs, *Panel* and *Artwork*, with your PCB always in view above them. Every setting has its name on the left and its box on the right, in one line, with small headings inside each section (Place, Text, Title, Pots, Buttons, Border...).
+- **Sections fold away** when you click their heading, and optional ones (Labels, Your text and pictures, Artwork made for you, Artwork from Inkscape) have an on/off switch in the heading instead of a tick box.
+- **Labels and Your text and pictures are next to each other.**
+- **Fewer tick boxes:** *Extra round the PCB* and *Corner radius* are just numbers now (0 = none).
+- **Border: gap from the edge.** 0 keeps it automatic (just inside the case holes).
+- **Rings round buttons:** set the ring thickness and its gap from the hole.
+- **Measure:** hold Ctrl (or Shift) to keep the ruler dead level or straight up and down.
+- **Openings section removed.** "Make every opening bigger" is no longer in the window (still on the command line as `--grow`), and parts that look like they need a cutout are always flagged.
+
 ## 0.26.0
 
 - **Extra holes:** add round holes (usual sizes in a list, or your own), rectangles and slots in the window, for things that aren't on the PCB. Click to place, or right-click the panel. They snap into line with the other holes.
