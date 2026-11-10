@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.25.4
+
+- **Stacked title:** the letters one under another, each the right way up. *Standing up* is now called *On its side*.
+
 ## 0.25.3
 
 - **Undo covers everything:** settings on the left (panel size, margins, holes, labels, artwork options) as well as changes in the preview. The history is kept when you generate.

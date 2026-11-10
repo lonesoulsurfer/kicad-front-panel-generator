@@ -21,6 +21,7 @@ ART_STYLES = {   # what each style switches on
     'Modular': dict(scale='Ticks', rings=False, outputs=True, border=False, groups=False, tabs=True),
 }
 STYLE_KEYS = ('scale', 'rings', 'outputs', 'border', 'groups', 'tabs')
+TITLE_DIRS = {'Across': 'off', 'Stacked': 'stacked', 'On its side': 'on'}
 SCALES = {'None': 'none', 'Ticks': 'ticks', 'Numbers 0-10': 'numbers', 'Centre zero (- 0 +)': 'bipolar'}
 KICAD_FONT = "KiCad's own font"
 ALT_MASK = 0x20000 if sys.platform == 'win32' else 0x0008   # Alt held (on Windows, 0x0008 is Num Lock)
@@ -333,9 +334,10 @@ class App(tk.Tk):
         ttk.Entry(g, textvariable=v['art_title'], width=20).grid(row=1, column=1, columnspan=3, sticky='w', padx=4, pady=(6, 0))
         l = ttk.Label(g, text='Size'); l.grid(row=1, column=4, sticky='w', padx=(10, 0), pady=(6, 0))
         self.num(g, 'title_size', grid=(1, 5)); ttk.Label(g, text='mm').grid(row=1, column=6, sticky='w', pady=(6, 0))
-        td = ttk.Combobox(g, textvariable=v['title_dir'], values=['Across', 'Standing up'], width=11, state='readonly')
+        td = ttk.Combobox(g, textvariable=v['title_dir'], values=list(TITLE_DIRS), width=13, state='readonly')
         td.grid(row=1, column=7, sticky='w', padx=(6, 0), pady=(6, 0))
-        Tip(td, 'Across, along the top; or standing up along a side, read from the bottom. Drag it anywhere after.')
+        Tip(td, 'Across, along the top. Stacked: the letters one under another, each the right way up. '
+                'On its side: turned to read from the bottom. Drag it anywhere after.')
         l = ttk.Label(g, text='Maker'); l.grid(row=2, column=0, sticky='w', pady=(6, 0))
         Tip(l, 'Your name or brand, small, along the bottom. Leave empty for none.')
         ttk.Entry(g, textvariable=v['art_maker'], width=20).grid(row=2, column=1, columnspan=3, sticky='w', padx=4, pady=(6, 0))
@@ -776,7 +778,7 @@ class App(tk.Tk):
             v['border_radius'].set(f"{s['art_border_radius']:g}")
             v['art_title'].set(s['art_title']); v['art_maker'].set(s['art_maker'])
             v['title_size'].set(f"{s['title_size']:g}"); v['knob_size'].set(f"{s['knob_size']:g}")
-            v['title_dir'].set('Standing up' if s.get('title_vertical') == 'on' else 'Across')
+            v['title_dir'].set(next((k for k, x in TITLE_DIRS.items() if x == s.get('title_vertical', 'off')), 'Across'))
             v['label_pos'].set(s['label_pos']); v['label_gap'].set(f"{s['label_gap']:g}"); v['label_size'].set(f"{s['label_size']:g}")
             v['label_font'].set(s['label_font'] or KICAD_FONT)
             v['label_bold'].set(s['label_bold'] == 'on'); v['label_caps'].set(s['label_caps'] == 'on')
@@ -886,7 +888,7 @@ class App(tk.Tk):
                      '--art-groups', 'on' if v['art_groups'].get() else 'off', '--art-tabs', 'on' if v['art_tabs'].get() else 'off',
                      '--art-title', v['art_title'].get(), '--art-maker', v['art_maker'].get(),
                      '--title-size', f'{ts:g}', '--knob-size', f'{ks:g}',
-                     '--title-vertical', 'on' if v['title_dir'].get() == 'Standing up' else 'off']
+                     '--title-vertical', TITLE_DIRS.get(v['title_dir'].get(), 'off')]
         else:
             args += ['--auto-art', 'off']
         args += ['--artwork', 'on' if v['art_on'].get() else 'off']

@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.25.3"
+VERSION = "0.25.4"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -1914,10 +1914,19 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
     def place(text, h, spots, what, key):
         if not text.strip():
             return
-        sh = text_shapes(text, 0, 0, h, a.title_font or font, a.title_bold == 'on' if what == 'title' else sbold)
+        tf, tbold = a.title_font or font, a.title_bold == 'on' if what == 'title' else sbold
+        if what == 'title' and a.title_vertical == 'stacked':  # letters one under another, each the right way up
+            pitch = h * 1.35
+            n = len(text)
+            sh = []
+            for i, ch in enumerate(text):
+                if ch.strip():
+                    sh += text_shapes(ch, 0, (i - (n - 1) / 2) * pitch, h, tf, tbold)
+        else:
+            sh = text_shapes(text, 0, 0, h, tf, tbold)
         if not sh:
             return
-        if what == 'title' and a.title_vertical == 'on':       # standing up, read from the bottom
+        if what == 'title' and a.title_vertical == 'on':       # turned on its side, read from the bottom
             sh = [affinity.rotate(p, -90, origin=(0, 0)) for p in sh]
         u = unary_union(sh); bx = u.bounds; w = bx[2] - bx[0]; hh = bx[3] - bx[1]
         pin = (a._art_pos or {}).get(key)
@@ -1939,7 +1948,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
         log.append(f"WARN  no free space for the {what} '{text}' - drag it in the preview, make the text smaller, or turn it off")
     m = edge + 0.4
     th = a.title_size
-    if a.title_vertical == 'on':
+    if a.title_vertical in ('on', 'stacked'):
         title_spots = lambda w, hh: [(x1 + m + w / 2, (y1 + y2) / 2), (x2 - m - w / 2, (y1 + y2) / 2),
                                      (x1 + m + w / 2, y1 + m + hh / 2), (x2 - m - w / 2, y1 + m + hh / 2)]
     else:
@@ -2268,7 +2277,8 @@ def main(argv=None, preview=None):
     ap.add_argument('--title-size', type=float, help='title height, mm (default 5)')
     ap.add_argument('--title-font', help='font for the title ("" = the label font)')
     ap.add_argument('--title-bold', choices=['on', 'off'])
-    ap.add_argument('--title-vertical', choices=['on', 'off'], help='title standing up along a side, read from the bottom')
+    ap.add_argument('--title-vertical', choices=['off', 'stacked', 'on'],
+                    help='title down a side: stacked = letters one under another; on = turned on its side, read from the bottom')
     ap.add_argument('--knob-size', type=float, help='knob diameter, mm: the pot scale starts outside it (default 13)')
     ap.add_argument('--pot-sweep', type=float, help='how far the pots turn, degrees (default 300)')
     ap.add_argument('--scale-text', type=float, help='size of the numbers on pot scales, mm (default 1.4)')

@@ -73,7 +73,7 @@ Don't want to open Inkscape? Tick **Make artwork for me** and Panel Generator dr
 - **Outputs in filled boxes:** any jack whose label says OUT gets a solid box with the label cut out of it, the usual way modular panels show outputs. A text you add saying OUT right next to a jack counts too.
 - **Boxes round rows of controls:** a box round 3 or more of the same control in a row or column, scales and labels inside.
 - **Tabs for edge jacks:** jacks on the panel edge (the plug goes in from the side) get a filled tab hanging from the edge with their labels cut out. Labels like MIDI IN and MIDI OUT become IN / OUT with MIDI underneath. Drag an edge of a tab or output box to make it bigger; it snaps to the edges of the others, so you can make them all the same size.
-- **Border** (square, following the panel, or with its own rounded corners) and a **title**, across the top or standing up along a side (plus your name or brand, small, along the bottom). They go in the first free spot; drag them anywhere.
+- **Border** (square, following the panel, or with its own rounded corners) and a **title**, across the top, stacked down a side (letters one under another) or turned on its side (plus your name or brand, small, along the bottom). They go in the first free spot; drag them anywhere.
 
 Pick a **Style** to start from (*Minimal*, *Classic synth* or *Modular*) and change anything after. To change one part (a centre-zero scale for a pan pot, or a jack that's an output but isn't labelled OUT), click its **Artwork** cell in **Edit labels**. Anything that would hit a hole, a label or the edge is left out, and you get a note.
 
