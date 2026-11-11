@@ -1393,7 +1393,16 @@ class App(tk.Tk):
                     if near is not None and abs(near - pos) <= 8 / sc:
                         pos, g = near, near
                 nb = list(b); nb[{'l': 0, 't': 1, 'r': 2, 'b': 3}[edge]] = pos
-                mirror = self.mirrored(t[2], edge, e)
+                mirror = self.mirrored(t[2], edge, e) and not (len(self.drag) > 9 and self.drag[9])
+                reach = False
+                if mirror and t[2]['kind'] == 'textbox' and axis == 0:
+                    # pulling an end past another label (or back off one) is reaching for it: only that end moves.
+                    # A small change to the margin moves both ends.
+                    pts = [(L['x'], L['y']) for L in self.pv.get('labels', [])] + \
+                          [((k['box'][0] + k['box'][2]) / 2, (k['box'][1] + k['box'][3]) / 2) for k in self.pv.get('knocked', [])]
+                    inside = lambda q: sum(1 for x, y in pts if q[0] <= x <= q[2] and q[1] <= y <= q[3])
+                    reach = inside(nb) != inside(b) or abs(pos - b[0 if edge == 'l' else 2]) > 6
+                    mirror = not reach
                 if mirror:                                     # the opposite side follows, so what's inside stays centred
                     i, j = {'l': (0, 2), 'r': (2, 0), 't': (1, 3), 'b': (3, 1)}[edge]
                     nb[j] = b[j] - (pos - b[i])
@@ -1406,7 +1415,8 @@ class App(tk.Tk):
                         c.create_line(0, oy + g * sc, c.winfo_width(), oy + g * sc, fill='#ff4fd8', dash=(3, 3), tags='dragbox')
                 c.create_rectangle(ox + nb[0] * sc, oy + nb[1] * sc, ox + nb[2] * sc, oy + nb[3] * sc,
                                    outline='#ffd28a', dash=(4, 2), width=2, tags='dragbox')
-                self.drag = ('item', x0, y0, t, True, pos - b[{'l': 0, 't': 1, 'r': 2, 'b': 3}[edge]], 0, edge, mirror)
+                self.drag = ('item', x0, y0, t, True, pos - b[{'l': 0, 't': 1, 'r': 2, 'b': 3}[edge]], 0, edge, mirror,
+                             reach or (len(self.drag) > 9 and self.drag[9]))      # once it's a reach, it stays one
                 c.config(cursor='sb_h_double_arrow' if axis == 0 else 'sb_v_double_arrow')
                 return
             dx, dy, gx, gy = self.snap(t, (e.x - x0) / sc, (e.y - y0) / sc, free=bool(getattr(e, 'state', 0) & ALT_MASK))
@@ -1805,7 +1815,8 @@ class App(tk.Tk):
             ttk.Label(box, text='Or drag an edge of it in the preview: it snaps to the edges of the other tabs and boxes'
                                + (', and to key labels and hole edges - stretch a bar over two keys. Drag the middle of the box '
                                   'to move it with everything in it; drag a text inside it to move just that text. Its top and bottom move together, and so '
-                                  'do the ends of a bar with several labels in it (hold Shift to move just one).' if d['kind'] == 'textbox' else
+                                  'do the ends of a bar with several labels in it when you nudge them (up to 6 mm). Pull an end further, or past '
+                                  'another label, and only that end moves. Shift always moves just one edge.' if d['kind'] == 'textbox' else
                                   '. Pull a side and the other side follows, so the box stays centred on the controls.' if group else '.'),
                       style='Dim.TLabel', wraplength=390, justify='left').pack(anchor='w', pady=(4, 0))
             ttk.Button(box, text='Back to its own size', command=lambda: (self.ui['label_edits'].pop(d['key'], None),
