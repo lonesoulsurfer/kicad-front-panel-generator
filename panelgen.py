@@ -1864,12 +1864,13 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
                 shapes.append(tab.difference(keep_out))
 
     # 5. boxes round rows (or columns) of the same kind of control
-    if a.art_groups == 'on':
+    group_kinds = {'pot', 'button', 'jack'} if a.art_groups == 'on' else set(str(a.art_groups).split(',')) - {'off', ''}
+    if group_kinds:
         items = []
         for fid, cs in parts.items():
             c = next((x for x in cs if x.get('circle')), None)
             k = part_kind(c, fps.get(fid)) if c else None
-            if k in ('pot', 'encoder', 'button', 'toggle', 'jack'):
+            if k in ('pot', 'encoder', 'button', 'toggle', 'jack') and {'encoder': 'pot', 'toggle': 'button'}.get(k, k) in group_kinds:
                 items.append(dict(fid=fid, kind='pot' if k == 'encoder' else k, c=c['circle'], geom=unary_union([x['geom'] for x in cs])))
         def runs_of(axis):
             out = []
@@ -1935,7 +1936,8 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
                 continue
             boxes_done.append(ids)
             shapes.append(line)
-            a._tab_boxes.append(dict(key=gkey, kind='group', edges='lrtb', box=fb, ref=names, grow=dict(g_)))
+            a._tab_boxes.append(dict(key=gkey, kind='group', edges='lrtb', box=fb, ref=names, grow=dict(g_),
+                                     of={'toggle': 'button'}.get(run[0]['kind'], run[0]['kind'])))
 
     # 6. border
     if a.art_border == 'on':
@@ -2339,7 +2341,7 @@ def main(argv=None, preview=None):
     ap.add_argument('--art-border-gap', type=float, help='panel edge to the border, mm (0 = automatic: 1.5, or just inside the case screws)')
     ap.add_argument('--ring-width', type=float, help='line thickness of the rings round buttons, mm (default 0.8)')
     ap.add_argument('--ring-gap', type=float, help='gap between a button hole and its ring, mm (default 0.8)')
-    ap.add_argument('--art-groups', choices=['on', 'off'], help='a box round rows or columns of 3+ of the same control')
+    ap.add_argument('--art-groups', help="a box round rows or columns of 3+ of the same control: on, off, or which kinds, e.g. pot,button,jack")
     ap.add_argument('--art-tabs', choices=['on', 'off'], help='a filled tab, labels cut out, for jacks on the panel edge')
     ap.add_argument('--art-title', help='title along the top of the panel')
     ap.add_argument('--art-maker', help='your name or brand, small, along the bottom')

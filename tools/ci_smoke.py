@@ -35,7 +35,7 @@ def mouse(button, a, b=None):
 def run():
     v = app.vars
     check('demo board loads into the preview', bool(app.pv) and 'message' not in app.pv and len(app.pv['shapes']) > 3)
-    v['margin'].set('12'); v['labels_on'].set(True); v['auto_on'].set(True); app.refresh_states()
+    v['margin'].set('12'); v['labels_on'].set(True); v['art_style'].set('Classic synth'); app.apply_style()
     app.update_preview(); app.update()
     x1, y1, x2, y2 = app.pv['panel_box']
     check('labels and made artwork', len(app.pv['labels']) > 3 and len(app.pv['artwork']) > 3)

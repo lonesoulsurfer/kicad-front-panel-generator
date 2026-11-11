@@ -16,11 +16,13 @@ DEFAULTS = dict(margin=0.0, margin_top=0.0, margin_right=0.0, margin_bottom=0.0,
                 art_border_radius=0.0, art_border_gap=0.0, ring_width=0.8, ring_gap=0.8, art_groups='off', art_tabs='off',
                 art_title='', art_maker='', title_size=5.0, knob_size=13.0)
 ART_STYLES = {   # what each style switches on
+    'None': dict(scale='None', rings=False, outputs=False, border=False, groups=False, tabs=False),
     'Minimal': dict(scale='Ticks', rings=False, outputs=False, border=False, groups=False, tabs=False),
     'Classic synth': dict(scale='Numbers 0-10', rings=True, outputs=False, border=True, groups=True, tabs=True),
     'Modular': dict(scale='Ticks', rings=False, outputs=True, border=False, groups=False, tabs=True),
 }
-STYLE_KEYS = ('scale', 'rings', 'outputs', 'border', 'groups', 'tabs')
+STYLE_KEYS = ('scale', 'rings', 'outputs', 'border', 'tabs')
+GROUP_KINDS = ('pot', 'button', 'jack')
 TITLE_DIRS = {'Across': 'off', 'Stacked': 'stacked', 'On its side': 'on'}
 SCALES = {'None': 'none', 'Ticks': 'ticks', 'Numbers 0-10': 'numbers', 'Centre zero (- 0 +)': 'bipolar'}
 KICAD_FONT = "KiCad's own font"
@@ -117,10 +119,12 @@ class App(tk.Tk):
         v['svg'] = tk.BooleanVar(); v['open'] = tk.BooleanVar(value=self.cfg.get('open_after', True))
         v['art_on'] = tk.BooleanVar()
         v['extras_on'] = tk.BooleanVar(value=True)
-        v['auto_on'] = tk.BooleanVar(); v['art_style'] = tk.StringVar(value='Classic synth')
-        v['art_scale'] = tk.StringVar(value='Ticks'); v['art_rings'] = tk.BooleanVar(value=True)
+        v['art_style'] = tk.StringVar(value='None')
+        v['art_scale'] = tk.StringVar(value='None'); v['art_rings'] = tk.BooleanVar()
         v['art_outputs'] = tk.BooleanVar(); v['art_border'] = tk.BooleanVar()
-        v['art_groups'] = tk.BooleanVar(); v['art_tabs'] = tk.BooleanVar(); v['border_radius'] = tk.StringVar(value='0')
+        for k in GROUP_KINDS:
+            v['art_groups_' + k] = tk.BooleanVar()
+        v['art_tabs'] = tk.BooleanVar(); v['border_radius'] = tk.StringVar(value='0')
         v['border_gap'] = tk.StringVar(value='0'); v['ring_width'] = tk.StringVar(value='0.8'); v['ring_gap'] = tk.StringVar(value='0.8')
         v['art_title'] = tk.StringVar(); v['art_maker'] = tk.StringVar()
         v['title_size'] = tk.StringVar(value='5'); v['knob_size'] = tk.StringVar(value='13')
@@ -357,7 +361,7 @@ class App(tk.Tk):
         Tip(bt, 'A list of every label: change its text, hide it, set its own gap, or choose its artwork. '
                 'You can also click a label in the preview.')
         sub(det, 'Selected label')
-        self.sel_boxes = {'labels': ttk.Frame(det)}
+        self.sel_boxes, self.sel_subs = {'labels': ttk.Frame(det)}, {}
         self.sel_boxes['labels'].pack(fill='x')
 
         # your own text and pictures, and whatever is selected in the preview
@@ -378,68 +382,80 @@ class App(tk.Tk):
         self.sel_box = self.sel_boxes['extras'] = ttk.Frame(s); self.sel_box.pack(fill='x')
         self.sel = None
 
-        # artwork made for you
-        s = self.section('auto', 'Artwork made for you', 'Scales, rings, boxes, a border and a title, drawn from your panel. '
-                                                         'No Inkscape needed.', switch='auto_on',
-                         tip='Everything is placed from the holes and labels on your panel, and checked against them. It also '
-                             'goes into the Inkscape file on its own layer, so you can draw more on top if you like.')
-        h6 = ttk.Frame(s); h6.pack(fill='x')
-        det = self.auto_detail = ttk.Frame(h6); det.pack(fill='x')
-        f = self.form(det)
-        c = field(f, 'Style', 'Minimal: ticks round the pots. Classic synth: numbered scales, rings round buttons, a border. '
-                              'Modular: ticks, and outputs in filled boxes (any jack whose label says OUT). '
-                              'Change anything below after.')
+        # the look to start from
+        s = self.section('style', 'Style', 'A look to start from. It sets the scales, rings, boxes, tabs and border below; '
+                                           'change any of them after.')
+        f = self.form(s)
+        c = field(f, 'Style', 'None: nothing added. Minimal: ticks round the pots. Classic synth: numbered scales, rings round '
+                              'buttons, boxes round rows of controls, tabs for horizontal jacks, a border. Modular: ticks, and '
+                              'outputs in filled boxes. Custom: your own mix.')
         sc = ttk.Combobox(c, textvariable=v['art_style'], values=list(ART_STYLES) + ['Custom'], width=24, state='readonly')
         sc.pack(side='left')
         sc.bind('<<ComboboxSelected>>', lambda e: self.apply_style())
-        sub(det, 'Title')
-        f = self.form(det)
+
+        # title
+        s = self.section('title', 'Title', "The synth's name on the panel, and yours if you like. Leave empty for none.")
+        f = self.form(s)
         ttk.Entry(field(f, 'Text'), textvariable=v['art_title'], width=27).pack(side='left')
-        mm(field(f, 'Size'), 'title_size')
+        mm(field(f, 'Size', 'Or click the title in the preview and drag one of its corners.'), 'title_size')
         c = field(f, 'Direction', 'Across, along the top. Stacked: the letters one under another, each the right way up. '
                                   'On its side: turned to read from the bottom. Drag it anywhere after.')
         ttk.Combobox(c, textvariable=v['title_dir'], values=list(TITLE_DIRS), width=24, state='readonly').pack(side='left')
         c = field(f, 'Maker name', 'Your name or brand, small, along the bottom. Leave empty for none.')
         ttk.Entry(c, textvariable=v['art_maker'], width=27).pack(side='left')
-        sub(det, 'Pots')
-        f = self.form(det)
+        self.sel_subs['title'] = sub(s, 'Selected')
+        self.sel_boxes['title'] = ttk.Frame(s); self.sel_boxes['title'].pack(fill='x')
+
+        row_tip = ('A box round 3 or more of them in a row or a column, with their scales and labels inside. Click the box in the '
+                   'preview and drag its top, bottom or a side to resize it. Left out (with a note) when it would run into '
+                   'another part, a label or the edge.')
+        # pots
+        s = self.section('pots', 'Pots', 'Scales round the pots, and a box round a row of them.')
+        f = self.form(s)
         c = field(f, 'Scale', 'Marks round every pot, over a 300 degree turn. Change one pot (e.g. centre zero for a pan pot) '
                               'in Edit labels.')
         ttk.Combobox(c, textvariable=v['art_scale'], values=list(SCALES), width=24, state='readonly').pack(side='left')
         c = field(f, 'Knob size', 'Knob diameter: the scale and the label start outside it, so the knob never hides them.')
         mm(c, 'knob_size')
-        sub(det, 'Buttons')
-        f = self.form(det)
+        ttk.Checkbutton(field(f, 'Box', row_tip), text='A box round a row of pots', variable=v['art_groups_pot']).pack(side='left')
+        self.sel_subs['pots'] = sub(s, 'Selected')
+        self.sel_boxes['pots'] = ttk.Frame(s); self.sel_boxes['pots'].pack(fill='x')
+
+        # buttons
+        s = self.section('buttons', 'Buttons', 'Rings round push buttons, and a box round a row of them.')
+        f = self.form(s)
         c = field(f, 'Rings')
         ttk.Checkbutton(c, text='A ring round each push button', variable=v['art_rings'], command=self.refresh_states).pack(side='left')
         self.w_ringw = mm(field(f, 'Ring thickness', 'How thick the line of the ring is.'), 'ring_width')
         self.w_ringg = mm(field(f, 'Gap from the hole', 'Between the edge of the button hole and the ring.'), 'ring_gap')
-        sub(det, 'Jacks and groups')
-        f = self.form(det)
-        c = field(f, 'Vertical outputs', "Jacks that come up through the panel (the plug goes in from the front) and whose label says OUT get a filled box with the label cut out of it - the usual way to "
-                                "tell outputs from inputs. Set any jack to output or input in Edit labels.")
+        ttk.Checkbutton(field(f, 'Box', row_tip), text='A box round a row of buttons', variable=v['art_groups_button']).pack(side='left')
+        self.sel_subs['buttons'] = sub(s, 'Selected')
+        self.sel_boxes['buttons'] = ttk.Frame(s); self.sel_boxes['buttons'].pack(fill='x')
+
+        # jacks
+        s = self.section('jacks', 'Jacks', 'Boxes and tabs that show which jacks are outputs.')
+        f = self.form(s)
+        c = field(f, 'Vertical outputs', "Jacks that come up through the panel (the plug goes in from the front) and whose label "
+                                         "says OUT get a filled box with the label cut out of it - the usual way to tell outputs "
+                                         "from inputs. Set any jack to output or input in Edit labels.")
         ttk.Checkbutton(c, text='In filled boxes', variable=v['art_outputs']).pack(side='left')
-        c = field(f, 'Horizontal jacks', "Jacks lying flat on the PCB at the panel edge (no hole, the plug goes in from the side) get a filled tab hanging "
-                                   "from the edge with their labels cut out. Neighbours share a tab; labels with the same first "
-                                   "word (MIDI IN, MIDI OUT) become IN / OUT with MIDI underneath.")
+        c = field(f, 'Horizontal jacks', "Jacks lying flat on the PCB at the panel edge (no hole, the plug goes in from the side) "
+                                         "get a filled tab hanging from the edge with their labels cut out. Neighbours share a tab; "
+                                         "labels with the same first word (MIDI IN, MIDI OUT) become IN / OUT with MIDI underneath.")
         ttk.Checkbutton(c, text='In tabs on the edge', variable=v['art_tabs']).pack(side='left')
-        c = field(f, 'Rows of controls', 'A box round 3 or more of the same control in a row or a column (pots, buttons, jacks), '
-                                         'with their scales and labels inside. Left out (with a note) when it would run into '
-                                         'another part, a label or the edge.')
-        ttk.Checkbutton(c, text='A box round them', variable=v['art_groups']).pack(side='left')
-        sub(det, 'Border')
-        f = self.form(det)
-        c = field(f, 'Border')
-        ttk.Checkbutton(c, text='A line round the panel', variable=v['art_border'], command=self.refresh_states).pack(side='left')
+        ttk.Checkbutton(field(f, 'Box', row_tip), text='A box round a row of jacks', variable=v['art_groups_jack']).pack(side='left')
+        self.sel_subs['jacks'] = sub(s, 'Selected')
+        self.sel_boxes['jacks'] = ttk.Frame(s); self.sel_boxes['jacks'].pack(fill='x')
+
+        # border
+        s = self.section('border', 'Border', 'A line round the panel.', switch='art_border')
+        f = self.form(s)
         c = field(f, 'Gap from the edge', 'From the edge of the panel to the border. 0 = automatic: 1.5 mm, or just inside the '
                                           'case holes if there are any.')
         self.w_bgap = mm(c, 'border_gap', note='0 = automatic')
         c = field(f, 'Corner radius', '0 = the border follows the panel corners. Any other value rounds the border corners by that much.')
         self.w_bradius = mm(c, 'border_radius', note='0 = follows the panel')
-        sub(det, 'Selected')
-        self.sel_boxes['auto'] = ttk.Frame(det); self.sel_boxes['auto'].pack(fill='x')
-        self.show_selected()
-        for k in ('art_scale', 'art_rings', 'art_border', 'art_outputs', 'art_groups', 'art_tabs'):
+        for k in ('art_scale', 'art_rings', 'art_border', 'art_outputs', 'art_tabs') + tuple('art_groups_' + g for g in GROUP_KINDS):
             v[k].trace_add('write', lambda *_: self.style_custom())
 
         # artwork from Inkscape
@@ -459,6 +475,7 @@ class App(tk.Tk):
         ttk.Label(det, text="Draw on the 'Artwork' layer, save in Inkscape, and the preview updates by itself.",
                   style='Dim.TLabel', wraplength=440).pack(anchor='w', pady=(4, 0))
 
+        self.show_selected()
         self.left_end = ttk.Frame(left); self.left_end.pack(fill='x')
 
         # right: preview + result
@@ -614,6 +631,7 @@ class App(tk.Tk):
         f = ttk.Frame(parent); f.pack(fill='x', pady=(2 if first else 10, 2))
         ttk.Label(f, text=text.upper(), style='Sub.TLabel').pack(side='left')
         ttk.Separator(f).pack(side='left', fill='x', expand=True, padx=(8, 0))
+        return f
 
     def mm(self, cell, key, note=None):
         e = ttk.Entry(cell, textvariable=self.vars[key], width=7); e.pack(side='left')
@@ -622,7 +640,8 @@ class App(tk.Tk):
             ttk.Label(cell, text=note, style='Dim.TLabel').pack(side='left', padx=(10, 0))
         return e
 
-    TABS = {'panel': ('size', 'rail', 'case', 'holes', 'restore'), 'art': ('labels', 'extras', 'auto', 'art')}
+    TABS = {'panel': ('size', 'rail', 'case', 'holes', 'restore'),
+            'art': ('style', 'title', 'labels', 'pots', 'buttons', 'jacks', 'border', 'extras', 'art')}
 
     def show_tab(self, tab):
         if tab != self.tab:
@@ -675,7 +694,6 @@ class App(tk.Tk):
         self.show(self.case_detail, v['screws'].get() != 'none', fill='x')
         self.show(self.label_detail, v['labels_on'].get(), fill='x')
         self.show(self.art_detail, v['art_on'].get(), fill='x')
-        self.show(self.auto_detail, v['auto_on'].get(), fill='x')
         for w in self.extras_row.winfo_children():
             w.state(['!disabled'] if v['extras_on'].get() else ['disabled'])
         en(self.w_bradius, v['art_border'].get()); en(self.w_bgap, v['art_border'].get())
@@ -763,9 +781,12 @@ class App(tk.Tk):
             v = self.vars
             v['art_scale'].set(st['scale']); v['art_rings'].set(st['rings'])
             v['art_outputs'].set(st['outputs']); v['art_border'].set(st['border'])
-            v['art_groups'].set(st['groups']); v['art_tabs'].set(st['tabs'])
+            for k in GROUP_KINDS:
+                v['art_groups_' + k].set(st['groups'])
+            v['art_tabs'].set(st['tabs'])
         finally:
             self.applying_style = False
+        self.refresh_states()
 
     def style_custom(self):
         """Changing a single item by hand makes the style 'Custom'."""
@@ -773,7 +794,8 @@ class App(tk.Tk):
             return
         st = ART_STYLES.get(self.vars['art_style'].get())
         v = self.vars
-        if st and tuple(v['art_' + k].get() for k in STYLE_KEYS) != tuple(st[k] for k in STYLE_KEYS):
+        now = tuple(v['art_' + k].get() for k in STYLE_KEYS) + tuple(v['art_groups_' + k].get() for k in GROUP_KINDS)
+        if st and now != tuple(st[k] for k in STYLE_KEYS) + (st['groups'],) * len(GROUP_KINDS):
             v['art_style'].set('Custom')
 
     def show(self, w, on, **pack):
@@ -877,18 +899,23 @@ class App(tk.Tk):
             v['svg'].set(bool(s['svg']))
             v['art_on'].set(s['artwork'] == 'on')
             v['labels_on'].set(s['labels'] == 'on')
-            v['auto_on'].set(s['auto_art'] == 'on')
             v['extras_on'].set(s.get('extras', 'on') != 'off')
             v['art_style'].set(s.get('art_style') or 'Custom')
             v['art_scale'].set(next((k for k, x in SCALES.items() if x == s['art_scale']), 'Ticks'))
             v['art_rings'].set(s['art_rings'] == 'on'); v['art_outputs'].set(s['art_outputs'] == 'on')
             v['art_border'].set(s['art_border'] == 'on')
-            v['art_groups'].set(s['art_groups'] == 'on'); v['art_tabs'].set(s['art_tabs'] == 'on')
+            kinds = GROUP_KINDS if s['art_groups'] == 'on' else [k for k in str(s['art_groups']).split(',')]
+            for k in GROUP_KINDS:
+                v['art_groups_' + k].set(k in kinds)
+            v['art_tabs'].set(s['art_tabs'] == 'on')
             v['border_radius'].set(f"{s['art_border_radius']:g}"); v['border_gap'].set(f"{s['art_border_gap']:g}")
             v['ring_width'].set(f"{s['ring_width']:g}"); v['ring_gap'].set(f"{s['ring_gap']:g}")
             v['art_title'].set(s['art_title']); v['art_maker'].set(s['art_maker'])
             v['title_size'].set(f"{s['title_size']:g}"); v['knob_size'].set(f"{s['knob_size']:g}")
             v['title_dir'].set(next((k for k, x in TITLE_DIRS.items() if x == s.get('title_vertical', 'off')), 'Across'))
+            if s['auto_art'] != 'on':            # made artwork was switched off as a whole: that's every part of it off now
+                v['art_style'].set('None'); self.apply_style()
+                v['art_title'].set(''); v['art_maker'].set('')
             v['label_pos'].set(s['label_pos']); v['label_gap'].set(f"{s['label_gap']:g}"); v['label_size'].set(f"{s['label_size']:g}")
             v['label_font'].set(s['label_font'] or KICAD_FONT)
             v['label_bold'].set(s['label_bold'] == 'on'); v['label_caps'].set(s['label_caps'] == 'on')
@@ -980,7 +1007,9 @@ class App(tk.Tk):
         else:
             args += ['--labels', 'off']
         args += ['--extras', 'on' if v['extras_on'].get() else 'off']
-        if v['auto_on'].get():
+        groups = [k for k in GROUP_KINDS if v['art_groups_' + k].get()]
+        if (v['art_title'].get().strip() or v['art_maker'].get().strip() or SCALES[v['art_scale'].get()] != 'none' or groups
+                or any(v[k].get() for k in ('art_rings', 'art_outputs', 'art_border', 'art_tabs'))):
             ts, ks = self.number('title_size', 'title size'), self.number('knob_size', 'knob size')
             if ts < 1:
                 raise ValueError('Title size must be at least 1 mm')
@@ -994,7 +1023,7 @@ class App(tk.Tk):
                      '--art-border-gap', f"{self.number('border_gap', 'border gap from the edge'):g}" if v['art_border'].get() else '0',
                      '--ring-width', f"{max(0.15, self.number('ring_width', 'ring thickness')):g}",
                      '--ring-gap', f"{self.number('ring_gap', 'ring gap'):g}",
-                     '--art-groups', 'on' if v['art_groups'].get() else 'off', '--art-tabs', 'on' if v['art_tabs'].get() else 'off',
+                     '--art-groups', ','.join(groups) or 'off', '--art-tabs', 'on' if v['art_tabs'].get() else 'off',
                      '--art-title', v['art_title'].get(), '--art-maker', v['art_maker'].get(),
                      '--title-size', f'{ts:g}', '--knob-size', f'{ks:g}',
                      '--title-vertical', TITLE_DIRS.get(v['title_dir'].get(), 'off')]
@@ -1605,7 +1634,7 @@ class App(tk.Tk):
 
     def show_selected(self):
         boxes = getattr(self, 'sel_boxes', None)
-        if not boxes or len(boxes) < 3:
+        if not boxes or len(boxes) < 6:
             return
         cv = self.left.master                        # rebuilding these mustn't move the panel under your hand
         self._keep_y = cv.canvasy(0)
@@ -1619,15 +1648,26 @@ class App(tk.Tk):
             _, kind, d = t
             own_box = kind == 'tab' and d['kind'] == 'textbox' and str(d['key']).startswith('box:text:')
             home = ('extras' if kind in ('text', 'image') or own_box else
-                    'labels' if kind == 'label' or (kind == 'tab' and d['kind'] == 'textbox') else 'auto')
+                    'labels' if kind == 'label' or (kind == 'tab' and d['kind'] == 'textbox') else
+                    'title' if kind == 'art' else
+                    {'pot': 'pots', 'button': 'buttons'}.get(d.get('of'), 'jacks') if d['kind'] == 'group' else 'jacks')
         self.sel_home = home
         hints = {'labels': 'Click a label in the preview, or the box round one, to change it here.',
                  'extras': 'Click one of your texts or pictures in the preview to change it here.',
-                 'auto': 'Click the title, a tab or a box in the preview to change it here.'}
+                 'title': 'Click the title or the maker name in the preview to change it here.',
+                 'pots': 'Click the box round the pots in the preview to change it here.',
+                 'buttons': 'Click the box round the buttons in the preview to change it here.',
+                 'jacks': 'Click an output box, a tab or the box round the jacks in the preview to change it here.'}
         for k, b in boxes.items():
             for w in b.winfo_children():
                 w.destroy()
-            if k != home:
+            if k in self.sel_subs:                    # these only appear while something of theirs is selected
+                for w in (self.sel_subs[k], b):
+                    if k == home and not w.winfo_manager():
+                        w.pack(fill='x', pady=(10, 2) if w is self.sel_subs[k] else 0)
+                    elif k != home and w.winfo_manager():
+                        w.pack_forget()
+            elif k != home:
                 ttk.Label(b, text=hints[k], style='Dim.TLabel', wraplength=440, justify='left').pack(anchor='w')
         if not t:
             return
@@ -1710,8 +1750,8 @@ class App(tk.Tk):
                 ttk.Button(row, text='Edit labels…', command=lambda: (self.edit_labels(), self.editor.focus_row(fid))).pack(side='left')
         elif kind == 'art':
             head.config(text='Title' if d['key'] == 'title' else 'Maker name')
-            ttk.Label(box, text=('Its text and size are under Title, above. Or drag a corner of it in the preview to resize it.'
-                                 if d['key'] == 'title' else 'Its text is under Title, above.'),
+            ttk.Label(box, text=('Its text and size are just above. Or drag a corner of it in the preview to resize it.'
+                                 if d['key'] == 'title' else 'Its text is just above.'),
                       style='Dim.TLabel', wraplength=440, justify='left').pack(anchor='w')
             b = ttk.Button(box, text='Put it back in its automatic place',
                            command=lambda: (self.ui['art_pos'].pop(d['key'], None), self.persist_ui(), self.update_preview()))
