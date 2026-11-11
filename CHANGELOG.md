@@ -13,6 +13,7 @@
 - **What you click shows where it belongs:** a label (or the box round it) under Labels, your own text and pictures under theirs, the title, tabs and boxes under Artwork made for you.
 - **Fixed: lists changing by themselves.** Scrolling the left side with the mouse wheel over a list (font, title direction, pot scale) changed its value. The wheel now only scrolls.
 - **Fixed: the left side jumping to the top** when a setting changed.
+- **A bar round several labels stays put when you move one label inside it,** so you can centre a label in it. Drag the middle of the bar to move it with every label in it. The box round a row of controls no longer shifts when you nudge a label.
 - **Measure:** hold Ctrl (or Shift) to keep the ruler dead level or straight up and down.
 - **Openings section removed.** "Make every opening bigger" is no longer in the window (still on the command line as `--grow`), and parts that look like they need a cutout are always flagged.
 

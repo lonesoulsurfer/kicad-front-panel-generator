@@ -1902,9 +1902,14 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
                 cx, cy, r = i['c']
                 rr = auto_scale_radius(a, i['fid']) if i['kind'] == 'pot' else r + (a.ring_gap + a.ring_width if i['kind'] == 'button' and a.art_rings == 'on' else 0.6)
                 parts_geo.append(Point(cx, cy).buffer(rr))
-                if i['fid'] in label_box:
-                    parts_geo.append(label_box[i['fid']])
+                if i['fid'] in label_box:               # where the label would be by itself: nudging it doesn't shift the frame
+                    e_ = edits.get(i['fid'], {})
+                    parts_geo.append(shapely_translate(label_box[i['fid']], -e_.get('dx', 0.0), -e_.get('dy', 0.0)))
             bb = unary_union(parts_geo).bounds
+            room = box(bb[0] - 0.6, bb[1] - 0.6, bb[2] + 0.6, bb[3] + 0.6)
+            far = [label_box[i['fid']] for i in run if i['fid'] in label_box and not room.contains(label_box[i['fid']])]
+            if far:                                     # ...unless it's been moved right out of the frame
+                bb = unary_union(parts_geo + far).bounds
             others = holes.difference(unary_union([i['geom'] for i in run]).buffer(0.01))
             other_labels = [b for f, b in label_box.items() if f not in ids and f not in knocked]
             names = ', '.join(fps[i['fid']].ref for i in run)
@@ -2113,11 +2118,24 @@ def text_boxes(placed, texts, edits, a, groups, outline, log):
         pad_x, pad_y = max(0.8, L['h'] * 0.35), max(0.45, L['h'] * 0.25)
         txt = text_shapes(L['text'], L['x'], L['y'], L['h'], font, sbold)
         tb = unary_union(txt).bounds if txt else (L['x'] - L['w'] / 2, L['y'] - L['h'] / 2, L['x'] + L['w'] / 2, L['y'] + L['h'] / 2)
-        bx = (tb[0] - pad_x - g.get('l', 0.0), tb[1] - pad_y - g.get('t', 0.0), tb[2] + pad_x + g.get('r', 0.0), tb[3] + pad_y + g.get('b', 0.0))
+        def around(tb, ox=0.0, oy=0.0):
+            return (tb[0] - pad_x - g.get('l', 0.0) + ox, tb[1] - pad_y - g.get('t', 0.0) + oy,
+                    tb[2] + pad_x + g.get('r', 0.0) + ox, tb[3] + pad_y + g.get('b', 0.0) + oy)
         # other texts the box now reaches over (one long bar under a row of keys): they go in it, where they are
-        inner = [M for M in placed if M is not L and M['fid'] not in knocked and M['fid'] not in taken
-                 and (M['fid'] not in owners or spec_of(M) == spec)
-                 and bx[0] <= M['x'] <= bx[2] and bx[1] <= M['y'] <= bx[3]]
+        def inside_of(bx):
+            return [M for M in placed if M is not L and M['fid'] not in knocked and M['fid'] not in taken
+                    and (M['fid'] not in owners or spec_of(M) == spec)
+                    and bx[0] <= M['x'] <= bx[2] and bx[1] <= M['y'] <= bx[3]]
+        bx, anchor = around(tb), 'text'
+        inner = inside_of(bx)
+        if L['fid'] not in own:
+            # a bar shared by several labels sits where the label would be by itself (plus wherever you dragged the bar),
+            # so moving one label inside it - to centre it, say - doesn't drag the bar along
+            e = edits.get(L['fid'], {})
+            mx, my = e.get('dx', 0.0), e.get('dy', 0.0)
+            fixed = around((tb[0] - mx, tb[1] - my, tb[2] - mx, tb[3] - my), g.get('ox', 0.0), g.get('oy', 0.0))
+            if inside_of(fixed):
+                bx, inner, anchor = fixed, inside_of(fixed), 'auto'
         if not inner:                            # just this text: keep it in the middle of a stretched box
             sx, sy = (g.get('r', 0.0) - g.get('l', 0.0)) / 2, (g.get('b', 0.0) - g.get('t', 0.0)) / 2
             if sx or sy:
@@ -2135,7 +2153,8 @@ def text_boxes(placed, texts, edits, a, groups, outline, log):
         else:
             shape = shape.difference(shape.buffer(-0.3, join_style=1))
         taken |= {M['fid'] for M in inner}
-        a._tab_boxes.append(dict(key=key, kind='textbox', edges='lrtb', box=bx, ref=f"'{L['text']}'"))
+        a._tab_boxes.append(dict(key=key, kind='textbox', edges='lrtb', box=bx, ref=f"'{L['text']}'", anchor=anchor,
+                                 members=[L['fid']] + [M['fid'] for M in inner]))
         if holes is not None and shape.intersects(holes):
             log.append(f"NOTE  the box round '{L['text']}' runs over a hole - that part is left off")
             shape = shape.difference(holes)

@@ -1268,6 +1268,9 @@ class App(tk.Tk):
             b = t[0]
             dist = {'l': abs(x - b[0]), 'r': abs(x - b[2]), 't': abs(y - b[1]), 'b': abs(y - b[3])}
             edge = min(t[2]['edges'], key=lambda k: dist[k])
+            if t[2]['kind'] == 'textbox' and dist[edge] > 6 / self.cur_view[0]:
+                self.drag = ('item', e.x, e.y, t, False)        # the middle of a box round text: move it, texts and all
+                return
             self.drag = ('item', e.x, e.y, t, False, 0, 0, edge)
             return
         if t and t[1] == 'shape':                       # one of several selected holes: they all move together
@@ -1336,7 +1339,7 @@ class App(tk.Tk):
                 return
             sc, ox, oy = self.cur_view
             b = t[0]
-            if t[1] == 'tab':                          # pull one edge of a tab: it snaps to the edges of the other tabs
+            if t[1] == 'tab' and len(self.drag) > 7:   # pull one edge of a tab: it snaps to the edges of the other tabs
                 edge = self.drag[7]
                 dx, dy = (e.x - x0) / sc, (e.y - y0) / sc
                 axis = 0 if edge in 'lr' else 1
@@ -1407,7 +1410,7 @@ class App(tk.Tk):
             self.drag = None
             self.canvas.config(cursor='')
             self.canvas.delete('dragbox')
-            if moved and t[1] == 'tab':
+            if moved and t[1] == 'tab' and edge:
                 g = self.ui['label_edits'].setdefault(t[2]['key'], {})
                 group = t[2]['kind'] == 'group'
                 if group:                                          # start from the size it's shown at (it may have been held back)
@@ -1739,7 +1742,8 @@ class App(tk.Tk):
                         self.persist_ui(); self.update_preview()
                 entry(row, f"{g.get(edge, 0.0):g}", setg); ttk.Label(row, text='mm').pack(side='left')
             ttk.Label(box, text='Or drag an edge of it in the preview: it snaps to the edges of the other tabs and boxes'
-                               + (', and to key labels and hole edges - stretch a bar over two keys.' if d['kind'] == 'textbox' else
+                               + (', and to key labels and hole edges - stretch a bar over two keys. Drag the middle of the box '
+                                  'to move it with everything in it; drag a text inside it to move just that text.' if d['kind'] == 'textbox' else
                                   '. Pull a side and the other side follows, so the box stays centred on the controls.' if group else '.'),
                       style='Dim.TLabel', wraplength=390, justify='left').pack(anchor='w', pady=(4, 0))
             ttk.Button(box, text='Back to its own size', command=lambda: (self.ui['label_edits'].pop(d['key'], None),
@@ -2162,6 +2166,17 @@ class App(tk.Tk):
             for o in self.ui.get('shapes', []):
                 if o['id'] in self.shape_sel:
                     o['x'] = round(o['x'] + dx, 3); o['y'] = round(o['y'] + dy, 3)
+        elif kind == 'tab':                            # a box round text: everything in it moves with it
+            for fid in d.get('members', []):
+                o = self.own_text(fid)
+                if o:
+                    o['x'] = round(o['x'] + dx, 2); o['y'] = round(o['y'] + dy, 2)
+                else:
+                    e = self.ui['label_edits'].setdefault(fid, {})
+                    e['dx'] = round(e.get('dx', 0.0) + dx, 3); e['dy'] = round(e.get('dy', 0.0) + dy, 3)
+            if d.get('anchor') == 'auto':
+                g = self.ui['label_edits'].setdefault(d['key'], {})
+                g['ox'] = round(g.get('ox', 0.0) + dx, 3); g['oy'] = round(g.get('oy', 0.0) + dy, 3)
         else:
             e = self.ui['label_edits'].setdefault(d['fid'], {})
             e['dx'] = round(e.get('dx', 0.0) + dx, 3); e['dy'] = round(e.get('dy', 0.0) + dy, 3)
