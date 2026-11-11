@@ -416,10 +416,10 @@ class App(tk.Tk):
         self.w_ringg = mm(field(f, 'Gap from the hole', 'Between the edge of the button hole and the ring.'), 'ring_gap')
         sub(det, 'Jacks and groups')
         f = self.form(det)
-        c = field(f, 'Outputs', "Jacks whose label says OUT get a filled box with the label cut out of it - the usual way to "
+        c = field(f, 'Vertical outputs', "Jacks that come up through the panel (the plug goes in from the front) and whose label says OUT get a filled box with the label cut out of it - the usual way to "
                                 "tell outputs from inputs. Set any jack to output or input in Edit labels.")
         ttk.Checkbutton(c, text='In filled boxes', variable=v['art_outputs']).pack(side='left')
-        c = field(f, 'Edge jacks', "Jacks on the panel edge (no hole, the plug goes in from the side) get a filled tab hanging "
+        c = field(f, 'Horizontal jacks', "Jacks lying flat on the PCB at the panel edge (no hole, the plug goes in from the side) get a filled tab hanging "
                                    "from the edge with their labels cut out. Neighbours share a tab; labels with the same first "
                                    "word (MIDI IN, MIDI OUT) become IN / OUT with MIDI underneath.")
         ttk.Checkbutton(c, text='In tabs on the edge', variable=v['art_tabs']).pack(side='left')
@@ -1716,7 +1716,7 @@ class App(tk.Tk):
             if not d.get('pinned'):
                 b.state(['disabled'])
         elif kind == 'tab':
-            head.config(text={'edge': 'Edge tab: ', 'output': 'Output box: ', 'textbox': 'Box round ',
+            head.config(text={'edge': 'Horizontal jack tab: ', 'output': 'Vertical output box: ', 'textbox': 'Box round ',
                               'group': 'Box round '}.get(d['kind'], '') + d.get('ref', ''))
             g = self.ui['label_edits'].get(d['key'], {})
             group = d['kind'] == 'group'
