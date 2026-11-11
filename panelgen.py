@@ -2168,6 +2168,47 @@ def text_boxes(placed, texts, edits, a, groups, outline, log):
                 polys += fracture(p)
     return polys, knocked
 
+def line_shapes(lines, groups, outline, log):
+    """Lines you drew in the window (a divider, a signal-flow arrow, a bracket): silkscreen polygons, broken round holes.
+    Each also gets '_box', its bounding box, for the window."""
+    from shapely.geometry import LineString
+    holes = unary_union([g['geom'] for g in groups]).buffer(0.3) if groups else None
+    inside = outline.buffer(-0.3)
+    polys = []
+    for ln in lines:
+        try:
+            ax, ay, bx, by = (float(ln[k]) for k in ('x1', 'y1', 'x2', 'y2'))
+            w = max(0.15, float(ln.get('w', 0.5)))
+        except (KeyError, TypeError, ValueError):
+            continue
+        ln['_box'] = (min(ax, bx), min(ay, by), max(ax, bx), max(ay, by))
+        d = math.hypot(bx - ax, by - ay)
+        if d < 0.05:
+            continue
+        ux, uy = (bx - ax) / d, (by - ay) / d
+        head = min(max(3.2 * w, 1.6), d / 2)               # arrowhead: as long as it is wide, never more than half the line
+        ends = ln.get('arrow', 'none')
+        sx, sy = (ax + ux * head * 0.8, ay + uy * head * 0.8) if ends == 'both' else (ax, ay)
+        ex, ey = (bx - ux * head * 0.8, by - uy * head * 0.8) if ends in ('end', 'both') else (bx, by)
+        parts = [LineString([(sx, sy), (ex, ey)]).buffer(w / 2, cap_style=2 if ends != 'none' else 1)]
+        def tip(px, py, dx, dy):
+            return Polygon([(px, py), (px - dx * head - dy * head / 2, py - dy * head + dx * head / 2),
+                            (px - dx * head + dy * head / 2, py - dy * head - dx * head / 2)])
+        if ends in ('end', 'both'):
+            parts.append(tip(bx, by, ux, uy))
+        if ends == 'both':
+            parts.append(tip(ax, ay, -ux, -uy))
+        shape = unary_union(parts)
+        if holes is not None and shape.intersects(holes):
+            shape = shape.difference(holes)
+        if not inside.contains(shape):
+            log.append(f"NOTE  a line you drew runs off the panel - that part is left off")
+            shape = shape.intersection(inside)
+        for p in (shape.geoms if hasattr(shape, 'geoms') else [shape]):
+            if p.geom_type == 'Polygon' and p.area > 1e-4:
+                polys += fracture(p)
+    return polys
+
 def shapely_translate(g, dx, dy):
     from shapely.affinity import translate
     return translate(g, dx, dy)
@@ -2402,6 +2443,7 @@ def main(argv=None, preview=None):
     label_edits = ui.get('label_edits', mem0.get('label_edits', {}))
     texts = [dict(t) for t in ui.get('texts', mem0.get('texts', []))]
     images = [dict(i) for i in ui.get('images', mem0.get('images', []))]
+    lines = [dict(i) for i in ui.get('lines', mem0.get('lines', []))]
     a._art_pos = dict(ui.get('art_pos', mem0.get('art_pos', {})))
     added = [dict(s) for s in ui.get('shapes', mem0.get('shapes', []))]
     cfg = json.load(open(a.rules))
@@ -2604,6 +2646,7 @@ def main(argv=None, preview=None):
                    + (f" ({len(knocked)} label{'s' if len(knocked) > 1 else ''} cut out of output boxes)" if knocked else ''))
     tb_polys, tb_knocked = text_boxes([L for L in placed if L['fid'] not in knocked], shown_texts, label_edits, a, groups, outline, log)
     a._auto += tb_polys
+    a._auto += line_shapes(lines, groups, outline, log)
     knocked |= tb_knocked
     placed = [L for L in placed if L['fid'] not in knocked]     # those are in the artwork now, cut out of their box
     a._markers = part_markers(pcb, set(cfg.get('_none_ids', set())) | set(ignore_uncut), outline)
@@ -2659,6 +2702,7 @@ def main(argv=None, preview=None):
                      added=[dict(s, box=list(c['geom'].bounds), ref=c['ref']) for s in added
                             for c in cutouts if c['key'] == f"add:{s['id']}"],
                      knocked=[dict(fid=f, **v) for f, v in a._knock_boxes.items()], tab_boxes=a._tab_boxes,
+                     lines=[dict(i, box=i['_box']) for i in lines if '_box' in i],
                      images=[dict(id=i['id'], box=i['_box'], w=i['w'], invert=i.get('invert', False), rot=i.get('rot', 0))
                              for i in shown_images if '_box' in i])
         return 1 if any(l.startswith('ERROR') for l in log) else 0
@@ -2691,6 +2735,7 @@ def main(argv=None, preview=None):
                                                     ref=L['ref']) for L in placed if not L.get('own')},
                'label_edits': label_edits, 'ignore_uncut': ignore_uncut, 'texts': texts, 'art_pos': a._art_pos,
                'images': [{k: v for k, v in i.items() if not k.startswith('_')} for i in images], 'shapes': added,
+               'lines': [{k: v for k, v in i.items() if not k.startswith('_')} for i in lines],
                'settings': dict(margin=a.margin, **{f'margin_{k}': v for k, v in m.items()},
                                 screws=a.screws, screw_dia=a.screw_dia, screw_inset=a.screw_inset, screw_slot=a.screw_slot, rail_slot=a.rail_slot,
                                 corner_radius=a.corner_radius, grow=a.grow, min_web=a.min_web,

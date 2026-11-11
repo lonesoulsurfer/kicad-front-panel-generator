@@ -62,6 +62,8 @@ def run():
     check('tabs and folding sections', app.tab == 'panel' and app.sections['size'][0].winfo_manager() and not app.sections['labels'][0].winfo_manager())
     v['art_border'].set(True); v['border_gap'].set('4'); v['ring_width'].set('0.4'); app.refresh_states(); app.update_preview(); app.update()
     check('border gap and ring thickness accepted', 'message' not in app.pv)
+    app.start_line(); mouse(1, px(x1 + 20, y2 - 4)); mouse(1, px(x1 + 60, y2 - 4)); app.update()
+    check('a line drawn with two clicks', len(app.ui['lines']) == 1 and len(app.pv.get('lines', [])) == 1)
     app.generate(open_after=False); app.update()
     panel = gui.panel_paths(board)[0]
     check('panel file written', os.path.exists(panel) and open(panel, encoding='utf-8').read().count('gr_circle') >= 8)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Panel Generator - a window for panelgen. Double-click to run (or: py panelgen_gui.pyw [board.kicad_pcb])."""
-import contextlib, glob, io, json, os, re, subprocess, sys, traceback
+import contextlib, glob, io, json, math, os, re, subprocess, sys, traceback
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, font as tkfont
 
@@ -23,6 +23,11 @@ ART_STYLES = {   # what each style switches on
 }
 STYLE_KEYS = ('scale', 'rings', 'outputs', 'border', 'tabs')
 GROUP_KINDS = ('pot', 'button', 'jack')
+LINE_ENDS = {'Plain': 'none', 'Arrow at the end': 'end', 'Arrows at both ends': 'both'}
+MY_STYLE = 'My style'
+STYLE_VARS = ('labels_on', 'label_pos', 'label_gap', 'label_size', 'label_font', 'label_bold', 'label_caps', 'art_scale',
+              'knob_size', 'art_rings', 'ring_width', 'ring_gap', 'art_outputs', 'art_tabs', 'art_border', 'border_gap',
+              'border_radius', 'title_size', 'title_dir', 'art_maker', 'line_w') + tuple('art_groups_' + k for k in GROUP_KINDS)
 TITLE_DIRS = {'Across': 'off', 'Stacked': 'stacked', 'On its side': 'on'}
 SCALES = {'None': 'none', 'Ticks': 'ticks', 'Numbers 0-10': 'numbers', 'Centre zero (- 0 +)': 'bipolar'}
 KICAD_FONT = "KiCad's own font"
@@ -133,12 +138,13 @@ class App(tk.Tk):
         v['art_tabs'] = tk.BooleanVar(); v['border_radius'] = tk.StringVar(value='0')
         v['border_gap'] = tk.StringVar(value='0'); v['ring_width'] = tk.StringVar(value='0.8'); v['ring_gap'] = tk.StringVar(value='0.8')
         v['art_title'] = tk.StringVar(); v['art_maker'] = tk.StringVar()
+        v['line_w'] = tk.StringVar(value='0.5')
         v['title_size'] = tk.StringVar(value='5'); v['knob_size'] = tk.StringVar(value='13')
         v['title_dir'] = tk.StringVar(value='Across')
         v['labels_on'] = tk.BooleanVar(); v['label_pos'] = tk.StringVar(value='above')
         v['label_gap'] = tk.StringVar(value='1.5'); v['label_size'] = tk.StringVar(value='2')
         v['label_font'] = tk.StringVar(value=KICAD_FONT); v['label_bold'] = tk.BooleanVar(); v['label_caps'] = tk.BooleanVar()
-        self.ui = {'ignore': {}, 'label_edits': {}, 'texts': [], 'art_pos': {}, 'images': [], 'shapes': []}   # ignored parts, label changes, your texts, moved title, pictures
+        self.ui = {'ignore': {}, 'label_edits': {}, 'texts': [], 'art_pos': {}, 'images': [], 'shapes': [], 'lines': []}   # ignored parts, label changes, your texts, moved title, pictures
         self.undo_stack, self.state_prev, self.restoring = [], None, False
         self.editor = None
         self.mode, self.pv, self.after_id, self.loading = None, None, None, False
@@ -398,9 +404,17 @@ class App(tk.Tk):
         c = field(f, 'Style', 'None: nothing added. Minimal: ticks round the pots. Classic synth: numbered scales, rings round '
                               'buttons, boxes round rows of controls, tabs for horizontal jacks, a border. Modular: ticks, and '
                               'outputs in filled boxes. Custom: your own mix.')
-        sc = ttk.Combobox(c, textvariable=v['art_style'], values=list(ART_STYLES) + ['Custom'], width=24, state='readonly')
+        sc = self.w_style = ttk.Combobox(c, textvariable=v['art_style'], width=24, state='readonly')
         sc.pack(side='left')
         sc.bind('<<ComboboxSelected>>', lambda e: self.apply_style())
+        c = field(f, 'My style', 'Remembers how this panel looks - the label size and font, scales, rings, boxes, tabs, border, '
+                                 'title size and direction, maker name and line thickness - as "My style". Every new PCB you '
+                                 'open then starts with it, and you can pick it from the Style list on any panel. '
+                                 'It does not include the title text, the panel size or the holes.')
+        ttk.Button(c, text='Save this look as my style', command=self.save_my_style).pack(side='left')
+        self.w_style_note = ttk.Label(s, text='', style='Dim.TLabel', wraplength=440, justify='left')
+        self.w_style_note.pack(anchor='w', pady=(2, 0))
+        self.style_list()
 
         # title
         s = self.section('title', 'Title', "The synth's name on the panel, and yours if you like. Leave empty for none.")
@@ -464,8 +478,21 @@ class App(tk.Tk):
         self.w_bgap = mm(c, 'border_gap', note='0 = automatic')
         c = field(f, 'Corner radius', '0 = the border follows the panel corners. Any other value rounds the border corners by that much.')
         self.w_bradius = mm(c, 'border_radius', note='0 = follows the panel')
-        for k in ('art_scale', 'art_rings', 'art_border', 'art_outputs', 'art_tabs') + tuple('art_groups_' + g for g in GROUP_KINDS):
+        for k in STYLE_VARS:                     # changing any of these by hand makes the style 'Custom'
             v[k].trace_add('write', lambda *_: self.style_custom())
+
+        # lines
+        s = self.section('lines', 'Lines', 'A divider between sections, an arrow from one jack to the next, a bracket over two controls.')
+        f = self.form(s)
+        bt = ttk.Button(field(f, 'Add'), text='Line', command=self.start_line); bt.pack(side='left')
+        Tip(bt, 'Click this, then click where the line starts and where it ends. It snaps to the middle and edge of holes, to '
+                'the ends of other lines and to the panel edges; hold Ctrl to keep it dead level or straight up and down, Alt '
+                'to place it freely. Lines are broken round holes. Click a line to change it, drag it to move it, drag an end '
+                'to re-aim it.')
+        mm(field(f, 'Thickness', 'For the next line you draw. Click a line to change its own.'), 'line_w')
+        self.sel_subs['lines'] = sub(s, 'Selected')
+        self.sel_boxes['lines'] = ttk.Frame(s); self.sel_boxes['lines'].pack(fill='x')
+        self.line_from = None
 
         # artwork from Inkscape
         s = self.section('art', 'Artwork from Inkscape', 'Your own graphics and text, drawn on a 1:1 copy of the panel.',
@@ -528,7 +555,7 @@ class App(tk.Tk):
         pc.bind('<Motion>', self.measure_motion)
         self.pan = None
         typing = lambda: isinstance(self.focus_get(), (ttk.Entry, tk.Entry, ttk.Combobox))
-        self.bind_all('<Delete>', lambda e: None if typing() else self.shapes_delete())
+        self.bind_all('<Delete>', lambda e: None if typing() else self.delete_selected())
         self.bind_all('<Control-d>', lambda e: None if typing() else self.shapes_duplicate())
         for k in ('c', 'C'):
             self.bind_all(f'<Control-{k}>', lambda e: None if typing() else self.copy_selected())
@@ -658,7 +685,7 @@ class App(tk.Tk):
         return e
 
     TABS = {'panel': ('size', 'rail', 'case', 'holes', 'restore'),
-            'art': ('style', 'title', 'labels', 'pots', 'buttons', 'jacks', 'border', 'extras', 'art')}
+            'art': ('style', 'title', 'labels', 'pots', 'buttons', 'jacks', 'border', 'lines', 'extras', 'art')}
 
     def show_tab(self, tab):
         if tab != self.tab:
@@ -787,7 +814,40 @@ class App(tk.Tk):
         elif d:
             messagebox.showinfo('Panel Generator', f"The panel folder is:\n{d}" + ('' if os.path.isdir(d) else '\n(not made yet)'))
 
+    def style_list(self):
+        mine = self.cfg.get('my_style')
+        self.w_style['values'] = list(ART_STYLES) + ([MY_STYLE] if mine else []) + ['Custom']
+        self.w_style_note.config(text=('"My style" is saved: new PCBs start with it, and it is in the Style list.' if mine else
+                                       'Nothing saved yet.'))
+
+    def save_my_style(self):
+        v = self.vars
+        self.cfg['my_style'] = {k: v[k].get() for k in STYLE_VARS}
+        self.save_cfg()
+        self.loading_style = True
+        v['art_style'].set(MY_STYLE)
+        self.loading_style = False
+        self.style_list()
+        self.hover.config(text='Saved as "My style". New PCBs will start with this look.')
+
+    def use_my_style(self):
+        mine = self.cfg.get('my_style')
+        if not mine:
+            return False
+        self.applying_style = True
+        try:
+            for k, x in mine.items():
+                if k in self.vars and k in STYLE_VARS:
+                    self.vars[k].set(x)
+            self.vars['art_style'].set(MY_STYLE)
+        finally:
+            self.applying_style = False
+        return True
+
     def apply_style(self):
+        if self.vars['art_style'].get() == MY_STYLE:
+            self.use_my_style()
+            return self.refresh_states()
         st = ART_STYLES.get(self.vars['art_style'].get())
         if not st:
             return
@@ -807,8 +867,13 @@ class App(tk.Tk):
         """Changing a single item by hand makes the style 'Custom'."""
         if getattr(self, 'applying_style', False) or self.loading:
             return
-        st = ART_STYLES.get(self.vars['art_style'].get())
         v = self.vars
+        if v['art_style'].get() == MY_STYLE:           # changed away from what was saved
+            mine = self.cfg.get('my_style') or {}
+            if any(k in mine and v[k].get() != mine[k] for k in STYLE_VARS):
+                v['art_style'].set('Custom')
+            return
+        st = ART_STYLES.get(self.vars['art_style'].get())
         now = tuple(v['art_' + k].get() for k in STYLE_KEYS) + tuple(v['art_groups_' + k].get() for k in GROUP_KINDS)
         if st and now != tuple(st[k] for k in STYLE_KEYS) + (st['groups'],) * len(GROUP_KINDS):
             v['art_style'].set('Custom')
@@ -936,10 +1001,13 @@ class App(tk.Tk):
             v['label_pos'].set(s['label_pos']); v['label_gap'].set(f"{s['label_gap']:g}"); v['label_size'].set(f"{s['label_size']:g}")
             v['label_font'].set(s['label_font'] or KICAD_FONT)
             v['label_bold'].set(s['label_bold'] == 'on'); v['label_caps'].set(s['label_caps'] == 'on')
+            if not mem.get('settings'):          # a PCB you haven't made a panel for yet starts with your own look
+                self.use_my_style()
             self.ui = {'ignore': dict(mem.get('ignore_uncut', {})), 'label_edits': dict(mem.get('label_edits', {})),
                        'texts': [dict(t) for t in mem.get('texts', [])], 'art_pos': dict(mem.get('art_pos', {})),
                        'images': [dict(i) for i in mem.get('images', [])],
-                       'shapes': [dict(i) for i in mem.get('shapes', [])]}
+                       'shapes': [dict(i) for i in mem.get('shapes', [])],
+                       'lines': [dict(i) for i in mem.get('lines', [])]}
             self.reset_undo()
         finally:
             self.loading = False
@@ -1215,6 +1283,7 @@ class App(tk.Tk):
         fam = pv.get('label_font') or tkfont.nametofont('TkDefaultFont').actual('family')
         self.targets = [(tuple(a['box']), 'shape', a) for a in pv.get('added', [])]       # things you can drag, topmost last
         self.targets += [(tuple(tb['box']), 'tab', tb) for tb in pv.get('tab_boxes', [])]
+        self.targets += [(tuple(ln['box']), 'line', ln) for ln in pv.get('lines', [])]
         for L in pv.get('labels', []):
             self.targets.append(((L['x'] - L['w'] / 2, L['y'] - L['h'] / 2, L['x'] + L['w'] / 2, L['y'] + L['h'] / 2),
                                  'text' if L.get('own') else 'label', L))
@@ -1235,7 +1304,13 @@ class App(tk.Tk):
         sel = self.selected_target()
         if sel:                                    # what's selected: its box, so you can see what the left panel is changing
             b = sel[0]
-            c.create_rectangle(X(b[0]) - 3, Y(b[1]) - 3, X(b[2]) + 3, Y(b[3]) + 3, outline='#2563eb', width=2, dash=(5, 2))
+            if sel[1] == 'line':                   # a line: shown along itself, with a square on each end to drag
+                d = sel[2]
+                c.create_line(X(d['x1']), Y(d['y1']), X(d['x2']), Y(d['y2']), fill='#2563eb', width=2, dash=(5, 2))
+                for hx, hy in ((X(d['x1']), Y(d['y1'])), (X(d['x2']), Y(d['y2']))):
+                    c.create_rectangle(hx - 4, hy - 4, hx + 4, hy + 4, fill='#ffffff', outline='#2563eb', width=2)
+            else:
+                c.create_rectangle(X(b[0]) - 3, Y(b[1]) - 3, X(b[2]) + 3, Y(b[3]) + 3, outline='#2563eb', width=2, dash=(5, 2))
             if self.resizable(sel):                # corner handles: drag one to make it bigger or smaller
                 for hx in (X(b[0]) - 3, X(b[2]) + 3):
                     for hy in (Y(b[1]) - 3, Y(b[3]) + 3):
@@ -1278,6 +1353,12 @@ class App(tk.Tk):
         pad = 4 / self.cur_view[0]                    # a few pixels of slack round small text
         for b, kind, data in reversed(self.targets):
             if b[0] - pad <= x <= b[2] + pad and b[1] - pad <= y <= b[3] + pad:
+                if kind == 'line':                    # a sloping line's box is mostly empty: it has to be near the line itself
+                    ax, ay, bx, by = data['x1'], data['y1'], data['x2'], data['y2']
+                    L2 = (bx - ax) ** 2 + (by - ay) ** 2
+                    u = max(0.0, min(1.0, ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / L2)) if L2 > 1e-9 else 0.0
+                    if math.hypot(x - ax - u * (bx - ax), y - ay - u * (by - ay)) > pad * 1.5 + float(data.get('w', 0.5)) / 2:
+                        continue
                 return b, kind, data
         return None
 
@@ -1287,6 +1368,13 @@ class App(tk.Tk):
             return
         t = None if self.adding else self.target_at(e)
         sel = None if self.adding else self.selected_target()
+        if sel and sel[1] == 'line' and getattr(self, 'cur_view', None):          # an end of the selected line: re-aim it
+            sc, ox, oy = self.cur_view
+            d = sel[2]
+            for n, (px, py) in enumerate(((d['x1'], d['y1']), (d['x2'], d['y2']))):
+                if abs(e.x - (ox + px * sc)) <= 8 and abs(e.y - (oy + py * sc)) <= 8:
+                    self.drag = ('lineend', e.x, e.y, sel, False, n, None)
+                    return
         if sel and self.resizable(sel) and getattr(self, 'cur_view', None):      # a corner of what's selected: resize it
             sc, ox, oy = self.cur_view
             b = sel[0]
@@ -1385,6 +1473,16 @@ class App(tk.Tk):
     def motion(self, e):
         if self.drag and self.drag[0] == 'resize':
             return self.resize_drag(e)
+        if self.drag and self.drag[0] == 'lineend':
+            _, x0, y0, t, moved, n, _ = self.drag
+            if not moved and abs(e.x - x0) + abs(e.y - y0) < 3:
+                return
+            d = t[2]
+            other = (d['x2'], d['y2']) if n == 0 else (d['x1'], d['y1'])
+            p = self.line_point(e, other, skip=d['id'])
+            self.rubber(other, p)
+            self.drag = ('lineend', x0, y0, t, True, n, p)
+            return
         if not self.drag or not getattr(self, 'cur_view', None):
             return
         if self.drag[0] == 'item':
@@ -1461,6 +1559,15 @@ class App(tk.Tk):
         self.drag = ('band', x0, y0, True)
 
     def release(self, e):
+        if self.drag and self.drag[0] == 'lineend':
+            _, _, _, t, moved, n, p = self.drag
+            self.drag = None
+            self.canvas.delete('dragbox')
+            o = self.own_line(t[2]['id'])
+            if moved and p and o:
+                o['x1' if n == 0 else 'x2'], o['y1' if n == 0 else 'y2'] = round(p[0], 3), round(p[1], 3)
+                self.persist_ui(); self.update_preview()
+            return
         if self.drag and self.drag[0] == 'resize':
             _, _, _, t, moved, f = self.drag
             self.drag = None
@@ -1547,6 +1654,14 @@ class App(tk.Tk):
             if kind == 'text':
                 dx, dy, _, _ = self.snap(((x, y, x, y), 'new', None), 0, 0)
                 self.add_text_at(x + dx, y + dy)
+            elif kind == 'line':
+                if self.line_from is None:              # first click: where it starts
+                    self.line_from = self.line_point(e)
+                    self.adding = 'line'
+                    self.canvas.config(cursor='crosshair')
+                    self.hover.config(text='Now click where the line ends. Hold Ctrl to keep it dead level or straight up and down.')
+                else:
+                    self.add_line(self.line_from, self.line_point(e, self.line_from))
             else:
                 self.add_shape_at(kind, x, y, free=bool(getattr(e, 'state', 0) & ALT_MASK))
             return
@@ -1649,7 +1764,7 @@ class App(tk.Tk):
     # ------------------------------------------------------------------ what's selected, changed in the left panel
     def sel_key(self, t):
         _, kind, d = t
-        return kind, {'image': d.get('id'), 'art': d.get('key'), 'tab': d.get('key')}.get(kind, d.get('fid'))
+        return kind, {'image': d.get('id'), 'art': d.get('key'), 'tab': d.get('key'), 'line': d.get('id')}.get(kind, d.get('fid'))
 
     def select(self, t):
         self.sel = self.sel_key(t) if t else None
@@ -1688,7 +1803,7 @@ class App(tk.Tk):
 
     def show_selected(self):
         boxes = getattr(self, 'sel_boxes', None)
-        if not boxes or len(boxes) < 6:
+        if not boxes or 'lines' not in boxes:
             return
         cv = self.left.master                        # rebuilding these mustn't move the panel under your hand
         self._keep_y = cv.canvasy(0)
@@ -1701,13 +1816,14 @@ class App(tk.Tk):
         if t:
             _, kind, d = t
             own_box = kind == 'tab' and d['kind'] == 'textbox' and str(d['key']).startswith('box:text:')
-            home = ('extras' if kind == 'image' else
+            home = ('lines' if kind == 'line' else 'extras' if kind == 'image' else
                     'labels' if kind in ('label', 'text') or (kind == 'tab' and d['kind'] == 'textbox') else
                     'title' if kind == 'art' else
                     {'pot': 'pots', 'button': 'buttons'}.get(d.get('of'), 'jacks') if d['kind'] == 'group' else 'jacks')
         self.sel_home = home
         hints = {'labels': 'Click a label or one of your texts in the preview, or the box round one, to change it here.',
                  'extras': 'Click a picture in the preview to change it here.',
+                 'lines': '',
                  'title': 'Click the title or the maker name in the preview to change it here.',
                  'pots': 'Click the box round the pots in the preview to change it here.',
                  'buttons': 'Click the box round the buttons in the preview to change it here.',
@@ -1741,7 +1857,30 @@ class App(tk.Tk):
         head = ttk.Label(box, text='', style='Head.TLabel'); head.pack(anchor='w', pady=(0, 2))
         form = self.form(box)
         fld = lambda label, tip=None: self.field(form, label, tip)
-        if kind == 'image':
+        if kind == 'line':
+            o = self.own_line(d['id'])
+            length = math.hypot(d['x2'] - d['x1'], d['y2'] - d['y1'])
+            head.config(text='Line')
+            def change(key, x):
+                if o is not None and x is not None and x != o.get(key):
+                    o[key] = x; self.persist_ui(); self.update_preview()
+            row = fld('Thickness')
+            entry(row, f"{float(d.get('w', 0.5)):g}", lambda v: change('w', num(v, 0.15, 10))); ttk.Label(row, text='mm').pack(side='left')
+            row = fld('Ends')
+            ends = self._sel_ends = tk.StringVar(value=next((k for k, x in LINE_ENDS.items() if x == d.get('arrow', 'none')), 'Plain'))
+            cb = ttk.Combobox(row, textvariable=ends, values=list(LINE_ENDS), width=24, state='readonly'); cb.pack(side='left')
+            cb.bind('<<ComboboxSelected>>', lambda e: change('arrow', LINE_ENDS[ends.get()]))
+            row = fld('Length', 'Type a length to make the line exactly that long. Its first end stays where it is.')
+            def setlen(v):
+                x = num(v, 0.2, 1000)
+                if o is not None and x and abs(x - length) > 0.005 and length > 1e-6:
+                    o['x2'] = round(o['x1'] + (o['x2'] - o['x1']) * x / length, 3)
+                    o['y2'] = round(o['y1'] + (o['y2'] - o['y1']) * x / length, 3)
+                    self.persist_ui(); self.update_preview()
+            entry(row, f"{length:.2f}".rstrip('0').rstrip('.'), setlen); ttk.Label(row, text='mm').pack(side='left')
+            ttk.Label(box, text='Drag the line to move it; drag one of its ends to re-aim it.', style='Dim.TLabel').pack(anchor='w', pady=(4, 0))
+            ttk.Button(box, text='Delete line', command=lambda: self.line_delete(d['id'])).pack(anchor='w', pady=(6, 0))
+        elif kind == 'image':
             o = self.own_image(d['id'])
             head.config(text=f"Picture: {o['file'] if o else ''}")
             row = fld('Width')
@@ -2065,7 +2204,8 @@ class App(tk.Tk):
 
     def escape(self, _=None):
         if self.adding:
-            self.adding = False
+            self.adding, self.line_from = False, None
+            self.canvas.delete('dragbox')
             self.canvas.config(cursor='')
             self.hover.config(text='Hover over a cutout to see what it is.')
         elif self.measuring:
@@ -2208,6 +2348,8 @@ class App(tk.Tk):
 
     def measure_motion(self, e):
         self.mouse = (e.x, e.y)
+        if self.adding == 'line' and self.line_from is not None and getattr(self, 'cur_view', None):
+            return self.rubber(self.line_from, self.line_point(e, self.line_from))
         if not self.measuring or len(self.measure) != 1 or not getattr(self, 'cur_view', None) or not self.pv or 'message' in self.pv:
             return
         self.draw_measure(self.measure_point(e))
@@ -2255,6 +2397,78 @@ class App(tk.Tk):
         else:
             self.hover.config(text='Ruler: ' + txt + '  ·  click to set it, or type a length in mm and press Enter')
 
+    # ------------------------------------------------------------------ lines you draw
+    def own_line(self, lid):
+        return next((o for o in self.ui.get('lines', []) if o['id'] == lid), None)
+
+    def start_line(self):
+        if not self.pv or 'message' in self.pv:
+            return
+        self.end_measure()
+        self.adding, self.line_from = 'line', None
+        self.canvas.config(cursor='crosshair')
+        self.hover.config(text='Click on the panel where the line starts. Esc to cancel.')
+
+    def line_point(self, e, anchor=None, skip=None):
+        """Where an end of a line lands: on another line's end or a ruler point if one is near, else as the ruler snaps.
+        Ctrl (or Shift) keeps it dead level with, or straight above, its other end."""
+        x, y = self.to_mm(e)
+        p = None
+        if not getattr(e, 'state', 0) & ALT_MASK:
+            thr = 8 / self.cur_view[0]
+            pts = [q for ln in self.pv.get('lines', []) if ln['id'] != skip for q in ((ln['x1'], ln['y1']), (ln['x2'], ln['y2']))]
+            pts += self.ruler_points()
+            near = min(pts, key=lambda q: (q[0] - x) ** 2 + (q[1] - y) ** 2, default=None)
+            if near and (near[0] - x) ** 2 + (near[1] - y) ** 2 <= thr ** 2:
+                p = near
+        p = p or self.measure_snap(e)
+        if anchor and getattr(e, 'state', 0) & 0x0005:
+            p = (p[0], anchor[1]) if abs(p[0] - anchor[0]) >= abs(p[1] - anchor[1]) else (anchor[0], p[1])
+        return p
+
+    def rubber(self, a, b):
+        sc, ox, oy = self.cur_view
+        c = self.canvas
+        c.delete('dragbox')
+        c.create_line(ox + a[0] * sc, oy + a[1] * sc, ox + b[0] * sc, oy + b[1] * sc, fill='#ffd28a', width=2, dash=(4, 2), tags='dragbox')
+        d = math.hypot(b[0] - a[0], b[1] - a[1])
+        self.hover.config(text=f'Line: {d:.2f} mm long')
+
+    def add_line(self, a, b):
+        import uuid
+        self.adding, self.line_from = False, None
+        self.canvas.config(cursor=''); self.canvas.delete('dragbox')
+        if math.hypot(b[0] - a[0], b[1] - a[1]) < 0.2:
+            return
+        try:
+            w = max(0.15, min(10.0, float(self.vars['line_w'].get())))
+        except ValueError:
+            w = 0.5
+        new = dict(id=uuid.uuid4().hex[:8], x1=round(a[0], 3), y1=round(a[1], 3), x2=round(b[0], 3), y2=round(b[1], 3), w=w, arrow='none')
+        self.ui.setdefault('lines', []).append(new)
+        self.shape_sel, self.sel = [], ('line', new['id'])
+        self.persist_ui(); self.update_preview()
+
+    def line_delete(self, lid):
+        self.ui['lines'] = [o for o in self.ui.get('lines', []) if o['id'] != lid]
+        self.sel = None
+        self.persist_ui(); self.update_preview()
+
+    def delete_selected(self):
+        """The Delete key: holes you added, a line, one of your texts or a picture - whichever is selected."""
+        if self.shape_sel:
+            return self.shapes_delete()
+        t = self.selected_target()
+        if not t:
+            return
+        _, kind, d = t
+        if kind == 'line':
+            self.line_delete(d['id'])
+        elif kind == 'text':
+            self.text_delete(d['fid']); self.select(None)
+        elif kind == 'image':
+            self.image_delete(d['id']); self.select(None)
+
     # ------------------------------------------------------------------ copy and paste
     def copy_selected(self):
         """Ctrl+C: remember what's selected - holes you added, one of your texts, a picture, or a label (as a text)."""
@@ -2270,10 +2484,13 @@ class App(tk.Tk):
             self.clip = ('text', dict(self.own_text(d['fid'])))
         elif kind == 'image' and self.own_image(d['id']):
             self.clip = ('image', dict(self.own_image(d['id'])))
+        elif kind == 'line' and self.own_line(d['id']):
+            o = self.own_line(d['id'])
+            self.clip = ('line', dict(o, x=(o['x1'] + o['x2']) / 2, y=(o['y1'] + o['y2']) / 2))
         elif kind == 'label' and not str(d['fid']).startswith('tabword:'):
             self.clip = ('text', dict(text=d.get('text', ''), x=d['x'], y=d['y']))       # a PCB label pastes as a text of yours
         else:
-            return say("That can't be copied: it's drawn from the panel. Copy works on holes you added, texts, labels and pictures.")
+            return say("That can't be copied: it's drawn from the panel. Copy works on holes you added, texts, labels, lines and pictures.")
         say('Copied - Ctrl+V pastes at the pointer.')
 
     def paste(self, at=None):
@@ -2303,7 +2520,14 @@ class App(tk.Tk):
         dx, dy, _, _ = self.snap(((tx, ty, tx, ty), 'newshape' if kind == 'shapes' else 'new', None), 0, 0)
         mx, my = tx + dx - cx, ty + dy - cy
         new = [dict(o, id=uuid.uuid4().hex[:8], x=round(o['x'] + mx, 3), y=round(o['y'] + my, 3)) for o in items]
-        if kind == 'shapes':
+        if kind == 'line':
+            o = new[0]
+            for k, m in (('x1', mx), ('y1', my), ('x2', mx), ('y2', my)):
+                o[k] = round(o[k] + m, 3)
+            o.pop('x'); o.pop('y')
+            self.ui.setdefault('lines', []).append(o)
+            self.shape_sel, self.sel = [], ('line', o['id'])
+        elif kind == 'shapes':
             self.ui.setdefault('shapes', []).extend(new)
             self.shape_sel, self.sel = [o['id'] for o in new], None
         elif kind == 'text':
@@ -2406,6 +2630,11 @@ class App(tk.Tk):
             for o in self.ui.get('shapes', []):
                 if o['id'] in self.shape_sel:
                     o['x'] = round(o['x'] + dx, 3); o['y'] = round(o['y'] + dy, 3)
+        elif kind == 'line':
+            o = self.own_line(d['id'])
+            if o:
+                for k, m in (('x1', dx), ('y1', dy), ('x2', dx), ('y2', dy)):
+                    o[k] = round(o[k] + m, 3)
         elif kind == 'tab':                            # a box round text: everything in it moves with it
             for fid in d.get('members', []):
                 o = self.own_text(fid)
@@ -2470,6 +2699,8 @@ class App(tk.Tk):
         elif kind == 'art':
             m.add_command(label=f"Put the {d['what']} back in its automatic place", state='normal' if d.get('pinned') else 'disabled',
                           command=lambda: (self.ui['art_pos'].pop(d['key'], None), self.persist_ui(), self.update_preview()))
+        elif kind == 'line':
+            m.add_command(label='Delete line', command=lambda: self.line_delete(d['id']))
         elif kind == 'tab':
             m.add_command(label='Back to its own size', command=lambda: (self.ui['label_edits'].pop(d['key'], None),
                                                                          self.persist_ui(), self.update_preview()))
@@ -2571,7 +2802,8 @@ class App(tk.Tk):
             self.ui = {'ignore': dict(mem.get('ignore_uncut', {})), 'label_edits': dict(mem.get('label_edits', {})),
                        'texts': [dict(t) for t in mem.get('texts', [])], 'art_pos': dict(mem.get('art_pos', {})),
                        'images': [dict(i) for i in mem.get('images', [])],
-                       'shapes': [dict(i) for i in mem.get('shapes', [])]}
+                       'shapes': [dict(i) for i in mem.get('shapes', [])],
+                       'lines': [dict(i) for i in mem.get('lines', [])]}
             self.state_prev = self.snapshot()          # keep the history; changes made in KiCad become the new start
         self.fill_restore()
         panel, _ = panel_paths(board)
@@ -2726,6 +2958,7 @@ class App(tk.Tk):
         mem['ignore_uncut'] = self.ui['ignore']; mem['label_edits'] = self.ui['label_edits']
         mem['texts'] = self.ui.get('texts', []); mem['art_pos'] = self.ui.get('art_pos', {}); mem['images'] = self.ui.get('images', [])
         mem['shapes'] = self.ui.get('shapes', [])
+        mem['lines'] = self.ui.get('lines', [])
         try:
             with open(mem_path, 'w', encoding='utf-8') as f:
                 json.dump(mem, f, indent=1)
