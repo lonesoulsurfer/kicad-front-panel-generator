@@ -519,6 +519,11 @@ class App(tk.Tk):
         typing = lambda: isinstance(self.focus_get(), (ttk.Entry, tk.Entry, ttk.Combobox))
         self.bind_all('<Delete>', lambda e: None if typing() else self.shapes_delete())
         self.bind_all('<Control-d>', lambda e: None if typing() else self.shapes_duplicate())
+        for k in ('c', 'C'):
+            self.bind_all(f'<Control-{k}>', lambda e: None if typing() else self.copy_selected())
+        for k in ('v', 'V'):
+            self.bind_all(f'<Control-{k}>', lambda e: None if typing() else self.paste())
+        self.clip, self.mouse, self.pasted_at = None, None, None
         self.bind_all('<Escape>', self.escape)
         self.adding = False
         self.hover = ttk.Label(right, text='Hover over a cutout to see what it is.', style='Dim.TLabel')
@@ -2115,6 +2120,7 @@ class App(tk.Tk):
         return x, y
 
     def measure_motion(self, e):
+        self.mouse = (e.x, e.y)
         if not self.measuring or len(self.measure) != 1 or not getattr(self, 'cur_view', None) or not self.pv or 'message' in self.pv:
             return
         self.draw_measure(self.measure_point(e))
@@ -2149,6 +2155,68 @@ class App(tk.Tk):
         r = c.create_rectangle(*[v + o for v, o in zip(c.bbox(i), (-4, -2, 4, 2))], fill='#7a1f6b', outline=col, tags='ruler')
         c.tag_raise(i, r)
         self.hover.config(text='Ruler: ' + txt + '  ·  click to measure something else, Esc to finish')
+
+    # ------------------------------------------------------------------ copy and paste
+    def copy_selected(self):
+        """Ctrl+C: remember what's selected - holes you added, one of your texts, a picture, or a label (as a text)."""
+        say = lambda t: self.hover.config(text=t)
+        if self.shape_sel:
+            self.clip = ('shapes', [dict(o) for o in self.own_shapes()])
+            return say(f"Copied {len(self.clip[1])} - Ctrl+V pastes at the pointer.")
+        t = self.selected_target()
+        if not t:
+            return say('Nothing selected to copy. Click a hole you added, a text, a label or a picture first.')
+        _, kind, d = t
+        if kind == 'text' and self.own_text(d['fid']):
+            self.clip = ('text', dict(self.own_text(d['fid'])))
+        elif kind == 'image' and self.own_image(d['id']):
+            self.clip = ('image', dict(self.own_image(d['id'])))
+        elif kind == 'label' and not str(d['fid']).startswith('tabword:'):
+            self.clip = ('text', dict(text=d.get('text', ''), x=d['x'], y=d['y']))       # a PCB label pastes as a text of yours
+        else:
+            return say("That can't be copied: it's drawn from the panel. Copy works on holes you added, texts, labels and pictures.")
+        say('Copied - Ctrl+V pastes at the pointer.')
+
+    def paste(self, at=None):
+        if not self.clip or not self.pv or 'message' in self.pv or not getattr(self, 'cur_view', None):
+            return
+        import uuid
+        kind, data = self.clip
+        items = data if kind == 'shapes' else [data]
+        cx = (min(o['x'] for o in items) + max(o['x'] for o in items)) / 2
+        cy = (min(o['y'] for o in items) + max(o['y'] for o in items)) / 2
+        c = self.canvas
+        over = self.mouse and 0 <= self.mouse[0] <= c.winfo_width() and 0 <= self.mouse[1] <= c.winfo_height() \
+            and c.winfo_containing(*self.winfo_pointerxy()) is c
+        if at:
+            tx, ty = at
+            self.pasted_at, self.paste_n = None, 0
+        elif over and self.mouse != self.pasted_at:        # at the pointer - or, pasting again without moving, a step along
+            sc, ox, oy = self.cur_view
+            tx, ty = (self.mouse[0] - ox) / sc, (self.mouse[1] - oy) / sc
+            self.pasted_at, self.paste_n = self.mouse, 0
+        else:
+            self.paste_n = getattr(self, 'paste_n', 0) + 1
+            base = getattr(self, 'paste_base', (cx, cy)) if self.mouse == self.pasted_at and over else (cx, cy)
+            tx, ty = base[0] + 5 * self.paste_n, base[1] + 5 * self.paste_n
+        if getattr(self, 'paste_n', 0) == 0:
+            self.paste_base = (tx, ty)
+        dx, dy, _, _ = self.snap(((tx, ty, tx, ty), 'newshape' if kind == 'shapes' else 'new', None), 0, 0)
+        mx, my = tx + dx - cx, ty + dy - cy
+        new = [dict(o, id=uuid.uuid4().hex[:8], x=round(o['x'] + mx, 3), y=round(o['y'] + my, 3)) for o in items]
+        if kind == 'shapes':
+            self.ui.setdefault('shapes', []).extend(new)
+            self.shape_sel, self.sel = [o['id'] for o in new], None
+        elif kind == 'text':
+            self.ui.setdefault('texts', []).append(new[0])
+            self.shape_sel, self.sel = [], ('text', 'text:' + new[0]['id'])
+            self.vars['extras_on'].set(True)
+        else:
+            self.ui.setdefault('images', []).append(new[0])
+            self.shape_sel, self.sel = [], ('image', new[0]['id'])
+            self.vars['extras_on'].set(True)
+        self.persist_ui(); self.update_preview()
+        self.hover.config(text='Pasted - drag it into place.')
 
     def box_choice(self, parent, current, apply):
         """Box round a text or label: none, a line round it, or a filled bar with the text cut out."""
@@ -2265,6 +2333,9 @@ class App(tk.Tk):
             def here_text():
                 dx, dy, _, _ = self.snap(((x, y, x, y), 'new', None), 0, 0)
                 self.add_text_at(x + dx, y + dy)
+            if self.clip:
+                m.add_command(label='Paste here', command=lambda: self.paste(at=(x, y)))
+                m.add_separator()
             m.add_command(label='Add text here…', command=here_text)
             m.add_command(label='Add picture here…', command=lambda: self.add_picture(at=(x, y)))
             m.add_separator()
@@ -2285,7 +2356,7 @@ class App(tk.Tk):
                 self.shape_sel = [d['id']]; self.sel = None
                 self.draw(); self.show_selected(); self.show_shapes()
             n = len(self.shape_sel)
-            m.add_command(label='Copy' if n == 1 else f'Copy these {n}', command=self.shapes_duplicate)
+            m.add_command(label='Copy alongside' if n == 1 else f'Copy these {n} alongside', command=self.shapes_duplicate)
             m.add_command(label='Delete' if n == 1 else f'Delete these {n}', command=self.shapes_delete)
         elif kind == 'text':
             m.add_command(label='Change text…', command=lambda: self.text_change(d['fid']))
