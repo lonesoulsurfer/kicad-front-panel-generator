@@ -124,7 +124,7 @@ class App(tk.Tk):
         v['radius'] = tk.StringVar(value='0')
         v['svg'] = tk.BooleanVar(); v['open'] = tk.BooleanVar(value=self.cfg.get('open_after', True))
         v['art_on'] = tk.BooleanVar()
-        v['extras_on'] = tk.BooleanVar(value=True)
+        v['texts_on'] = tk.BooleanVar(value=True); v['pictures_on'] = tk.BooleanVar(value=True)
         v['art_style'] = tk.StringVar(value='None')
         v['art_scale'] = tk.StringVar(value='None'); v['art_rings'] = tk.BooleanVar()
         v['art_outputs'] = tk.BooleanVar(); v['art_border'] = tk.BooleanVar()
@@ -336,13 +336,15 @@ class App(tk.Tk):
         ttk.Button(row, text='Bring back', command=self.restore).pack(side='left', padx=(6, 0), anchor='n')
 
         # ================================================================ ARTWORK
-        # labels
-        s = self.section('labels', 'Labels', "A name next to each control, taken from the PCB.", switch='labels_on',
-                         tip="Each part's text comes from its Label field if it has one, otherwise its Value or Reference "
-                             "(e.g. 'Cutoff', 'Play'). Change, hide or move any of them in Edit labels.")
+        # labels: the ones from the PCB, and texts of your own
+        s = self.section('labels', 'Labels', "Names next to the controls, taken from the PCB, and texts you add yourself.")
+        sub(s, 'From the PCB', first=True)
+        f = self.form(s)
+        c = field(f, 'Labels', "Each part's text comes from its Label field if it has one, otherwise its Value or Reference "
+                               "(e.g. 'Cutoff', 'Play'). Change, hide or move any of them after.")
+        ttk.Checkbutton(c, text='A name next to each control', variable=v['labels_on'], command=self.refresh_states).pack(side='left')
         h4 = ttk.Frame(s); h4.pack(fill='x')
         det = self.label_detail = ttk.Frame(h4); det.pack(fill='x')
-        sub(det, 'Place', first=True)
         f = self.form(det)
         c = field(f, 'Position')
         ttk.Radiobutton(c, text='Above the hole', value='above', variable=v['label_pos']).pack(side='left', padx=(0, 12))
@@ -350,9 +352,23 @@ class App(tk.Tk):
         c = field(f, 'Gap from the hole', 'Distance from the edge of the hole to the text. Keys in a merged switch slot follow '
                                           'their own side of the slot.')
         mm(c, 'label_gap')
-        sub(det, 'Text')
-        f = self.form(det)
-        mm(field(f, 'Size'), 'label_size')
+        c = field(f, 'Each label')
+        bt = ttk.Button(c, text='Edit labels…', command=self.edit_labels); bt.pack(side='left')
+        Tip(bt, 'A list of every label: change its text, hide it, set its own gap, or choose its artwork. '
+                'You can also click a label in the preview, or right-click it.')
+        sub(s, 'Your own')
+        f = self.form(s)
+        row = self.extras_row = field(f, 'Add')
+        bt = ttk.Button(row, text='Text…', command=self.start_add_text); bt.pack(side='left')
+        Tip(bt, "For things that aren't on the PCB, such as what a key does. Click this, then click on the panel where the text "
+                "goes. Drag any text or label to move it: it snaps into line with other labels, to the middle of holes and to "
+                "the middle of gaps (hold Alt to place it freely).")
+        c = field(f, 'Show', "Untick to leave your own texts off the panel (and the preview) without losing them. Handy when "
+                             "you change to Inkscape artwork that already has its own text.")
+        ttk.Checkbutton(c, text='My own texts on the panel', variable=v['texts_on']).pack(side='left')
+        sub(s, 'Text')
+        f = self.form(s)
+        mm(field(f, 'Size', 'For every label and text. One of your own texts can have its own size: click it.'), 'label_size')
         c = field(f, 'Font', "KiCad's own font always works. Any other font has to be installed on the computer that opens the "
                              "panel (the gerbers carry the shapes, so the fab doesn't need it).")
         fonts = [KICAD_FONT] + sorted({x for x in tkfont.families() if not x.startswith('@')})
@@ -360,30 +376,17 @@ class App(tk.Tk):
         c = field(f, 'Style')
         ttk.Checkbutton(c, text='Bold', variable=v['label_bold']).pack(side='left', padx=(0, 12))
         ttk.Checkbutton(c, text='ALL CAPS', variable=v['label_caps']).pack(side='left')
-        sub(det, 'One at a time')
-        f = self.form(det)
-        c = field(f, 'Each label')
-        bt = ttk.Button(c, text='Edit labels…', command=self.edit_labels); bt.pack(side='left')
-        Tip(bt, 'A list of every label: change its text, hide it, set its own gap, or choose its artwork. '
-                'You can also click a label in the preview.')
-        sub(det, 'Selected label')
-        self.sel_boxes, self.sel_subs = {'labels': ttk.Frame(det)}, {}
+        sub(s, 'Selected')
+        self.sel_boxes, self.sel_subs = {'labels': ttk.Frame(s)}, {}
         self.sel_boxes['labels'].pack(fill='x')
 
-        # your own text and pictures, and whatever is selected in the preview
-        s = self.section('extras', 'Your text and pictures', 'Things that are not on the PCB: what a key does, a logo.',
-                         switch='extras_on',
-                         tip="Switch off to leave them off the panel (and the preview) without losing them - switch on and "
-                             "they're back. Handy when you change to Inkscape artwork that already has its own text.")
+        # pictures
+        s = self.section('extras', 'Pictures', 'A logo, a glider: its dark parts print.', switch='pictures_on',
+                         tip="Switch off to leave your pictures off the panel (and the preview) without losing them.")
         f = self.form(s)
-        row = self.extras_row = field(f, 'Add')
-        bt = ttk.Button(row, text='Text…', command=self.start_add_text); bt.pack(side='left')
-        Tip(bt, 'Click this, then click on the panel where the text goes. Drag any text, label, picture or the title to move '
-                'it: it snaps into line with other labels, to the middle of holes and to the middle of gaps (hold Alt to '
-                'place it freely).')
-        bt = ttk.Button(row, text='Picture…', command=self.add_picture); bt.pack(side='left', padx=6)
-        Tip(bt, 'A PNG, JPG or SVG (a glider, a logo...). Its dark parts print, transparent parts never do. It is copied into '
-                'the Front Panel folder.')
+        bt = ttk.Button(field(f, 'Add'), text='Picture…', command=self.add_picture); bt.pack(side='left')
+        Tip(bt, 'A PNG, JPG or SVG. Its dark parts print, transparent parts never do. It is copied into the Front Panel folder. '
+                'Drag it into place; click it and drag a corner to resize it.')
         sub(s, 'Selected')
         self.sel_box = self.sel_boxes['extras'] = ttk.Frame(s); self.sel_box.pack(fill='x')
         self.sel = None
@@ -617,7 +620,7 @@ class App(tk.Tk):
     def show_folds(self):
         for key, (f, chev, body) in self.sections.items():
             # an optional section that's switched off has nothing to show: it reads as shut
-            off = key in self.switches and key != 'extras' and not self.vars[self.switches[key]].get()
+            off = key in self.switches and key != 'extras' and not self.vars[self.switches[key]].get()   # (pictures: Add stays in reach)
             shut = key in self.collapsed or off
             chev.config(text='▸' if shut else '▾')
             if shut and body.winfo_manager():          # (an empty frame keeps its old height, so the holder itself goes)
@@ -708,8 +711,6 @@ class App(tk.Tk):
         self.show(self.case_detail, v['screws'].get() != 'none', fill='x')
         self.show(self.label_detail, v['labels_on'].get(), fill='x')
         self.show(self.art_detail, v['art_on'].get(), fill='x')
-        for w in self.extras_row.winfo_children():
-            w.state(['!disabled'] if v['extras_on'].get() else ['disabled'])
         en(self.w_bradius, v['art_border'].get()); en(self.w_bgap, v['art_border'].get())
         en(self.w_ringw, v['art_rings'].get()); en(self.w_ringg, v['art_rings'].get())
         self.art_state()
@@ -915,7 +916,7 @@ class App(tk.Tk):
             v['svg'].set(bool(s['svg']))
             v['art_on'].set(s['artwork'] == 'on')
             v['labels_on'].set(s['labels'] == 'on')
-            v['extras_on'].set(s.get('extras', 'on') != 'off')
+            v['texts_on'].set(s.get('extras', 'on') in ('on', 'texts')); v['pictures_on'].set(s.get('extras', 'on') in ('on', 'pictures'))
             v['art_style'].set(s.get('art_style') or 'Custom')
             v['art_scale'].set(next((k for k, x in SCALES.items() if x == s['art_scale']), 'Ticks'))
             v['art_rings'].set(s['art_rings'] == 'on'); v['art_outputs'].set(s['art_outputs'] == 'on')
@@ -1012,17 +1013,16 @@ class App(tk.Tk):
                 args += ['--screws', 'none']
             args += ['--corner-radius', f"{self.number('radius', 'corner radius'):g}"]
         args += ['--grow', '0']
-        if v['labels_on'].get():
-            size = self.number('label_size', 'label text size')
-            if size < 0.5:
-                raise ValueError('Label text size must be at least 0.5 mm (1 mm or more is safer for silkscreen)')
-            font = v['label_font'].get()
-            args += ['--labels', 'on', '--label-size', f'{size:g}', '--label-gap', f"{self.number('label_gap', 'label gap'):g}",
-                     '--label-pos', v['label_pos'].get(), '--label-font', '' if font == KICAD_FONT else font,
-                     '--label-bold', 'on' if v['label_bold'].get() else 'off', '--label-caps', 'on' if v['label_caps'].get() else 'off']
-        else:
-            args += ['--labels', 'off']
-        args += ['--extras', 'on' if v['extras_on'].get() else 'off']
+        size = self.number('label_size', 'label text size')          # your own texts use these too
+        if size < 0.5:
+            raise ValueError('Label text size must be at least 0.5 mm (1 mm or more is safer for silkscreen)')
+        font = v['label_font'].get()
+        args += ['--labels', 'on' if v['labels_on'].get() else 'off', '--label-size', f'{size:g}',
+                 '--label-gap', f"{self.number('label_gap', 'label gap'):g}",
+                 '--label-pos', v['label_pos'].get(), '--label-font', '' if font == KICAD_FONT else font,
+                 '--label-bold', 'on' if v['label_bold'].get() else 'off', '--label-caps', 'on' if v['label_caps'].get() else 'off']
+        args += ['--extras', {(True, True): 'on', (True, False): 'texts', (False, True): 'pictures',
+                              (False, False): 'off'}[(v['texts_on'].get(), v['pictures_on'].get())]]
         groups = [k for k in GROUP_KINDS if v['art_groups_' + k].get()]
         if (v['art_title'].get().strip() or v['art_maker'].get().strip() or SCALES[v['art_scale'].get()] != 'none' or groups
                 or any(v[k].get() for k in ('art_rings', 'art_outputs', 'art_border', 'art_tabs'))):
@@ -1572,7 +1572,7 @@ class App(tk.Tk):
             return
         import uuid
         self.ui.setdefault('texts', []).append(dict(id=uuid.uuid4().hex[:8], text=txt.strip(), x=round(x, 2), y=round(y, 2)))
-        self.vars['extras_on'].set(True)                # something you just added should show
+        self.vars['texts_on'].set(True)                 # something you just added should show
         self.persist_ui(); self.update_preview()
 
     def snap(self, t, dx, dy, free=False):
@@ -1701,13 +1701,13 @@ class App(tk.Tk):
         if t:
             _, kind, d = t
             own_box = kind == 'tab' and d['kind'] == 'textbox' and str(d['key']).startswith('box:text:')
-            home = ('extras' if kind in ('text', 'image') or own_box else
-                    'labels' if kind == 'label' or (kind == 'tab' and d['kind'] == 'textbox') else
+            home = ('extras' if kind == 'image' else
+                    'labels' if kind in ('label', 'text') or (kind == 'tab' and d['kind'] == 'textbox') else
                     'title' if kind == 'art' else
                     {'pot': 'pots', 'button': 'buttons'}.get(d.get('of'), 'jacks') if d['kind'] == 'group' else 'jacks')
         self.sel_home = home
-        hints = {'labels': 'Click a label in the preview, or the box round one, to change it here.',
-                 'extras': 'Click one of your texts or pictures in the preview to change it here.',
+        hints = {'labels': 'Click a label or one of your texts in the preview, or the box round one, to change it here.',
+                 'extras': 'Click a picture in the preview to change it here.',
                  'title': 'Click the title or the maker name in the preview to change it here.',
                  'pots': 'Click the box round the pots in the preview to change it here.',
                  'buttons': 'Click the box round the buttons in the preview to change it here.',
@@ -2309,11 +2309,11 @@ class App(tk.Tk):
         elif kind == 'text':
             self.ui.setdefault('texts', []).append(new[0])
             self.shape_sel, self.sel = [], ('text', 'text:' + new[0]['id'])
-            self.vars['extras_on'].set(True)
+            self.vars['texts_on'].set(True)
         else:
             self.ui.setdefault('images', []).append(new[0])
             self.shape_sel, self.sel = [], ('image', new[0]['id'])
-            self.vars['extras_on'].set(True)
+            self.vars['pictures_on'].set(True)
         self.persist_ui(); self.update_preview()
         self.hover.config(text='Pasted - drag it into place.')
 
@@ -2357,7 +2357,7 @@ class App(tk.Tk):
             messagebox.showerror('Panel Generator', f"Couldn't copy the picture into the Front Panel folder ({e})"); return
         x1, y1, x2, y2 = self.pv['panel_box']
         cx, cy = at or ((x1 + x2) / 2, (y1 + y2) / 2)
-        self.vars['extras_on'].set(True)
+        self.vars['pictures_on'].set(True)
         self.ui.setdefault('images', []).append(dict(id=uuid.uuid4().hex[:8], file=name, x=round(cx, 2),
                                                      y=round(cy, 2), w=round(min(20.0, (x2 - x1) / 4), 1)))
         self.persist_ui(); self.update_preview()

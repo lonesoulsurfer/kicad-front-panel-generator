@@ -2330,7 +2330,8 @@ def main(argv=None, preview=None):
     ap.add_argument('--label-font', help='a font installed on your computer, e.g. Arial ("" = KiCad\'s own font, default)')
     ap.add_argument('--label-bold', choices=['on', 'off'])
     ap.add_argument('--label-caps', choices=['on', 'off'], help='ALL CAPS labels')
-    ap.add_argument('--extras', choices=['on', 'off'], help='put your own text and pictures on the panel (default on)')
+    ap.add_argument('--extras', choices=['on', 'off', 'texts', 'pictures'],
+                    help='put your own text and pictures on the panel: on (default), off, or just texts or just pictures')
     ap.add_argument('--auto-art', choices=['on', 'off'], help='make artwork for you: pot scales, rings, output boxes, border, title')
     ap.add_argument('--art-style', help=argparse.SUPPRESS)   # the window's style name, kept with the settings
     ap.add_argument('--art-scale', choices=['none', 'ticks', 'numbers', 'bipolar'], help='pot scales (default ticks)')
@@ -2582,8 +2583,8 @@ def main(argv=None, preview=None):
     part_fps = {fp.uuid: fp for fp in map(Footprint, kids(pcb, 'footprint')) if fp.uuid}
     part_fps.update({c['id']: c['fp'] for c in cutouts + manual if c.get('fp')})
     # your own text and pictures can be left off the panel without losing them
-    shown_texts = texts if a.extras == 'on' else []
-    shown_images = images if a.extras == 'on' else []
+    shown_texts = texts if a.extras in ('on', 'texts') else []
+    shown_images = images if a.extras in ('on', 'pictures') else []
     if a.labels == 'on' or shown_texts:
         n0 = len(log)
         placed, label_rows = make_labels(pcb, cutouts + manual, groups, outline, a, label_edits, log,

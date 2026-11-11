@@ -70,7 +70,7 @@ The **Result** box under the preview lists anything that needs your attention.
 
 ### 3. Add labels (optional)
 
-On the **Artwork** tab, switch on **Labels**. Each pot, jack and switch gets a name printed next to its hole on the panel's silkscreen. The name comes from the PCB: a `Label` field if you've added one to the part, otherwise its Value (for example, a pot with the Value `Cutoff` is labelled CUTOFF).
+On the **Artwork** tab, open **Labels** and tick *A name next to each control*. Each pot, jack and switch gets a name printed next to its hole on the panel's silkscreen. The name comes from the PCB: a `Label` field if you've added one to the part, otherwise its Value (for example, a pot with the Value `Cutoff` is labelled CUTOFF).
 
 - Choose whether labels go **above** or **below** the holes, and the **gap** between label and hole.
 - Set the **text size** and **font**, and turn **bold** and **ALL CAPS** on or off.
@@ -97,11 +97,11 @@ You can use this and Inkscape together: the made artwork appears in the Inkscape
 
 ### 5. Add your own text, pictures and boxes (optional)
 
-Everything here is done in the preview, with the settings under **Your text and pictures** on the left. Switch the section off to leave them all off the panel (for example when you change to Inkscape artwork that has its own text); switch it on again and they're back.
+Everything here is done in the preview. Your own texts live under **Labels** on the left and pictures under **Pictures**. Untick *My own texts on the panel*, or switch Pictures off, to leave them off the panel (for example when you change to Inkscape artwork that has its own text) without losing them.
 
 - **Move anything by dragging it:** a label, your text, a picture or the title. It snaps into line with the other labels, to the middle of holes, half way between two holes (a MIDI label over its IN and OUT jacks), and to the middle of the gap between two things. Hold **Alt** to place it freely.
 - **Click anything to change it.** Its settings appear on the left: text, size, put it back, hide or delete. To resize the title, a picture or one of your texts, click it and drag one of its white corner squares.
-- **Add text** for things that aren't on the PCB, such as what each key does: click **Text…** (or right-click the panel and choose *Add text here*), then click where it goes and type it.
+- **Add text** for things that aren't on the PCB, such as what each key does: under Labels → Your own, click **Text…** (or right-click the panel and choose *Add text here*), then click where it goes and type it.
 - **Boxes round text:** for a key with two jobs, or a function that needs two keys pressed, click the text and set **Box** to *Line round it* or *Filled bar* (text cut out). Then drag the box's ends to stretch it over the keys. It snaps to the key labels and to other boxes. Stretch it over other texts and they go into the box too, where they are: one long bar under a row of keys. A box round just one text keeps it in the middle.
 - **Pictures:** click **Picture…** and pick a PNG, JPG or SVG (a glider, a logo). Its dark parts print. Drag it into place, then click it to set its width, turn it, print its light parts instead, or delete it.
 - **Copy and paste:** select a text, a picture or holes you added, press **Ctrl+C**, then **Ctrl+V** to paste a copy at the pointer (or right-click the panel and choose *Paste here*). Copying a label from the PCB pastes it as a text of your own.
