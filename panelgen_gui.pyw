@@ -2227,11 +2227,24 @@ class App(tk.Tk):
         elif kind == 'art':
             m.add_command(label=f"Put the {d['what']} back in its automatic place", state='normal' if d.get('pinned') else 'disabled',
                           command=lambda: (self.ui['art_pos'].pop(d['key'], None), self.persist_ui(), self.update_preview()))
+        elif kind == 'tab':
+            m.add_command(label='Back to its own size', command=lambda: (self.ui['label_edits'].pop(d['key'], None),
+                                                                         self.persist_ui(), self.update_preview()))
         else:
+            if not str(d['fid']).startswith('tabword:'):
+                m.add_command(label='Change text…', command=lambda: self.label_change(d))
             m.add_command(label='Edit labels…', command=lambda: (self.edit_labels(), self.editor.focus_row(d['fid'])))
             m.add_command(label='Put it back where it was', command=lambda: self.label_reset(d['fid']))
             m.add_command(label='Hide this label', command=lambda: self.label_hide(d['fid']))
         m.tk_popup(e.x_root, e.y_root)
+
+    def label_change(self, d):
+        """A label that came from the PCB: type what the panel should say instead (the PCB isn't changed)."""
+        from tkinter import simpledialog
+        txt = simpledialog.askstring('Change text', f"Text for {d.get('ref', 'this label')}:", initialvalue=d.get('text', ''), parent=self)
+        if txt is not None and txt.strip() and txt.strip() != d.get('text'):
+            self.ui['label_edits'].setdefault(d['fid'], {})['text'] = txt.strip()
+            self.persist_ui(); self.update_preview()
 
     def text_change(self, fid):
         from tkinter import simpledialog

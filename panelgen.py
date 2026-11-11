@@ -2109,7 +2109,10 @@ def text_boxes(placed, texts, edits, a, groups, outline, log):
     spec_of = lambda L: own.get(L['fid'], {}).get('box') if L['fid'] in own else edits.get(L['fid'], {}).get('box')
     owners = {L['fid'] for L in placed if spec_of(L) in ('outline', 'filled')}
     taken = set()                                # texts already inside another bar
-    for L in placed:
+    def reach(L):                                # the longest bar goes first, so it takes in the shorter ones it covers
+        g = edits.get('box:' + L['fid'], {})
+        return -(L['w'] + g.get('l', 0.0) + g.get('r', 0.0)) * (L['h'] + g.get('t', 0.0) + g.get('b', 0.0))
+    for L in sorted(placed, key=reach):
         spec = spec_of(L)
         if spec not in ('outline', 'filled') or L['fid'] in taken:
             continue
@@ -2124,7 +2127,6 @@ def text_boxes(placed, texts, edits, a, groups, outline, log):
         # other texts the box now reaches over (one long bar under a row of keys): they go in it, where they are
         def inside_of(bx):
             return [M for M in placed if M is not L and M['fid'] not in knocked and M['fid'] not in taken
-                    and (M['fid'] not in owners or spec_of(M) == spec)
                     and bx[0] <= M['x'] <= bx[2] and bx[1] <= M['y'] <= bx[3]]
         bx, anchor = around(tb), 'text'
         inner = inside_of(bx)
