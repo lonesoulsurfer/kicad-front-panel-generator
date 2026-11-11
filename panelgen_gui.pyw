@@ -1314,6 +1314,15 @@ class App(tk.Tk):
                 self.draw(); self.show_selected(); self.show_shapes()
         self.drag = ('item', e.x, e.y, t, False) if t else ('band', e.x, e.y, False)
 
+    def mirrored(self, d, edge, e):
+        """Pulling this edge also moves the opposite one: the sides of a box round controls, the top and bottom of a box
+        round text, and the ends of a bar shared by several labels. Hold Shift to move just the one edge."""
+        if getattr(e, 'state', 0) & 0x0001:
+            return False
+        if d['kind'] == 'group':
+            return edge in 'lr'
+        return d['kind'] == 'textbox' and (edge in 'tb' or len(d.get('members', [])) > 1)
+
     def resizable(self, t):
         return t[1] in ('image', 'text') or (t[1] == 'art' and t[2].get('key') == 'title')
 
@@ -1384,8 +1393,10 @@ class App(tk.Tk):
                     if near is not None and abs(near - pos) <= 8 / sc:
                         pos, g = near, near
                 nb = list(b); nb[{'l': 0, 't': 1, 'r': 2, 'b': 3}[edge]] = pos
-                if t[2]['kind'] == 'group' and axis == 0:      # a box round controls stays centred: the other side follows
-                    nb[2 if edge == 'l' else 0] = b[2 if edge == 'l' else 0] - (pos - b[0 if edge == 'l' else 2])
+                mirror = self.mirrored(t[2], edge, e)
+                if mirror:                                     # the opposite side follows, so what's inside stays centred
+                    i, j = {'l': (0, 2), 'r': (2, 0), 't': (1, 3), 'b': (3, 1)}[edge]
+                    nb[j] = b[j] - (pos - b[i])
                 c = self.canvas
                 c.delete('dragbox')
                 if g is not None:
@@ -1395,7 +1406,7 @@ class App(tk.Tk):
                         c.create_line(0, oy + g * sc, c.winfo_width(), oy + g * sc, fill='#ff4fd8', dash=(3, 3), tags='dragbox')
                 c.create_rectangle(ox + nb[0] * sc, oy + nb[1] * sc, ox + nb[2] * sc, oy + nb[3] * sc,
                                    outline='#ffd28a', dash=(4, 2), width=2, tags='dragbox')
-                self.drag = ('item', x0, y0, t, True, pos - b[{'l': 0, 't': 1, 'r': 2, 'b': 3}[edge]], 0, edge)
+                self.drag = ('item', x0, y0, t, True, pos - b[{'l': 0, 't': 1, 'r': 2, 'b': 3}[edge]], 0, edge, mirror)
                 c.config(cursor='sb_h_double_arrow' if axis == 0 else 'sb_v_double_arrow')
                 return
             dx, dy, gx, gy = self.snap(t, (e.x - x0) / sc, (e.y - y0) / sc, free=bool(getattr(e, 'state', 0) & ALT_MASK))
@@ -1436,6 +1447,7 @@ class App(tk.Tk):
             _, x0, y0, t, moved = self.drag[:5]
             dx, dy = self.drag[5:7] if len(self.drag) > 5 else (0, 0)
             edge = self.drag[7] if len(self.drag) > 7 else None
+            mirror = self.drag[8] if len(self.drag) > 8 else False
             self.drag = None
             self.canvas.config(cursor='')
             self.canvas.delete('dragbox')
@@ -1446,11 +1458,20 @@ class App(tk.Tk):
                     g.clear(); g.update({k: v for k, v in t[2].get('grow', {}).items() if abs(v) > 0.01})
                 grow = g.get(edge, 0.0) + (dx if edge in 'rb' else -dx)
                 grow = max(-1.2, grow) if group else grow          # a box round controls can also come in a little
-                for k in ('lr' if group and edge in 'lr' else edge):
-                    if grow > 0.01 or (group and grow < -0.01):
-                        g[k] = round(grow, 3)
-                    else:
-                        g.pop(k, None)
+                if group:
+                    for k in ('lr' if edge in 'lr' else edge):
+                        if abs(grow) > 0.01:
+                            g[k] = round(grow, 3)
+                        else:
+                            g.pop(k, None)
+                else:                                              # a tab or a box round text; its opposite side may follow
+                    delta = grow - g.get(edge, 0.0)
+                    for k in (edge + {'l': 'r', 'r': 'l', 't': 'b', 'b': 't'}[edge] if mirror else edge):
+                        x = g.get(k, 0.0) + delta
+                        if x > 0.01:
+                            g[k] = round(x, 3)
+                        else:
+                            g.pop(k, None)
                 if not g:
                     self.ui['label_edits'].pop(t[2]['key'], None)
                 self.select(t); self.persist_ui(); self.update_preview()
@@ -1783,7 +1804,8 @@ class App(tk.Tk):
                 entry(row, f"{g.get(edge, 0.0):g}", setg); ttk.Label(row, text='mm').pack(side='left')
             ttk.Label(box, text='Or drag an edge of it in the preview: it snaps to the edges of the other tabs and boxes'
                                + (', and to key labels and hole edges - stretch a bar over two keys. Drag the middle of the box '
-                                  'to move it with everything in it; drag a text inside it to move just that text.' if d['kind'] == 'textbox' else
+                                  'to move it with everything in it; drag a text inside it to move just that text. Its top and bottom move together, and so '
+                                  'do the ends of a bar with several labels in it (hold Shift to move just one).' if d['kind'] == 'textbox' else
                                   '. Pull a side and the other side follows, so the box stays centred on the controls.' if group else '.'),
                       style='Dim.TLabel', wraplength=390, justify='left').pack(anchor='w', pady=(4, 0))
             ttk.Button(box, text='Back to its own size', command=lambda: (self.ui['label_edits'].pop(d['key'], None),
