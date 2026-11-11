@@ -76,6 +76,12 @@ def mtime(path):
         return None
 
 
+class E_:
+    """A stand-in mouse event at a known spot on the preview."""
+    def __init__(self, xy, state=0):
+        self.x, self.y, self.state = xy[0], xy[1], state
+
+
 class Tip:
     """Hover help for a widget."""
     def __init__(self, widget, text):
@@ -487,10 +493,12 @@ class App(tk.Tk):
         self.chip = tk.Label(ph, text='', font=self.f_head, padx=8, pady=1); self.chip.pack(side='left', padx=10)
         rb = ttk.Button(ph, text='Refresh', command=self.update_preview); rb.pack(side='right')
         fb = ttk.Button(ph, text='Fit', command=self.fit_view, width=5); fb.pack(side='right', padx=(0, 6))
-        self.w_measure = ttk.Button(ph, text='Measure', command=self.toggle_measure, width=9)
+        self.w_measure = ttk.Button(ph, text='Measure', command=self.toggle_measure, width=11)
         self.w_measure.pack(side='right', padx=(0, 6))
         Tip(self.w_measure, 'A ruler: click two points in the preview to see how far apart they are. It snaps to the middle '
-                            'and edge of holes and to the panel edges (hold Alt for anywhere). Hold Ctrl to keep it dead level or straight up and down. Esc or click again to finish.')
+                            'and edge of holes and to the panel edges (hold Alt for anywhere). Hold Ctrl to keep it dead level or straight up and '
+                            'down. After the first click you can type a length instead and press Enter. The ruler then stays as a '
+                            'guide: anything you drag, add or paste snaps to its ends and its middle. Press M for a new one.')
         self.w_undo = ttk.Button(ph, text='Undo', command=self.undo, width=6); self.w_undo.pack(side='right', padx=(0, 6))
         self.w_undo.state(['disabled'])
         Tip(self.w_undo, 'Take back the last change (Ctrl+Z): a setting on the left, or a move, text, picture, box '
@@ -525,6 +533,7 @@ class App(tk.Tk):
             self.bind_all(f'<Control-{k}>', lambda e: None if typing() else self.paste())
         self.clip, self.mouse, self.pasted_at = None, None, None
         self.bind_all('<Escape>', self.escape)
+        self.bind_all('<Key>', self.ruler_key, add='+')
         self.adding = False
         self.hover = ttk.Label(right, text='Hover over a cutout to see what it is.', style='Dim.TLabel')
         self.hover.grid(row=2, column=0, sticky='w', pady=(3, 0))
@@ -878,6 +887,8 @@ class App(tk.Tk):
     def board_changed(self):
         board = self.board.get()
         self.guides_at = None
+        if getattr(self, 'measure', None) or getattr(self, 'measuring', False):
+            self.end_measure()                 # a ruler belongs to the board it was drawn on
         self.show_boards()
         if not board or not os.path.exists(board):
             self.mode = None; self.renumber(); self.update_preview(); return
@@ -1505,8 +1516,13 @@ class App(tk.Tk):
         if self.measuring:
             if getattr(self, 'cur_view', None) and self.pv and 'message' not in self.pv:
                 p = self.measure_point(e)
-                self.measure = [p] if len(self.measure) != 1 else [self.measure[0], p]
-                self.draw()
+                if len(self.measure) != 1:
+                    self.measure, self.len_buf = [p], ''
+                    self.draw()
+                    self.hover.config(text='Ruler: now click where to measure to - or type a length in mm and press Enter. '
+                                           'Hold Ctrl to keep it straight.')
+                else:
+                    self.set_ruler(p)
             return
         band = self.drag if self.drag and self.drag[0] == 'band' and self.drag[3] else None
         self.drag = None
@@ -1572,6 +1588,8 @@ class App(tk.Tk):
         holes = [sh for sh in self.pv.get('shapes', []) if sh.get('key') not in moving]
         if kind in ('shape', 'newshape'):
             ys.append((self.pv['panel_box'][1] + self.pv['panel_box'][3]) / 2)
+        for rx, ry in self.ruler_points():             # a ruler left on the panel: its ends and middle
+            xs.append(rx); ys.append(ry)
         for sh in holes:
             g = sh['geom'].bounds
             xs.append((g[0] + g[2]) / 2); ys.append((g[1] + g[3]) / 2)
@@ -2054,22 +2072,91 @@ class App(tk.Tk):
             self.end_measure()
         elif self.shape_sel or self.sel:
             self.select(None)
+        elif self.measure:
+            self.end_measure()
 
     def toggle_measure(self):
-        if self.measuring:
+        if self.measuring or self.measure:
             return self.end_measure()
+        self.start_measure()
+
+    def start_measure(self):
         if not self.pv or 'message' in self.pv:
             return
         self.adding = False
-        self.measuring, self.measure = True, []
-        self.w_measure.config(text='Stop')
+        self.measuring, self.measure, self.len_buf = True, [], ''
+        self.w_measure.config(text='Cancel')
         self.canvas.config(cursor='crosshair')
-        self.hover.config(text='Ruler: click where to measure from, then where to. Hold Ctrl to keep it straight. Esc to finish.')
+        self.draw()
+        self.hover.config(text='Ruler: click where to measure from, then where to (or type a length). Hold Ctrl to keep it straight.')
+
+    def set_ruler(self, p):
+        """The second point is down: the ruler stays on the panel as a guide. Its ends and its middle are snap points for
+        anything you drag, add or paste, until you clear it."""
+        self.measure = [self.measure[0], (round(p[0], 4), round(p[1], 4))]
+        self.measuring, self.len_buf = False, ''
+        self.w_measure.config(text='Clear ruler')
+        self.canvas.config(cursor='')
+        self.draw()
+
+    def ruler_points(self):
+        """Where things snap to on a ruler that's been set: both ends and the middle."""
+        if self.measuring or len(self.measure) != 2:
+            return []
+        (ax, ay), (bx, by) = self.measure
+        return [(ax, ay), (bx, by), ((ax + bx) / 2, (ay + by) / 2)]
+
+    def ruler_key(self, e):
+        """Typing a length: after the first point it sets the second that far away (towards the pointer, dead level or
+        straight up if it's nearly so); on a ruler that's already set it changes its length."""
+        if isinstance(self.focus_get(), (ttk.Entry, tk.Entry, ttk.Combobox)) or (e.state & 0x0004):
+            return
+        if e.keysym in ('m', 'M') and not self.adding:
+            return self.start_measure()
+        picking = self.measuring and len(self.measure) == 1
+        if not picking and not (not self.measuring and len(self.measure) == 2):
+            return
+        buf = getattr(self, 'len_buf', '')
+        ch = {'period': '.', 'comma': '.', 'KP_Decimal': '.'}.get(e.keysym, e.char if e.char and e.char in '0123456789.' else '')
+        if e.keysym.startswith('KP_') and e.keysym[3:].isdigit():
+            ch = e.keysym[3:]
+        if ch:
+            if ch != '.' or '.' not in buf:
+                buf += ch
+        elif e.keysym == 'BackSpace':
+            buf = buf[:-1]
+        elif e.keysym in ('Return', 'KP_Enter') and buf:
+            try:
+                length = float(buf)
+            except ValueError:
+                length = 0
+            if length > 0:
+                ax, ay = self.measure[0]
+                if picking:
+                    sc, ox, oy = self.cur_view
+                    mx, my = ((self.mouse[0] - ox) / sc, (self.mouse[1] - oy) / sc) if self.mouse else (ax + 1, ay)
+                else:
+                    mx, my = self.measure[1]
+                dx, dy = mx - ax, my - ay
+                d = (dx * dx + dy * dy) ** 0.5
+                dx, dy = (dx / d, dy / d) if d > 1e-6 else (1.0, 0.0)
+                if picking and abs(dy) < 0.26:           # within 15 degrees of level: dead level
+                    dx, dy = (1.0 if dx >= 0 else -1.0), 0.0
+                elif picking and abs(dx) < 0.26:
+                    dx, dy = 0.0, (1.0 if dy >= 0 else -1.0)
+                self.set_ruler((ax + dx * length, ay + dy * length))
+            return
+        else:
+            return
+        self.len_buf = buf
+        if picking:
+            self.draw_measure(self.measure_point(E_(self.mouse)) if self.mouse else None)
+        self.hover.config(text=f"Ruler length: {buf or '…'} mm  ·  Enter to set it")
 
     def end_measure(self):
-        if not self.measuring:
+        if not self.measuring and not self.measure:
             return
-        self.measuring, self.measure = False, []
+        self.measuring, self.measure, self.len_buf = False, [], ''
         self.w_measure.config(text='Measure')
         self.canvas.config(cursor='')
         self.hover.config(text='Hover over a cutout to see what it is.')
@@ -2129,8 +2216,9 @@ class App(tk.Tk):
         c = self.canvas
         c.delete('ruler')
         pts = list(self.measure) + ([live] if live and len(self.measure) == 1 else [])
-        if not self.measuring or not pts or not getattr(self, 'cur_view', None):
+        if not pts or not getattr(self, 'cur_view', None) or not self.pv or 'message' in self.pv:
             return
+        fixed = not self.measuring and len(self.measure) == 2
         sc, ox, oy = self.cur_view
         X = lambda v: ox + v * sc
         Y = lambda v: oy + v * sc
@@ -2144,6 +2232,9 @@ class App(tk.Tk):
         dx, dy = bx - ax, by - ay
         dist = (dx * dx + dy * dy) ** 0.5
         c.create_line(X(ax), Y(ay), X(bx), Y(by), fill=col, width=2, tags='ruler')
+        if fixed and dist > 1e-6:                      # the middle is a snap point too: a tick across the line
+            mx, my, nx, ny = (X(ax) + X(bx)) / 2, (Y(ay) + Y(by)) / 2, -dy / dist * 6, dx / dist * 6
+            c.create_line(mx - nx, my - ny, mx + nx, my + ny, fill=col, width=2, tags='ruler')
         txt = f'{dist:.2f} mm'
         if abs(dx) > 0.005 and abs(dy) > 0.005:
             txt += f'   ({abs(dx):.2f} across, {abs(dy):.2f} down)'
@@ -2154,7 +2245,15 @@ class App(tk.Tk):
                           font=self.f_head, tags='ruler', anchor='w' if upright else 'center')
         r = c.create_rectangle(*[v + o for v, o in zip(c.bbox(i), (-4, -2, 4, 2))], fill='#7a1f6b', outline=col, tags='ruler')
         c.tag_raise(i, r)
-        self.hover.config(text='Ruler: ' + txt + '  ·  click to measure something else, Esc to finish')
+        if getattr(self, 'len_buf', ''):
+            return
+        if fixed:
+            if getattr(self, '_ruler_said', None) != self.measure:      # say it once, not on every redraw
+                self._ruler_said = list(self.measure)
+                self.hover.config(text='Ruler: ' + txt + '  ·  it stays as a guide: things snap to its ends and middle. '
+                                                         'Type a length + Enter to change it; Clear ruler (or M for a new one).')
+        else:
+            self.hover.config(text='Ruler: ' + txt + '  ·  click to set it, or type a length in mm and press Enter')
 
     # ------------------------------------------------------------------ copy and paste
     def copy_selected(self):

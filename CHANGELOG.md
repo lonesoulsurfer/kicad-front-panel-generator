@@ -20,6 +20,7 @@
 - **A box round text resizes evenly:** pull its top or bottom and the other follows; nudge an end of a bar that holds several labels (up to 6 mm) and the other end follows. Pull an end further, or past another label, and only that end moves, so you can still stretch a bar over more labels. Shift always moves just the one edge.
 - **Copy and paste:** Ctrl+C on what's selected (holes you added, one of your texts, a picture, or a label), Ctrl+V to paste it at the pointer. Right-click the panel for *Paste here*.
 - **Measure:** hold Ctrl (or Shift) to keep the ruler dead level or straight up and down.
+- **The ruler is also a guide.** After the first click, type a length (say 16) and press Enter to set the other end exactly that far away. The ruler then stays on the panel, and anything you drag, add or paste snaps to its ends and its middle. Type a new length to change it; *Clear ruler* removes it; M starts a new one.
 - **Openings section removed.** "Make every opening bigger" is no longer in the window (still on the command line as `--grow`), and parts that look like they need a cutout are always flagged.
 
 ## 0.26.0

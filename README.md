@@ -55,7 +55,8 @@ Every change shows in the preview straight away. Use the **mouse wheel** to zoom
 - Click it and its settings appear on the left: how far its middle is from the panel's **left edge** and **top edge**, and its size. Type exact numbers there.
 - **Several at once:** drag a box round holes you added (or Shift-click them) to select them, then drag them together, **line them up** in a row or column, or type their **spacing**, middle to middle.
 - **Copy** (Ctrl+D) repeats the selection with the same sizes and spacing. Two holes in a row become four, evenly spaced; drag the copy if it belongs somewhere else. **Delete** removes them.
-- **Measure** (above the preview) is a ruler: click two points to see how far apart they are. It snaps to the middle and the edge of holes and to the panel edges. Hold **Ctrl** to keep the measurement dead level or straight up and down. Press Esc when you're done.
+- **Measure** (above the preview) is a ruler: click two points to see how far apart they are. It snaps to the middle and the edge of holes and to the panel edges. Hold **Ctrl** to keep the measurement dead level or straight up and down.
+- **The ruler is a guide too.** After the first click, type a length (for example `16`) and press Enter: the other end lands exactly that far away. The ruler stays on the panel until you click **Clear ruler**, and anything you drag, add or paste snaps to its ends and its middle. So for two holes 16 mm apart with a slot between them: add a hole, measure 16 mm from its middle, paste a second hole on the far end, and drop the rectangle on the ruler's middle.
 
 Extra holes are checked like every other hole (too close to an edge, overlapping a part), and stay where they are relative to the PCB if you later make the panel bigger.
 
