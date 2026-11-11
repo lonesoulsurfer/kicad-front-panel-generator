@@ -1281,6 +1281,8 @@ class App(tk.Tk):
                     if near is not None and abs(near - pos) <= 8 / sc:
                         pos, g = near, near
                 nb = list(b); nb[{'l': 0, 't': 1, 'r': 2, 'b': 3}[edge]] = pos
+                if t[2]['kind'] == 'group' and axis == 0:      # a box round controls stays centred: the other side follows
+                    nb[2 if edge == 'l' else 0] = b[2 if edge == 'l' else 0] - (pos - b[0 if edge == 'l' else 2])
                 c = self.canvas
                 c.delete('dragbox')
                 if g is not None:
@@ -1328,11 +1330,16 @@ class App(tk.Tk):
             self.canvas.delete('dragbox')
             if moved and t[1] == 'tab':
                 g = self.ui['label_edits'].setdefault(t[2]['key'], {})
+                group = t[2]['kind'] == 'group'
+                if group:                                          # start from the size it's shown at (it may have been held back)
+                    g.clear(); g.update({k: v for k, v in t[2].get('grow', {}).items() if abs(v) > 0.01})
                 grow = g.get(edge, 0.0) + (dx if edge in 'rb' else -dx)
-                if grow > 0.01:
-                    g[edge] = round(grow, 3)
-                else:
-                    g.pop(edge, None)
+                grow = max(-1.2, grow) if group else grow          # a box round controls can also come in a little
+                for k in ('lr' if group and edge in 'lr' else edge):
+                    if grow > 0.01 or (group and grow < -0.01):
+                        g[k] = round(grow, 3)
+                    else:
+                        g.pop(k, None)
                 if not g:
                     self.ui['label_edits'].pop(t[2]['key'], None)
                 self.select(t); self.persist_ui(); self.update_preview()
@@ -1608,26 +1615,31 @@ class App(tk.Tk):
             if not d.get('pinned'):
                 b.state(['disabled'])
         elif kind == 'tab':
-            head.config(text={'edge': 'Edge tab: ', 'output': 'Output box: ', 'textbox': 'Box round '}.get(d['kind'], '') + d.get('ref', ''))
+            head.config(text={'edge': 'Edge tab: ', 'output': 'Output box: ', 'textbox': 'Box round ',
+                              'group': 'Box round '}.get(d['kind'], '') + d.get('ref', ''))
             g = self.ui['label_edits'].get(d['key'], {})
-            for edge in d['edges']:
-                row = fld('Bigger on the ' + {'l': 'left', 'r': 'right', 't': 'top', 'b': 'bottom'}[edge])
+            group = d['kind'] == 'group'
+            for edge in ('ltb' if group else d['edges']):
+                row = fld('Bigger on ' + ('both sides' if group and edge == 'l' else
+                                          'the ' + {'l': 'left', 'r': 'right', 't': 'top', 'b': 'bottom'}[edge]))
                 def setg(v, edge=edge):
-                    x = num(v, 0, 50)
+                    x = num(v, -1.2 if group else 0, 50)
                     if x is None:
                         return
                     gg = self.ui['label_edits'].setdefault(d['key'], {})
                     if abs(x - gg.get(edge, 0.0)) > 1e-6:
-                        if x > 0:
-                            gg[edge] = round(x, 2)
-                        else:
-                            gg.pop(edge, None)
+                        for k in ('lr' if group and edge == 'l' else edge):
+                            if x != 0:
+                                gg[k] = round(x, 2)
+                            else:
+                                gg.pop(k, None)
                         if not gg:
                             self.ui['label_edits'].pop(d['key'], None)
                         self.persist_ui(); self.update_preview()
                 entry(row, f"{g.get(edge, 0.0):g}", setg); ttk.Label(row, text='mm').pack(side='left')
             ttk.Label(box, text='Or drag an edge of it in the preview: it snaps to the edges of the other tabs and boxes'
-                               + (', and to key labels and hole edges - stretch a bar over two keys.' if d['kind'] == 'textbox' else '.'),
+                               + (', and to key labels and hole edges - stretch a bar over two keys.' if d['kind'] == 'textbox' else
+                                  '. Pull a side and the other side follows, so the box stays centred on the controls.' if group else '.'),
                       style='Dim.TLabel', wraplength=390, justify='left').pack(anchor='w', pady=(4, 0))
             ttk.Button(box, text='Back to its own size', command=lambda: (self.ui['label_edits'].pop(d['key'], None),
                                                                           self.persist_ui(), self.update_preview())).pack(anchor='w', pady=(6, 0))

@@ -1905,16 +1905,32 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
                 if i['fid'] in label_box:
                     parts_geo.append(label_box[i['fid']])
             bb = unary_union(parts_geo).bounds
-            frame = rounded_box(bb[0] - 1.5, bb[1] - 1.5, bb[2] + 1.5, bb[3] + 1.5, 2.0)
-            line = frame.difference(frame.buffer(-0.6, join_style=1))
             others = holes.difference(unary_union([i['geom'] for i in run]).buffer(0.01))
             other_labels = [b for f, b in label_box.items() if f not in ids and f not in knocked]
-            if line.intersects(others.buffer(0.5)) or any(line.intersects(b) for b in other_labels) or not inside.contains(line):
-                log.append(f"NOTE  no box round {', '.join(fps[i['fid']].ref for i in run)}: it would run into another part, "
-                           "a label or the edge")
+            names = ', '.join(fps[i['fid']].ref for i in run)
+            gkey = 'group:' + min(ids)
+            g_ = edits.get(gkey, {})                                      # made bigger (or a little smaller) in the window
+            def framed(g):
+                fb = (bb[0] - 1.5 - g.get('l', 0.0), bb[1] - 1.5 - g.get('t', 0.0), bb[2] + 1.5 + g.get('r', 0.0), bb[3] + 1.5 + g.get('b', 0.0))
+                frame = rounded_box(*fb, 2.0)
+                line = frame.difference(frame.buffer(-0.6, join_style=1))
+                bad = line.intersects(others.buffer(0.5)) or any(line.intersects(b) for b in other_labels) or not inside.contains(line)
+                return fb, line, bad
+            fb, line, bad = framed(g_)
+            if bad and g_:                                               # too big: as big as fits
+                for f in (0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0):
+                    g_ = {k: (round(v * f, 2) if v > 0 else v) for k, v in edits.get(gkey, {}).items()}
+                    fb, line, bad = framed(g_)
+                    if not bad:
+                        log.append(f"NOTE  the box round {names} can't be that big: it would run into another part, a label or "
+                                   "the edge. It's shown as big as fits")
+                        break
+            if bad:
+                log.append(f"NOTE  no box round {names}: it would run into another part, a label or the edge")
                 continue
             boxes_done.append(ids)
             shapes.append(line)
+            a._tab_boxes.append(dict(key=gkey, kind='group', edges='lrtb', box=fb, ref=names, grow=dict(g_)))
 
     # 6. border
     if a.art_border == 'on':

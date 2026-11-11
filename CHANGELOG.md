@@ -8,6 +8,7 @@
 - **Fewer tick boxes:** *Extra round the PCB* and *Corner radius* are just numbers now (0 = none).
 - **Border: gap from the edge.** 0 keeps it automatic (just inside the case holes).
 - **Rings round buttons:** set the ring thickness and its gap from the hole.
+- **Boxes round rows of controls can be resized:** click the box, then drag its top, bottom or a side. Pull a side and the other side follows, so the box stays centred. It stops at the biggest size that fits.
 - **Measure:** hold Ctrl (or Shift) to keep the ruler dead level or straight up and down.
 - **Openings section removed.** "Make every opening bigger" is no longer in the window (still on the command line as `--grow`), and parts that look like they need a cutout are always flagged.
 
