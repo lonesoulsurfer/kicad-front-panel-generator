@@ -9,6 +9,10 @@
 - **Border: gap from the edge.** 0 keeps it automatic (just inside the case holes).
 - **Rings round buttons:** set the ring thickness and its gap from the hole.
 - **Boxes round rows of controls can be resized:** click the box, then drag its top, bottom or a side. Pull a side and the other side follows, so the box stays centred. It stops at the biggest size that fits.
+- **Drag a corner to resize** the title, a picture or one of your texts: click it, then pull one of the white corner squares.
+- **What you click shows where it belongs:** a label (or the box round it) under Labels, your own text and pictures under theirs, the title, tabs and boxes under Artwork made for you.
+- **Fixed: lists changing by themselves.** Scrolling the left side with the mouse wheel over a list (font, title direction, pot scale) changed its value. The wheel now only scrolls.
+- **Fixed: the left side jumping to the top** when a setting changed.
 - **Measure:** hold Ctrl (or Shift) to keep the ruler dead level or straight up and down.
 - **Openings section removed.** "Make every opening bigger" is no longer in the window (still on the command line as `--grow`), and parts that look like they need a cutout are always flagged.
 

@@ -229,6 +229,9 @@ class App(tk.Tk):
                 lsb.pack(side='right', fill='y', before=cv)
             elif not need and lsb.winfo_manager():
                 lsb.pack_forget(); cv.yview_moveto(0)
+            keep = getattr(self, '_keep_y', None)          # a rebuilt part of the panel mustn't move what you're looking at
+            if keep is not None and need:
+                cv.yview_moveto(keep / max(1, left.winfo_reqheight()))
         left.bind('<Configure>', fit)
         cv.bind('<Configure>', lambda e: (cv.itemconfigure(win, width=e.width), fit()))
         def wheel(e):
@@ -238,6 +241,8 @@ class App(tk.Tk):
         cv.bind('<Enter>', lambda e: [self.bind_all(x, wheel) for x in wheels])
         cv.bind('<Leave>', lambda e: [self.unbind_all(x) for x in wheels])
         self.left = left
+        for x in wheels:                         # the wheel scrolls the panel; it must never change a list it passes over
+            self.unbind_class('TCombobox', x)
         field, sub, mm = self.field, self.sub, self.mm
 
         # ================================================================ PANEL
@@ -351,6 +356,9 @@ class App(tk.Tk):
         bt = ttk.Button(c, text='Edit labels…', command=self.edit_labels); bt.pack(side='left')
         Tip(bt, 'A list of every label: change its text, hide it, set its own gap, or choose its artwork. '
                 'You can also click a label in the preview.')
+        sub(det, 'Selected label')
+        self.sel_boxes = {'labels': ttk.Frame(det)}
+        self.sel_boxes['labels'].pack(fill='x')
 
         # your own text and pictures, and whatever is selected in the preview
         s = self.section('extras', 'Your text and pictures', 'Things that are not on the PCB: what a key does, a logo.',
@@ -367,9 +375,8 @@ class App(tk.Tk):
         Tip(bt, 'A PNG, JPG or SVG (a glider, a logo...). Its dark parts print, transparent parts never do. It is copied into '
                 'the Front Panel folder.')
         sub(s, 'Selected')
-        self.sel_box = ttk.Frame(s); self.sel_box.pack(fill='x')
+        self.sel_box = self.sel_boxes['extras'] = ttk.Frame(s); self.sel_box.pack(fill='x')
         self.sel = None
-        self.show_selected()
 
         # artwork made for you
         s = self.section('auto', 'Artwork made for you', 'Scales, rings, boxes, a border and a title, drawn from your panel. '
@@ -429,6 +436,9 @@ class App(tk.Tk):
         self.w_bgap = mm(c, 'border_gap', note='0 = automatic')
         c = field(f, 'Corner radius', '0 = the border follows the panel corners. Any other value rounds the border corners by that much.')
         self.w_bradius = mm(c, 'border_radius', note='0 = follows the panel')
+        sub(det, 'Selected')
+        self.sel_boxes['auto'] = ttk.Frame(det); self.sel_boxes['auto'].pack(fill='x')
+        self.show_selected()
         for k in ('art_scale', 'art_rings', 'art_border', 'art_outputs', 'art_groups', 'art_tabs'):
             v[k].trace_add('write', lambda *_: self.style_custom())
 
@@ -623,6 +633,9 @@ class App(tk.Tk):
     def renumber(self):
         """Show the sections of the tab you're on that apply to this kind of panel."""
         hide = {'size', 'case'} if self.mode == 'eurorack' else {'rail'}
+        if getattr(self, '_laid', None) == (self.tab, self.mode):
+            return self.show_folds()
+        self._laid = (self.tab, self.mode)
         for k, (f, _, _) in self.sections.items():
             if k != 'pcb':
                 f.pack_forget()
@@ -1178,6 +1191,10 @@ class App(tk.Tk):
         if sel:                                    # what's selected: its box, so you can see what the left panel is changing
             b = sel[0]
             c.create_rectangle(X(b[0]) - 3, Y(b[1]) - 3, X(b[2]) + 3, Y(b[3]) + 3, outline='#2563eb', width=2, dash=(5, 2))
+            if self.resizable(sel):                # corner handles: drag one to make it bigger or smaller
+                for hx in (X(b[0]) - 3, X(b[2]) + 3):
+                    for hy in (Y(b[1]) - 3, Y(b[3]) + 3):
+                        c.create_rectangle(hx - 4, hy - 4, hx + 4, hy + 4, fill='#ffffff', outline='#2563eb', width=2)
         for a in pv.get('added', []):
             if a['id'] in self.shape_sel:
                 b = a['box']
@@ -1224,6 +1241,15 @@ class App(tk.Tk):
             self.drag = None
             return
         t = None if self.adding else self.target_at(e)
+        sel = None if self.adding else self.selected_target()
+        if sel and self.resizable(sel) and getattr(self, 'cur_view', None):      # a corner of what's selected: resize it
+            sc, ox, oy = self.cur_view
+            b = sel[0]
+            for hx in (ox + b[0] * sc - 3, ox + b[2] * sc + 3):
+                for hy in (oy + b[1] * sc - 3, oy + b[3] * sc + 3):
+                    if abs(e.x - hx) <= 8 and abs(e.y - hy) <= 8:
+                        self.drag = ('resize', e.x, e.y, sel, False, 1.0)
+                        return
         if not self.adding and getattr(self, 'cur_view', None):     # near the edge of a tab or box: grab the edge, not the text
             x, y = self.to_mm(e)
             grab = 6 / self.cur_view[0]
@@ -1256,7 +1282,52 @@ class App(tk.Tk):
                 self.draw(); self.show_selected(); self.show_shapes()
         self.drag = ('item', e.x, e.y, t, False) if t else ('band', e.x, e.y, False)
 
+    def resizable(self, t):
+        return t[1] in ('image', 'text') or (t[1] == 'art' and t[2].get('key') == 'title')
+
+    def resize_drag(self, e):
+        """Dragging a corner: the thing grows or shrinks about its middle, keeping its shape."""
+        _, x0, y0, t, moved, f = self.drag
+        if not moved and abs(e.x - x0) + abs(e.y - y0) < 3:
+            return
+        sc, ox, oy = self.cur_view
+        b = t[0]
+        cx, cy = ox + (b[0] + b[2]) / 2 * sc, oy + (b[1] + b[3]) / 2 * sc
+        d0 = max(1.0, ((x0 - cx) ** 2 + (y0 - cy) ** 2) ** 0.5)
+        f = max(0.15, min(8.0, ((e.x - cx) ** 2 + (e.y - cy) ** 2) ** 0.5 / d0))
+        hw, hh = (b[2] - b[0]) / 2 * sc * f, (b[3] - b[1]) / 2 * sc * f
+        c = self.canvas
+        c.delete('dragbox')
+        c.create_rectangle(cx - hw, cy - hh, cx + hw, cy + hh, outline='#ffd28a', dash=(4, 2), width=2, tags='dragbox')
+        self.hover.config(text=self.resize_apply(t, f, dry=True))
+        self.drag = ('resize', x0, y0, t, True, f)
+
+    def resize_apply(self, t, f, dry=False):
+        _, kind, d = t
+        if kind == 'image':
+            o = self.own_image(d['id'])
+            new = round(max(1.0, min(500.0, float(d['w']) * f)), 1)
+            if not dry and o:
+                o['w'] = new
+            return f'Picture: {new:g} mm wide'
+        if kind == 'text':
+            o = self.own_text(d['fid'])
+            new = round(max(0.8, min(30.0, float(d['h']) * f)), 1)
+            if not dry and o:
+                o['size'] = new
+            return f'Text: {new:g} mm'
+        try:
+            cur = float(self.vars['title_size'].get())
+        except ValueError:
+            cur = 5.0
+        new = round(max(1.5, min(60.0, cur * f)), 1)
+        if not dry:
+            self.vars['title_size'].set(f'{new:g}')
+        return f'Title: {new:g} mm'
+
     def motion(self, e):
+        if self.drag and self.drag[0] == 'resize':
+            return self.resize_drag(e)
         if not self.drag or not getattr(self, 'cur_view', None):
             return
         if self.drag[0] == 'item':
@@ -1321,6 +1392,14 @@ class App(tk.Tk):
         self.drag = ('band', x0, y0, True)
 
     def release(self, e):
+        if self.drag and self.drag[0] == 'resize':
+            _, _, _, t, moved, f = self.drag
+            self.drag = None
+            self.canvas.delete('dragbox')
+            if moved:
+                self.resize_apply(t, f)
+                self.persist_ui(); self.update_preview()
+            return
         if self.drag and self.drag[0] == 'item':
             _, x0, y0, t, moved = self.drag[:5]
             dx, dy = self.drag[5:7] if len(self.drag) > 5 else (0, 0)
@@ -1491,7 +1570,7 @@ class App(tk.Tk):
         self.shape_sel = []
         self.draw(); self.show_selected(); self.show_shapes()
         if self.sel:
-            self.reveal('extras', self.sel_box)
+            self.reveal(self.sel_home, self.sel_boxes[self.sel_home])
 
     def reveal(self, section, widget):
         """Bring a section of the left panel into view, if the part that matters isn't."""
@@ -1505,10 +1584,14 @@ class App(tk.Tk):
             cv.update_idletasks()
             total = max(1, self.left.winfo_height())
             top, bot = cv.yview()
+            total = max(1, self.left.winfo_height())
+            top, bot = cv.yview()
             y0 = widget.winfo_rooty() - self.left.winfo_rooty()
             y1 = y0 + max(60, widget.winfo_height())
             if y0 / total < top or y1 / total > bot:
-                cv.yview_moveto(max(0.0, (f.winfo_y() - 10) / total))
+                fits = y1 - f.winfo_y() + 20 < cv.winfo_height()       # show the whole section if it fits, else just the thing
+                cv.yview_moveto(max(0.0, ((f.winfo_y() - 10) if fits else (y0 - 40)) / total))
+            self._keep_y = None
         except tk.TclError:
             pass
 
@@ -1518,18 +1601,34 @@ class App(tk.Tk):
         return next((t for t in self.targets if self.sel_key(t) == self.sel), None)
 
     def show_selected(self):
-        box = getattr(self, 'sel_box', None)
-        if box is None:
+        boxes = getattr(self, 'sel_boxes', None)
+        if not boxes or len(boxes) < 3:
             return
-        for w in box.winfo_children():
-            w.destroy()
+        cv = self.left.master                        # rebuilding these mustn't move the panel under your hand
+        self._keep_y = cv.canvasy(0)
+        self.after(150, lambda: setattr(self, '_keep_y', None))
         t = self.selected_target()
         if not t:
             self.sel = None
-            ttk.Label(box, text='Nothing selected. Click a text, label, picture, the title or a tab in the preview.',
-                      style='Dim.TLabel', wraplength=390, justify='left').pack(anchor='w')
+        # a label and its box live under Labels; your own text and pictures under theirs; the title, tabs and boxes under made artwork
+        home = None
+        if t:
+            _, kind, d = t
+            own_box = kind == 'tab' and d['kind'] == 'textbox' and str(d['key']).startswith('box:text:')
+            home = ('extras' if kind in ('text', 'image') or own_box else
+                    'labels' if kind == 'label' or (kind == 'tab' and d['kind'] == 'textbox') else 'auto')
+        self.sel_home = home
+        hints = {'labels': 'Click a label in the preview, or the box round one, to change it here.',
+                 'extras': 'Click one of your texts or pictures in the preview to change it here.',
+                 'auto': 'Click the title, a tab or a box in the preview to change it here.'}
+        for k, b in boxes.items():
+            for w in b.winfo_children():
+                w.destroy()
+            if k != home:
+                ttk.Label(b, text=hints[k], style='Dim.TLabel', wraplength=440, justify='left').pack(anchor='w')
+        if not t:
             return
-        _, kind, d = t
+        box = boxes[home]
         def entry(row, value, apply, width=7):
             var = tk.StringVar(value=value)
             e = ttk.Entry(row, textvariable=var, width=width); e.pack(side='left', padx=(0, 4))
@@ -1608,7 +1707,9 @@ class App(tk.Tk):
                 ttk.Button(row, text='Edit labels…', command=lambda: (self.edit_labels(), self.editor.focus_row(fid))).pack(side='left')
         elif kind == 'art':
             head.config(text='Title' if d['key'] == 'title' else 'Maker name')
-            ttk.Label(box, text="Its text and size are set in 'Artwork made for you'.", style='Dim.TLabel').pack(anchor='w')
+            ttk.Label(box, text=('Its text and size are under Title, above. Or drag a corner of it in the preview to resize it.'
+                                 if d['key'] == 'title' else 'Its text is under Title, above.'),
+                      style='Dim.TLabel', wraplength=440, justify='left').pack(anchor='w')
             b = ttk.Button(box, text='Put it back in its automatic place',
                            command=lambda: (self.ui['art_pos'].pop(d['key'], None), self.persist_ui(), self.update_preview()))
             b.pack(anchor='w', pady=(6, 0))
