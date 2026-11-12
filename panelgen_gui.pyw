@@ -23,6 +23,7 @@ ART_STYLES = {   # what each style switches on
 }
 STYLE_KEYS = ('scale', 'rings', 'outputs', 'border', 'tabs')
 GROUP_KINDS = ('pot', 'button', 'jack')
+MULTI = ('text', 'label', 'line', 'image')    # what a box or Shift-click can pick up, besides holes you added
 MARKS = {'Circle': 'circle', 'Box': 'box', 'Triangle': 'triangle', 'Hexagon': 'hexagon', 'Diamond': 'diamond'}
 LINE_ENDS = {'Plain': 'none', 'Arrow at the end': 'end', 'Arrows at both ends': 'both'}
 MY_STYLE = 'My style'
@@ -588,6 +589,7 @@ class App(tk.Tk):
         for k in ('v', 'V'):
             self.bind_all(f'<Control-{k}>', lambda e: None if typing() else self.paste())
         self.clip, self.mouse, self.pasted_at = None, None, None
+        self.multi = []                              # several texts, labels, lines or pictures picked at once
         self.bind_all('<Escape>', self.escape)
         self.bind_all('<Key>', self.ruler_key, add='+')
         self.adding = False
@@ -1398,6 +1400,10 @@ class App(tk.Tk):
                 text=f"{L['ref']}  ·  label '{L['text']}'" + ('  ·  runs into something (see Result)' if L['status'] != 'ok' else '')
                      + ('  ·  drag to move, right-click to change or delete' if L.get('own') else '  ·  drag to move, click to edit')))
             c.tag_bind(i, '<Leave>', lambda e: self.hover.config(text='Hover over a cutout to see what it is.'))
+        for g in self.group_targets():             # several picked at once
+            if g[1] != 'shape':
+                b = g[0]
+                c.create_rectangle(X(b[0]) - 3, Y(b[1]) - 3, X(b[2]) + 3, Y(b[3]) + 3, outline='#2563eb', width=2, dash=(5, 2))
         sel = self.selected_target()
         if sel:                                    # what's selected: its box, so you can see what the left panel is changing
             b = sel[0]
@@ -1529,8 +1535,19 @@ class App(tk.Tk):
                 self.draw(); self.show_selected(); self.show_shapes()
                 return
             if i not in self.shape_sel:
-                self.shape_sel = [i]; self.sel = None
+                self.shape_sel, self.multi = [i], []; self.sel = None
                 self.draw(); self.show_selected(); self.show_shapes()
+        if t and t[1] in MULTI:
+            k = self.sel_key(t)
+            if getattr(e, 'state', 0) & 0x0001:         # Shift: add to or take from the selection
+                if self.sel and self.sel[0] in MULTI and self.sel not in self.multi:
+                    self.multi.append(self.sel)        # what was selected on its own joins in
+                self.multi = [x for x in self.multi if x != k] if k in self.multi else self.multi + [k]
+                self.sel, self.drag = None, None
+                self.draw(); self.show_selected(); self.show_shapes(); self.say_group()
+                return
+            if k not in self.multi and (self.multi or self.shape_sel):
+                self.multi, self.shape_sel = [], []    # something else: the group is let go
         self.drag = ('item', e.x, e.y, t, False) if t else ('band', e.x, e.y, False)
 
     def mirrored(self, d, edge, e):
@@ -1697,7 +1714,8 @@ class App(tk.Tk):
                 c.create_line(ox + gx * sc, 0, ox + gx * sc, c.winfo_height(), fill='#ff4fd8', dash=(3, 3), tags='dragbox')
             if gy is not None:
                 c.create_line(0, oy + gy * sc, c.winfo_width(), oy + gy * sc, fill='#ff4fd8', dash=(3, 3), tags='dragbox')
-            for b in ([a['box'] for a in self.pv.get('added', []) if a['id'] in self.shape_sel] if t[1] == 'shape' else [b]):
+            for b in ([g[0] for g in self.group_targets()] if self.in_group(t) and self.group_size() > 1 else
+                      [a['box'] for a in self.pv.get('added', []) if a['id'] in self.shape_sel] if t[1] == 'shape' else [b]):
                 c.create_rectangle(ox + (b[0] + dx) * sc, oy + (b[1] + dy) * sc, ox + (b[2] + dx) * sc, oy + (b[3] + dy) * sc,
                                    outline='#ffd28a', dash=(4, 2), width=2, tags='dragbox')
             if t[1] == 'shape':
@@ -1790,6 +1808,8 @@ class App(tk.Tk):
                 self.select(t); self.persist_ui(); self.update_preview()
                 return
             if moved:
+                if self.in_group(t) and self.group_size() > 1:
+                    return self.move_group(round(dx, 3), round(dy, 3))
                 if t[1] != 'shape':
                     self.select(t)
                 self.move_target(t, round(dx, 3), round(dy, 3))
@@ -1819,13 +1839,22 @@ class App(tk.Tk):
             sc, ox, oy = self.cur_view
             ax, bx = sorted(((band[1] - ox) / sc, (e.x - ox) / sc))
             ay, by = sorted(((band[2] - oy) / sc, (e.y - oy) / sc))
-            self.shape_sel = [a['id'] for a in (self.pv or {}).get('added', [])
-                              if ax <= (a['box'][0] + a['box'][2]) / 2 <= bx and ay <= (a['box'][1] + a['box'][3]) / 2 <= by]
+            inb = lambda b: ax <= (b[0] + b[2]) / 2 <= bx and ay <= (b[1] + b[3]) / 2 <= by
+            self.shape_sel = [a['id'] for a in (self.pv or {}).get('added', []) if inb(a['box'])]
+            self.multi = []
+            for t in self.targets:
+                k = self.sel_key(t)
+                if t[1] in MULTI and inb(t[0]) and k not in self.multi and not str(k[1]).startswith('tabword:'):
+                    self.multi.append(k)
             self.sel = None
-            self.draw(); self.show_selected(); self.show_shapes(reveal=True)
-            if not self.shape_sel:
-                self.hover.config(text='The box selects holes you added under Extra holes. To move around the panel, '
-                                       'drag with the right mouse button.')
+            if self.group_size() == 1 and self.multi:  # just one thing: select it the usual way
+                self.sel, self.multi = self.multi[0], []
+            self.draw(); self.show_selected(); self.show_shapes(reveal=bool(self.shape_sel))
+            if not self.group_size() and not self.sel:
+                self.hover.config(text='The box picks up labels, texts, lines, pictures and holes you added. To move around '
+                                       'the panel, drag with the right mouse button.')
+            else:
+                self.say_group()
             return
         if self.adding:
             kind, self.adding = self.adding, False
@@ -1854,7 +1883,7 @@ class App(tk.Tk):
         for i in reversed(self.canvas.find_overlapping(e.x, e.y, e.x, e.y)):
             if i in self.clicks:
                 self.clicks[i](); return
-        if self.sel or self.shape_sel:                 # a click on nothing: nothing selected
+        if self.sel or self.shape_sel or self.multi:   # a click on nothing: nothing selected
             self.select(None)
 
     # ------------------------------------------------------------------ texts you add, and moving things
@@ -1952,9 +1981,15 @@ class App(tk.Tk):
         _, kind, d = t
         return kind, {'image': d.get('id'), 'art': d.get('key'), 'tab': d.get('key'), 'line': d.get('id')}.get(kind, d.get('fid'))
 
+    def say_group(self):
+        n = self.group_size()
+        if n > 1:
+            self.hover.config(text=f'{n} picked - drag one to move them all, Ctrl+C to copy, Delete to remove '
+                                   '(PCB labels are hidden). Shift-click adds or takes one away.')
+
     def select(self, t):
         self.sel = self.sel_key(t) if t else None
-        self.shape_sel = []
+        self.shape_sel, self.multi = [], []
         self.draw(); self.show_selected(); self.show_shapes()
         if self.sel:
             self.reveal(self.sel_home, self.sel_boxes[self.sel_home])
@@ -2451,7 +2486,7 @@ class App(tk.Tk):
             self.hover.config(text='Hover over a cutout to see what it is.')
         elif self.measuring:
             self.end_measure()
-        elif self.shape_sel or self.sel:
+        elif self.shape_sel or self.sel or self.multi:
             self.select(None)
         elif self.measure:
             self.end_measure()
@@ -2783,13 +2818,35 @@ class App(tk.Tk):
         self.persist_ui(); self.update_preview()
 
     def delete_selected(self):
-        """The Delete key: holes you added, a line, one of your texts or a picture - whichever is selected."""
+        """The Delete key: whatever is selected - holes you added, lines, your texts, pictures, shapes, title copies. A
+        label from the PCB can't be deleted (it belongs to its part), so it's hidden: Edit labels brings it back."""
+        if self.multi:
+            gone = {k for k in self.multi}
+            ids = lambda kind: {k[1] for k in gone if k[0] == kind}
+            self.ui['texts'] = [o for o in self.ui.get('texts', []) if 'text:' + o['id'] not in ids('text')]
+            self.ui['lines'] = [o for o in self.ui.get('lines', []) if o['id'] not in ids('line')]
+            self.ui['images'] = [o for o in self.ui.get('images', []) if o['id'] not in ids('image')]
+            for fid in ids('label'):
+                self.ui['label_edits'].setdefault(fid, {})['hide'] = True
+            self.ui['shapes'] = [o for o in self.ui.get('shapes', []) if o['id'] not in self.shape_sel]
+            hidden = len(ids('label'))
+            self.multi, self.shape_sel, self.sel = [], [], None
+            self.persist_ui(); self.update_preview()
+            if hidden:
+                self.hover.config(text=f'Deleted. {hidden} PCB label(s) hidden - Edit labels brings them back.')
+            return
         if self.shape_sel:
             return self.shapes_delete()
         t = self.selected_target()
         if not t:
             return
         _, kind, d = t
+        if kind == 'label' and not str(d['fid']).startswith('tabword:'):
+            self.ui['label_edits'].setdefault(d['fid'], {})['hide'] = True
+            self.sel = None
+            self.persist_ui(); self.update_preview()
+            self.hover.config(text='Label hidden - Edit labels (or Undo) brings it back.')
+            return
         if kind == 'line':
             self.line_delete(d['id'])
         elif kind == 'tab' and d['kind'] == 'mark':
@@ -2802,41 +2859,47 @@ class App(tk.Tk):
             self.image_delete(d['id']); self.select(None)
 
     # ------------------------------------------------------------------ copy and paste
-    def copy_selected(self):
-        """Ctrl+C: remember what's selected - holes you added, one of your texts, a picture, or a label (as a text)."""
-        say = lambda t: self.hover.config(text=t)
-        if self.shape_sel:
-            self.clip = ('shapes', [dict(o) for o in self.own_shapes()])
-            return say(f"Copied {len(self.clip[1])} - Ctrl+V pastes at the pointer.")
-        t = self.selected_target()
-        if not t:
-            return say('Nothing selected to copy. Click a hole you added, a text, a label or a picture first.')
+    def clip_item(self, t):
+        """One thing, ready to paste: (kind, its data with x, y as its middle), or None if it can't be copied."""
         _, kind, d = t
         if kind == 'text' and self.own_text(d['fid']):
-            self.clip = ('text', dict(self.own_text(d['fid'])))
-        elif kind == 'image' and self.own_image(d['id']):
-            self.clip = ('image', dict(self.own_image(d['id'])))
-        elif kind == 'line' and self.own_line(d['id']):
+            return 'text', dict(self.own_text(d['fid']))
+        if kind == 'image' and self.own_image(d['id']):
+            return 'image', dict(self.own_image(d['id']))
+        if kind == 'line' and self.own_line(d['id']):
             o = self.own_line(d['id'])
-            self.clip = ('line', dict(o, x=(o['x1'] + o['x2']) / 2, y=(o['y1'] + o['y2']) / 2))
-        elif kind == 'label' and not str(d['fid']).startswith('tabword:'):
-            self.clip = ('text', dict(text=d.get('text', ''), x=d['x'], y=d['y']))       # a PCB label pastes as a text of yours
-        elif kind == 'art' and str(d['key']).startswith('title'):
+            return 'line', dict(o, x=(o['x1'] + o['x2']) / 2, y=(o['y1'] + o['y2']) / 2)
+        if kind == 'label' and not str(d['fid']).startswith('tabword:'):
+            return 'text', dict(text=d.get('text', ''), x=d['x'], y=d['y'])       # a PCB label pastes as a text of yours
+        if kind == 'art' and str(d['key']).startswith('title'):
             b = t[0]                                   # the title: the copy says the same, with its own place, size and direction
-            self.clip = ('title', dict(dir=d.get('vert') or 'off', size=d.get('h'), mirror=bool(d.get('mirror')), x=(b[0] + b[2]) / 2, y=(b[1] + b[3]) / 2,
-                                       ax=d['at'][0], ay=d['at'][1]))
-        else:
-            return say("That can't be copied: it's drawn from the panel. Copy works on holes you added, texts, labels, lines, pictures and the title.")
-        say('Copied - Ctrl+V pastes at the pointer.')
+            return 'title', dict(dir=d.get('vert') or 'off', size=d.get('h'), mirror=bool(d.get('mirror')),
+                                 x=(b[0] + b[2]) / 2, y=(b[1] + b[3]) / 2, ax=d['at'][0], ay=d['at'][1])
+        return None
+
+    def copy_selected(self):
+        """Ctrl+C: remember what's selected - one thing or several: holes you added, texts, labels (as texts), lines,
+        pictures, the title."""
+        say = lambda t: self.hover.config(text=t)
+        items = [('shape', dict(o)) for o in self.own_shapes()]
+        picked = [t for t in self.group_targets() if t[1] != 'shape'] if self.multi else \
+                 ([self.selected_target()] if self.selected_target() else [])
+        items += [x for x in (self.clip_item(t) for t in picked) if x]
+        if not items:
+            if picked:
+                return say("That can't be copied: it's drawn from the panel. Copy works on holes you added, texts, labels, "
+                           "lines, pictures and the title.")
+            return say('Nothing selected to copy. Click something, or drag a box round several, first.')
+        self.clip = items
+        say(f"Copied {len(items) if len(items) > 1 else ''} - Ctrl+V pastes at the pointer.".replace('Copied  -', 'Copied -'))
 
     def paste(self, at=None):
         if not self.clip or not self.pv or 'message' in self.pv or not getattr(self, 'cur_view', None):
             return
         import uuid
-        kind, data = self.clip
-        items = data if kind == 'shapes' else [data]
-        cx = (min(o['x'] for o in items) + max(o['x'] for o in items)) / 2
-        cy = (min(o['y'] for o in items) + max(o['y'] for o in items)) / 2
+        items = self.clip
+        cx = (min(o['x'] for _, o in items) + max(o['x'] for _, o in items)) / 2
+        cy = (min(o['y'] for _, o in items) + max(o['y'] for _, o in items)) / 2
         c = self.canvas
         over = self.mouse and 0 <= self.mouse[0] <= c.winfo_width() and 0 <= self.mouse[1] <= c.winfo_height() \
             and c.winfo_containing(*self.winfo_pointerxy()) is c
@@ -2853,32 +2916,33 @@ class App(tk.Tk):
             tx, ty = base[0] + 5 * self.paste_n, base[1] + 5 * self.paste_n
         if getattr(self, 'paste_n', 0) == 0:
             self.paste_base = (tx, ty)
-        dx, dy, _, _ = self.snap(((tx, ty, tx, ty), 'newshape' if kind == 'shapes' else 'new', None), 0, 0)
+        only_shapes = all(k == 'shape' for k, _ in items)
+        dx, dy, _, _ = self.snap(((tx, ty, tx, ty), 'newshape' if only_shapes else 'new', None), 0, 0)
         mx, my = tx + dx - cx, ty + dy - cy
-        new = [dict(o, id=uuid.uuid4().hex[:8], x=round(o['x'] + mx, 3), y=round(o['y'] + my, 3)) for o in items]
-        if kind == 'title':
-            o = new[0]
-            self.ui.setdefault('titles', []).append(dict(id=o['id'], dir=o['dir'], size=o['size'], mirror=o.get('mirror', False)))
-            self.ui.setdefault('art_pos', {})['title:' + o['id']] = [round(o['ax'] + mx, 2), round(o['ay'] + my, 2)]
-            self.shape_sel, self.sel = [], ('art', 'title:' + o['id'])
-        elif kind == 'line':
-            o = new[0]
-            for k, m in (('x1', mx), ('y1', my), ('x2', mx), ('y2', my)):
-                o[k] = round(o[k] + m, 3)
-            o.pop('x'); o.pop('y')
-            self.ui.setdefault('lines', []).append(o)
-            self.shape_sel, self.sel = [], ('line', o['id'])
-        elif kind == 'shapes':
-            self.ui.setdefault('shapes', []).extend(new)
-            self.shape_sel, self.sel = [o['id'] for o in new], None
-        elif kind == 'text':
-            self.ui.setdefault('texts', []).append(new[0])
-            self.shape_sel, self.sel = [], ('text', 'text:' + new[0]['id'])
-            self.vars['texts_on'].set(True)
+        shapes, keys = [], []
+        for kind, o in items:
+            o = dict(o, id=uuid.uuid4().hex[:8], x=round(o['x'] + mx, 3), y=round(o['y'] + my, 3))
+            if kind == 'shape':
+                self.ui.setdefault('shapes', []).append(o); shapes.append(o['id'])
+            elif kind == 'title':
+                self.ui.setdefault('titles', []).append(dict(id=o['id'], dir=o['dir'], size=o['size'], mirror=o.get('mirror', False)))
+                self.ui.setdefault('art_pos', {})['title:' + o['id']] = [round(o['ax'] + mx, 2), round(o['ay'] + my, 2)]
+                keys.append(('art', 'title:' + o['id']))
+            elif kind == 'line':
+                for k, m in (('x1', mx), ('y1', my), ('x2', mx), ('y2', my)):
+                    o[k] = round(o[k] + m, 3)
+                o.pop('x'); o.pop('y')
+                self.ui.setdefault('lines', []).append(o); keys.append(('line', o['id']))
+            elif kind == 'text':
+                self.ui.setdefault('texts', []).append(o); keys.append(('text', 'text:' + o['id']))
+                self.vars['texts_on'].set(True)
+            else:
+                self.ui.setdefault('images', []).append(o); keys.append(('image', o['id']))
+                self.vars['pictures_on'].set(True)
+        if len(keys) == 1 and not shapes:              # one thing: selected the usual way, its settings on the left
+            self.sel, self.multi, self.shape_sel = keys[0], [], []
         else:
-            self.ui.setdefault('images', []).append(new[0])
-            self.shape_sel, self.sel = [], ('image', new[0]['id'])
-            self.vars['pictures_on'].set(True)
+            self.sel, self.multi, self.shape_sel = None, [k for k in keys if k[0] in MULTI], shapes
         self.persist_ui(); self.update_preview()
         self.hover.config(text='Pasted - drag it into place.')
 
@@ -2955,7 +3019,7 @@ class App(tk.Tk):
     def own_text(self, fid):
         return next((t for t in self.ui.get('texts', []) if 'text:' + t['id'] == fid), None)
 
-    def move_target(self, t, dx, dy):
+    def move_target(self, t, dx, dy, save=True):
         _, kind, d = t
         if kind == 'text':
             o = self.own_text(d['fid'])
@@ -2992,6 +3056,30 @@ class App(tk.Tk):
         else:
             e = self.ui['label_edits'].setdefault(d['fid'], {})
             e['dx'] = round(e.get('dx', 0.0) + dx, 3); e['dy'] = round(e.get('dy', 0.0) + dy, 3)
+        if save:
+            self.persist_ui(); self.update_preview()
+
+    # ------------------------------------------------------------------ several things at once
+    def in_group(self, t):
+        return (t[1] == 'shape' and t[2]['id'] in self.shape_sel) or (t[1] in MULTI and self.sel_key(t) in self.multi)
+
+    def group_size(self):
+        return len(self.multi) + len(self.shape_sel)
+
+    def group_targets(self):
+        """Everything picked: each hole you added, and each text, label, line or picture in the multi-selection."""
+        keys = set(self.multi)
+        return [t for t in getattr(self, 'targets', []) if (t[1] in MULTI and self.sel_key(t) in keys)
+                or (t[1] == 'shape' and t[2]['id'] in self.shape_sel)]
+
+    def move_group(self, dx, dy):
+        moved_shapes = False
+        for t in self.group_targets():
+            if t[1] == 'shape':
+                if not moved_shapes:                   # (one call moves every hole you picked)
+                    self.move_target(t, dx, dy, save=False); moved_shapes = True
+            else:
+                self.move_target(t, dx, dy, save=False)
         self.persist_ui(); self.update_preview()
 
     def context_menu(self, e):
