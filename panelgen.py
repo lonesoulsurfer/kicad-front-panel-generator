@@ -2892,6 +2892,7 @@ def main(argv=None, preview=None):
                'label_edits': label_edits, 'ignore_uncut': ignore_uncut, 'texts': texts, 'art_pos': a._art_pos,
                'images': [{k: v for k, v in i.items() if not k.startswith('_')} for i in images], 'shapes': added,
                'lines': [{k: v for k, v in i.items() if not k.startswith('_')} for i in lines], 'titles': a._titles, 'marks': marks,
+               'bodies': ui.get('bodies', mem0.get('bodies', [])),   # part-size guides drawn in the window (never cut or printed)
                'settings': settings_now()},
               open(mem_path, 'w', encoding='utf-8'), indent=1)
 

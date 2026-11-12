@@ -24,7 +24,9 @@ ART_STYLES = {   # what each style switches on
 STYLE_KEYS = ('scale', 'rings', 'outputs', 'border', 'tabs')
 GROUP_KINDS = ('pot', 'button', 'jack')
 TECH_URL = 'https://github.com/lonesoulsurfer/kicad-front-panel-generator/blob/main/docs/TECHNICAL.md'
-HOW_PANEL = [("Change the size of one part's hole", "In KiCad, on the PCB, open the part's properties and add a field named Panel. Its value sets the hole: circle:6.5 (a 6.5 mm round hole), square:7, rect:8x6. The hole stays centred on the part and moves with it. For several parts the same (all the tactile switches with caps, say), add the field to the symbol in the schematic and use Update PCB from Schematic."), ("Give a hole to a part the generator doesn't know", 'Draw the hole on the User.1 layer of the PCB: any closed shape there is cut exactly as drawn. Or add a Panel field (above). If you use the part often, add a rule for it to panel_rules.json, next to the app.'), ('Stop a part getting a hole', "Add a Panel field with the value skip. Or, if it shows an orange 'no cutout?' box, click the box. Or delete its hole in the panel file in KiCad - it then stays off, and is listed under Holes you removed or changed."), ("Add a hole for something that isn't on the PCB", 'A jack or switch wired to the board: use Extra holes above. Or, in the panel file in KiCad, place a part from PanelParts.pretty (jacks, LEDs, toggles, tactile switch, screws, a USB-C charge slot).'), ('Move or resize a hole just on the panel', 'Change it in the panel file in KiCad and save. Your version is kept every time you generate, and listed under Holes you removed or changed - pick it there and click Bring back to undo it.'), ('Show where a part is without cutting a hole', 'Draw it on the User.2 layer of the PCB. It shows in the preview as a blue guide to line things up with, and is never cut or printed.'), ('Start again from the PCB', 'Reset (above the preview) takes the panel back to the bare PCB: its own size and holes, nothing added. Undo brings it all back.')]
+HOW_PANEL = [("Change the size of one part's hole", "In KiCad, on the PCB, open the part's properties and add a field named Panel. Its value sets the hole: circle:6.5 (a 6.5 mm round hole), square:7, rect:8x6. The hole stays centred on the part and moves with it. For several parts the same (all the tactile switches with caps, say), add the field to the symbol in the schematic and use Update PCB from Schematic."), ("Give a hole to a part the generator doesn't know", 'Draw the hole on the User.1 layer of the PCB: any closed shape there is cut exactly as drawn. Or add a Panel field (above). If you use the part often, add a rule for it to panel_rules.json, next to the app.'), ('Stop a part getting a hole', "Add a Panel field with the value skip. Or, if it shows an orange 'no cutout?' box, click the box. Or delete its hole in the panel file in KiCad - it then stays off, and is listed under Holes you removed or changed."), ("Add a hole for something that isn't on the PCB", 'A jack or switch wired to the board: use Extra holes above. Or, in the panel file in KiCad, place a part from PanelParts.pretty (jacks, LEDs, toggles, tactile switch, screws, a USB-C charge slot).'), ('Move or resize a hole just on the panel', 'Change it in the panel file in KiCad and save. Your version is kept every time you generate, and listed under Holes you removed or changed - pick it there and click Bring back to undo it.'), ('Show where a part is without cutting a hole', 'Draw it on the User.2 layer of the PCB. It shows in the preview as a blue guide to line things up with, and is never cut or printed.'), ('Check the spacing by the size of the parts',
+  "Right-click a hole and choose Show the part's size round it: a dashed blue circle or rectangle for the part's body, nut or knob. Drag its edge to set the size - the size and the gap to the nearest part show as you drag. Or put one on every hole that size at once. They're never cut or printed."),
+ ('Start again from the PCB', 'Reset (above the preview) takes the panel back to the bare PCB: its own size and holes, nothing added. Undo brings it all back.')]
 HOW_ART = [('Change what a label says', "Click it (or right-click, Change text). To set it on the PCB so it's the same every time, add a field named Label to the part in KiCad - it's used instead of the part's Value."), ('Line labels up', 'Drag a label: it snaps level with the others, to the middle of holes and of the keys under a window (the blue dotted outlines), and half way between two holes. Hold Alt to place it freely.'), ('Change several things at once', 'Drag a box round them, or Shift-click each. Then drag them together, copy them (Ctrl+C, Ctrl+V), or press Delete.'), ('White text on a black bar', "Click the text and set Box to A filled bar - the text is cut out of it. Drag the bar's ends to stretch it over a row of keys."), ('Put a shape round a hole', 'Set it up under Shapes, then right-click the hole and choose Add a shape round it. A filled box pulled over a label cuts the label out of it.'), ('Measure, or place something an exact distance away', 'Click Measure, click the first point, then type a length and press Enter. The ruler stays as a guide: things snap to its ends and middle. Hold Ctrl to keep it straight.'), ('Anything else', 'Switch on Artwork from Inkscape and draw it there: black prints, white cuts out of black.')]
 MULTI = ('text', 'label', 'line', 'image')    # what a box or Shift-click can pick up, besides holes you added
 MARKS = {'Circle': 'circle', 'Box': 'box', 'Triangle': 'triangle', 'Hexagon': 'hexagon', 'Diamond': 'diamond'}
@@ -151,7 +153,7 @@ class App(tk.Tk):
         v['labels_on'] = tk.BooleanVar(); v['label_pos'] = tk.StringVar(value='above')
         v['label_gap'] = tk.StringVar(value='1.5'); v['label_size'] = tk.StringVar(value='2')
         v['label_font'] = tk.StringVar(value=KICAD_FONT); v['label_bold'] = tk.BooleanVar(); v['label_caps'] = tk.BooleanVar()
-        self.ui = {'ignore': {}, 'label_edits': {}, 'texts': [], 'art_pos': {}, 'images': [], 'shapes': [], 'lines': [], 'titles': [], 'marks': []}   # ignored parts, label changes, your texts, moved title, pictures
+        self.ui = {'ignore': {}, 'label_edits': {}, 'texts': [], 'art_pos': {}, 'images': [], 'shapes': [], 'lines': [], 'titles': [], 'marks': [], 'bodies': []}   # ignored parts, label changes, your texts, moved title, pictures
         self.undo_stack, self.state_prev, self.restoring = [], None, False
         self.editor = None
         self.mode, self.pv, self.after_id, self.loading = None, None, None, False
@@ -1102,7 +1104,7 @@ class App(tk.Tk):
         try:
             self.set_vars(dict(DEFAULTS))
             self.ui = {'ignore': self.ui.get('ignore', {}), 'label_edits': {}, 'texts': [], 'art_pos': {}, 'images': [],
-                       'shapes': [], 'lines': [], 'titles': [], 'marks': [],   # parts you said need no hole stay that way
+                       'shapes': [], 'lines': [], 'titles': [], 'marks': [], 'bodies': [],   # parts you said need no hole stay that way
                        'fresh': True}       # and the panel file in KiCad is left out: its hand-placed parts, drawn cutouts, edits
         finally:
             self.loading = False
@@ -1135,6 +1137,7 @@ class App(tk.Tk):
                        'shapes': [dict(i) for i in mem.get('shapes', [])],
                        'lines': [dict(i) for i in mem.get('lines', [])],
                        'marks': [dict(i) for i in mem.get('marks', [])],
+                       'bodies': [dict(i) for i in mem.get('bodies', [])],
                        'titles': [dict(i) for i in mem.get('titles', [])]}
             self.reset_undo()
         finally:
@@ -1459,6 +1462,7 @@ class App(tk.Tk):
                     for hx in (X(b[0]) - 3, X(b[2]) + 3):
                         for hy in (Y(b[1]) - 3, Y(b[3]) + 3):
                             c.create_rectangle(hx - 4, hy - 4, hx + 4, hy + 4, fill='#ffffff', outline='#2563eb', width=2)
+        self.draw_bodies()
         self.draw_measure()
         for sh in pv.get('shapes', []):               # the parts you see through a cutout (keys under a window): where
             for ref, (px, py), pb in sh.get('points', []):    # each one is, so labels can be lined up over them
@@ -1515,6 +1519,14 @@ class App(tk.Tk):
         if self.measuring:
             self.drag = None
             return
+        hit = None if self.adding else self.body_at(e)
+        if hit:                                        # the edge of a part-size guide: drag it bigger or smaller
+            self.body_sel = hit[0]['id']
+            self.drag = ('body', e.x, e.y, hit, False, None)
+            self.draw()
+            return
+        if getattr(self, 'body_sel', None):
+            self.body_sel = None; self.draw()
         t = None if self.adding else self.target_at(e)
         sel = None if self.adding else self.selected_target()
         if not self.adding and len(self.shape_sel) == 1 and self.pv and getattr(self, 'cur_view', None):
@@ -1681,6 +1693,8 @@ class App(tk.Tk):
         return f'Title: {new:g} mm'
 
     def motion(self, e):
+        if self.drag and self.drag[0] == 'body':
+            return self.body_drag(e)
         if self.drag and self.drag[0] == 'resize':
             return self.resize_drag(e)
         if self.drag and self.drag[0] == 'shapesize':
@@ -1772,6 +1786,18 @@ class App(tk.Tk):
         self.drag = ('band', x0, y0, True)
 
     def release(self, e):
+        if self.drag and self.drag[0] == 'body':
+            _, _, _, (b, _), moved, new = self.drag
+            self.drag = None
+            self.canvas.delete('dragbox')
+            if moved and new:
+                o = next((o for o in self.ui.get('bodies', []) if o['id'] == b['id']), None)
+                if o is not None:
+                    o.update(new)
+                    self.cfg['body_' + o['kind']] = {k: v for k, v in new.items()}   # the next one starts this size
+                    self.persist_ui()
+            self.draw()
+            return
         if self.drag and self.drag[0] == 'shapesize':
             _, _, _, a, moved, _, new = self.drag
             self.drag = None
@@ -2916,9 +2942,141 @@ class App(tk.Tk):
         self.sel = None
         self.persist_ui(); self.update_preview()
 
+    # ------------------------------------------------------------------ part-size guides
+    def body_menu(self, m, sh):
+        """Right-click on a hole: show the size of the part that goes through it (a nut, a knob, a jack's body) as a dashed
+        blue line, to judge the spacing by. Never cut or printed."""
+        mine = [o for o in self.ui.get('bodies', []) if o['on'] == sh['anchor']]
+        if mine:
+            m.add_command(label="Remove the part's size", command=lambda: self.body_delete(mine[0]['id']))
+            return
+        sm = tk.Menu(m, tearoff=0)
+        sm.add_command(label='Circle', command=lambda: self.add_body(sh, 'circle'))
+        sm.add_command(label='Rectangle', command=lambda: self.add_body(sh, 'rect'))
+        b = sh['geom'].bounds
+        same = [x for x in self.pv.get('shapes', []) if x is not sh and abs((x['geom'].bounds[2] - x['geom'].bounds[0]) - (b[2] - b[0])) < 0.05
+                and abs((x['geom'].bounds[3] - x['geom'].bounds[1]) - (b[3] - b[1])) < 0.05]
+        if same:
+            sm.add_separator()
+            sm.add_command(label=f'Circle on every hole this size ({len(same) + 1})', command=lambda: self.add_body(sh, 'circle', same))
+            sm.add_command(label=f'Rectangle on every hole this size ({len(same) + 1})', command=lambda: self.add_body(sh, 'rect', same))
+        m.add_cascade(label="Show the part's size round it", menu=sm)
+
+    def add_body(self, sh, kind, others=()):
+        import uuid
+        b = sh['geom'].bounds
+        last = self.cfg.get('body_' + kind)
+        if kind == 'circle':
+            size = dict(d=float(last['d'])) if last and 'd' in last else dict(d=round(max(b[2] - b[0], b[3] - b[1]) + 1.3, 1))
+        else:
+            size = dict(w=float(last['w']), h=float(last['h'])) if last and 'w' in last else \
+                dict(w=round(b[2] - b[0] + 2, 1), h=round(b[3] - b[1] + 2, 1))
+        have = {o['on'] for o in self.ui.get('bodies', [])}
+        for x in [sh] + list(others):
+            if x['anchor'] not in have:
+                self.ui.setdefault('bodies', []).append(dict(id=uuid.uuid4().hex[:8], on=x['anchor'], kind=kind, **size))
+        self.persist_ui(); self.draw()
+        self.hover.config(text="Part size shown (dashed blue - never cut or printed). Drag its edge to set the size; the gap to "
+                               "the nearest part shows as you drag. Right-click the hole to remove it.")
+
+    def body_delete(self, bid):
+        self.ui['bodies'] = [o for o in self.ui.get('bodies', []) if o['id'] != bid]
+        self.body_sel = None
+        self.persist_ui(); self.draw()
+
+    def body_shapes(self):
+        """[(guide, shapely shape)] for every part-size guide whose hole is on the panel."""
+        from shapely.geometry import Point, box
+        holes = {sh.get('anchor'): sh for sh in (self.pv or {}).get('shapes', [])}
+        out = []
+        for o in self.ui.get('bodies', []):
+            sh = holes.get(o['on'])
+            if not sh:
+                continue
+            b = sh['geom'].bounds
+            cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
+            g = Point(cx, cy).buffer(float(o.get('d', 7.5)) / 2, quad_segs=48) if o['kind'] == 'circle' else \
+                box(cx - float(o['w']) / 2, cy - float(o['h']) / 2, cx + float(o['w']) / 2, cy + float(o['h']) / 2)
+            out.append((o, g, sh))
+        return out
+
+    def body_at(self, e):
+        """The part-size guide whose outline is under the pointer, if any."""
+        if not self.pv or 'message' in self.pv or not getattr(self, 'cur_view', None) or not self.ui.get('bodies'):
+            return None
+        from shapely.geometry import Point
+        x, y = self.to_mm(e)
+        pad = 5 / self.cur_view[0]
+        for o, g, sh in self.body_shapes():
+            if g.exterior.distance(Point(x, y)) <= pad:
+                return o, sh
+        return None
+
+    def body_gap(self, g, own):
+        """The gap from a part-size guide to the nearest other guide, or hole if that's nearer."""
+        others = [x for o, x, sh in self.body_shapes() if o['id'] != own['id']]
+        ref = next((sh for o, x, sh in self.body_shapes() if o['id'] == own['id']), None)
+        others += [sh['geom'] for sh in self.pv.get('shapes', []) if sh is not ref and
+                   not any(oo['on'] == sh.get('anchor') for oo in self.ui.get('bodies', []))]
+        return min((g.distance(x) for x in others), default=None)
+
+    def body_drag(self, e):
+        _, x0, y0, (o, sh), moved, _ = self.drag
+        if not moved and abs(e.x - x0) + abs(e.y - y0) < 3:
+            return
+        from shapely.geometry import Point, box
+        sc, ox, oy = self.cur_view
+        x, y = self.to_mm(e)
+        b = sh['geom'].bounds
+        cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
+        step = 0.01 if getattr(e, 'state', 0) & ALT_MASK else 0.1
+        rnd = lambda v: max(0.5, round(v / step) * step)
+        if o['kind'] == 'circle':
+            d = rnd(2 * math.hypot(x - cx, y - cy))
+            new, g, txt = dict(d=round(d, 3)), Point(cx, cy).buffer(d / 2, quad_segs=48), f'{d:g} mm across'
+        else:                                          # a rectangle grows evenly round the hole; the side you pull sets its size
+            w, h = float(o['w']), float(o['h'])
+            dx, dy = abs(x - cx), abs(y - cy)
+            if dx / max(w, 0.1) >= dy / max(h, 0.1) - 0.15:
+                w = rnd(2 * dx)
+            if dy / max(h, 0.1) >= dx / max(w, 0.1) - 0.15:
+                h = rnd(2 * dy)
+            new, g, txt = dict(w=round(w, 3), h=round(h, 3)), box(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2), f'{w:g} × {h:g} mm'
+        gap = self.body_gap(g, o)
+        if gap is not None:
+            txt += f'   ·   {gap:.1f} mm to the nearest' if gap > 0.005 else '   ·   touching or overlapping'
+        c = self.canvas
+        c.delete('dragbox')
+        gb = g.bounds
+        if o['kind'] == 'circle':
+            c.create_oval(ox + gb[0] * sc, oy + gb[1] * sc, ox + gb[2] * sc, oy + gb[3] * sc, outline='#0284c7', dash=(4, 3), width=2, tags='dragbox')
+        else:
+            c.create_rectangle(ox + gb[0] * sc, oy + gb[1] * sc, ox + gb[2] * sc, oy + gb[3] * sc, outline='#0284c7', dash=(4, 3), width=2, tags='dragbox')
+        ti = c.create_text(ox + cx * sc, oy + gb[1] * sc - 14, text=txt, fill='#ffffff', font=self.f_head, tags='dragbox')
+        r = c.create_rectangle(*[v + o_ for v, o_ in zip(c.bbox(ti), (-4, -2, 4, 2))], fill='#075985', outline='#38bdf8', tags='dragbox')
+        c.tag_raise(ti, r)
+        self.hover.config(text="Part size: " + txt + '  (Alt for finer steps)')
+        self.drag = ('body', x0, y0, (o, sh), True, new)
+
+    def draw_bodies(self):
+        if not self.ui.get('bodies') or not getattr(self, 'cur_view', None):
+            return
+        sc, ox, oy = self.cur_view
+        c = self.canvas
+        for o, g, sh in self.body_shapes():
+            gb = g.bounds
+            sel = o['id'] == getattr(self, 'body_sel', None)
+            kw = dict(outline='#38bdf8', dash=(4, 3), width=2 if sel else 1)
+            if o['kind'] == 'circle':
+                c.create_oval(ox + gb[0] * sc, oy + gb[1] * sc, ox + gb[2] * sc, oy + gb[3] * sc, **kw)
+            else:
+                c.create_rectangle(ox + gb[0] * sc, oy + gb[1] * sc, ox + gb[2] * sc, oy + gb[3] * sc, **kw)
+
     def delete_selected(self):
         """The Delete key: whatever is selected - holes you added, lines, your texts, pictures, shapes, title copies. A
         label from the PCB can't be deleted (it belongs to its part), so it's hidden: Edit labels brings it back."""
+        if getattr(self, 'body_sel', None):
+            return self.body_delete(self.body_sel)
         if self.multi:
             gone = {k for k in self.multi}
             ids = lambda kind: {k[1] for k in gone if k[0] == kind}
@@ -3189,8 +3347,9 @@ class App(tk.Tk):
             x, y = self.to_mm(e)
             m = tk.Menu(self, tearoff=0)
             sh = self.hole_at(x, y)
-            if sh:                                     # on a hole: shapes round it
+            if sh:                                     # on a hole: shapes round it, and the part's size
                 self.mark_menu(m, sh)
+                self.body_menu(m, sh)
                 m.tk_popup(e.x_root, e.y_root)
                 return
             def here_text():
@@ -3221,7 +3380,7 @@ class App(tk.Tk):
             n = len(self.shape_sel)
             sh = next((x for x in self.pv.get('shapes', []) if x.get('anchor') == 'add:' + d['id']), None)
             if sh and n == 1:
-                self.mark_menu(m, sh); m.add_separator()
+                self.mark_menu(m, sh); self.body_menu(m, sh); m.add_separator()
             m.add_command(label='Copy alongside' if n == 1 else f'Copy these {n} alongside', command=self.shapes_duplicate)
             m.add_command(label='Delete' if n == 1 else f'Delete these {n}', command=self.shapes_delete)
         elif kind == 'text':
@@ -3349,6 +3508,7 @@ class App(tk.Tk):
                        'shapes': [dict(i) for i in mem.get('shapes', [])],
                        'lines': [dict(i) for i in mem.get('lines', [])],
                        'marks': [dict(i) for i in mem.get('marks', [])],
+                       'bodies': [dict(i) for i in mem.get('bodies', [])],
                        'titles': [dict(i) for i in mem.get('titles', [])]}
             self.state_prev = self.snapshot()          # keep the history; changes made in KiCad become the new start
         self.fill_restore()
@@ -3483,7 +3643,7 @@ class App(tk.Tk):
         self.persist_ui(record=False)
         if not self.undo_stack:
             self.w_undo.state(['disabled'])
-        self.sel = None; self.shape_sel = []
+        self.sel = None; self.shape_sel = []; self.body_sel = None
         if self.after_id:
             self.after_cancel(self.after_id); self.after_id = None
         self.refresh_states()
@@ -3524,6 +3684,7 @@ class App(tk.Tk):
         mem['lines'] = self.ui.get('lines', [])
         mem['titles'] = self.ui.get('titles', [])
         mem['marks'] = self.ui.get('marks', [])
+        mem['bodies'] = self.ui.get('bodies', [])
         mem['fresh'] = bool(self.ui.get('fresh'))
         try:
             with open(mem_path, 'w', encoding='utf-8') as f:
