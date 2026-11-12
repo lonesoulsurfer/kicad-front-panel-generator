@@ -46,7 +46,7 @@ By default the panel is the same size as your PCB. On the **Panel** tab:
 - **Corner radius**: rounds the corners. 0 is square.
 - **Case mounting holes**: screw holes to fix the panel to your case, in the corners or in the corners and the middle of each side. Set the hole size and how far its centre sits from the edge. The line underneath tells you how much panel is left between the hole and the edge. Pick **Slots** instead of round holes if you want some play to line the panel up.
 
-Every change shows in the preview straight away. Use the **mouse wheel** to zoom in, **drag with the right mouse button** to move around, and **Fit** to see the whole panel again. Hover over any hole to see which part it's for and how big it is.
+Every change shows in the preview straight away. To give the preview more room, drag the bar between the settings and the preview, or the one above the buttons and the Result box. Use the **mouse wheel** to zoom in, **drag with the right mouse button** to move around, and **Fit** to see the whole panel again. Hover over any hole to see which part it's for and how big it is.
 
 **Extra holes** are for things that aren't on the PCB, such as a jack or switch wired to the board, or a window:
 

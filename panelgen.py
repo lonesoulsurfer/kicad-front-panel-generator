@@ -1974,10 +1974,11 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
     edge = border_in + 1.2 if a.art_border == 'on' else 2.0
     region = outline.buffer(-edge + 0.01)
     a._art_items = []
-    def place(text, h, spots, what, key, vert=None):
+    def place(text, h, spots, what, key, vert=None, mirror=None):
         if not text.strip():
             return
         vert = vert or a.title_vertical
+        mirror = (a.title_mirror == 'on' and what == 'title') if mirror is None else mirror
         tf, tbold = a.title_font or font, a.title_bold == 'on' if what == 'title' else sbold
         if what == 'title' and vert == 'stacked':  # letters one under another, each the right way up
             pitch = h * 1.35
@@ -1990,6 +1991,8 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             sh = text_shapes(text, 0, 0, h, tf, tbold)
         if not sh:
             return
+        if mirror:                                             # the letters flipped left to right, as in a mirror
+            sh = [affinity.scale(p, xfact=-1, yfact=1, origin=(0, 0)) for p in sh]
         if what == 'title' and vert in ('on', 'on-mirror'):    # turned on its side: read from the bottom, or from the top
             sh = [affinity.rotate(p, -90 if vert == 'on' else 90, origin=(0, 0)) for p in sh]
         u = unary_union(sh); bx = u.bounds; w = bx[2] - bx[0]; hh = bx[3] - bx[1]
@@ -1998,7 +2001,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             moved = [shapely_translate(p, sx, sy) for p in sh]
             shapes.extend(moved)
             a._art_items.append(dict(key=key, what=what, text=text, at=[round(sx, 3), round(sy, 3)], pinned=bool(pin),
-                                     box=unary_union(moved).bounds, h=h, vert=vert))
+                                     box=unary_union(moved).bounds, h=h, vert=vert, mirror=bool(mirror)))
             return unary_union(moved)
         if pin:                                   # where you dragged it
             mu = put(*pin)
@@ -2021,7 +2024,8 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
     place(a.art_title, th, title_spots, 'title', 'title')
     for t in getattr(a, '_titles', []):           # copies of the title: the same words, each with its own place, size and direction
         if ('title:' + t['id']) in (a._art_pos or {}):
-            place(a.art_title, float(t.get('size') or th), lambda w, hh: [], 'title', 'title:' + t['id'], vert=t.get('dir'))
+            place(a.art_title, float(t.get('size') or th), lambda w, hh: [], 'title', 'title:' + t['id'], vert=t.get('dir'),
+                  mirror=bool(t.get('mirror')))
     ms = max(1.5, a.label_size * 0.8)
     place(a.art_maker, ms, lambda w, hh: [(x2 - m - w / 2, y2 - m - ms / 2), (x1 + m + w / 2, y2 - m - ms / 2),
                                       ((x1 + x2) / 2, y2 - m - ms / 2)], 'maker name', 'maker')
@@ -2405,6 +2409,7 @@ def main(argv=None, preview=None):
     ap.add_argument('--title-size', type=float, help='title height, mm (default 5)')
     ap.add_argument('--title-font', help='font for the title ("" = the label font)')
     ap.add_argument('--title-bold', choices=['on', 'off'])
+    ap.add_argument('--title-mirror', choices=['on', 'off'], help='the title as a mirror image (letters flipped left to right)')
     ap.add_argument('--title-vertical', choices=['off', 'stacked', 'on', 'on-mirror'],
                     help='title down a side: stacked = letters one under another; on = turned on its side, read from the bottom')
     ap.add_argument('--knob-size', type=float, help='knob diameter, mm: the pot scale starts outside it (default 13)')
@@ -2441,7 +2446,7 @@ def main(argv=None, preview=None):
                     labels='off', label_size=2.0, label_gap=1.5, label_pos='above', label_font='', label_bold='off', label_caps='off',
                     extras='on', auto_art='off', art_style='', art_scale='ticks', art_rings='on', art_outputs='off', art_border='off', art_border_radius=0.0, art_border_gap=0.0, ring_width=0.8, ring_gap=0.8,
                     art_groups='off', art_tabs='off', art_title='',
-                    art_maker='', title_size=5.0, title_font='', title_bold='on', title_vertical='off', knob_size=13.0, pot_sweep=300.0, scale_text=1.4)
+                    art_maker='', title_size=5.0, title_font='', title_bold='on', title_vertical='off', title_mirror='off', knob_size=13.0, pot_sweep=300.0, scale_text=1.4)
     for k, d in defaults.items():          # explicit option > saved (with --again) > built-in default
         if getattr(a, k) is None:
             setattr(a, k, saved.get(k, d))
@@ -2761,7 +2766,7 @@ def main(argv=None, preview=None):
                                 artwork=a.artwork, artwork_file=a.artwork_file,
                                 **{k: getattr(a, k) for k in ('extras', 'auto_art', 'art_style', 'art_scale', 'art_rings', 'art_outputs', 'art_border',
                                                               'art_border_radius', 'art_border_gap', 'ring_width', 'ring_gap', 'art_groups', 'art_tabs',
-                                                              'art_title', 'art_maker', 'title_size', 'title_font', 'title_bold', 'title_vertical',
+                                                              'art_title', 'art_maker', 'title_size', 'title_font', 'title_bold', 'title_vertical', 'title_mirror',
                                                               'knob_size', 'pot_sweep', 'scale_text')})},
               open(mem_path, 'w', encoding='utf-8'), indent=1)
 

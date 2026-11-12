@@ -25,7 +25,8 @@
 - **Delete key** removes the selected line, text or picture, as well as holes you added.
 - **Fixed: no output boxes on jacks that aren't on the PCB.** A round hole you added under Extra holes, or a jack placed by hand in the panel file, now gets its filled box when a text next to it says OUT. If the option is ticked and nothing qualifies, the Result box says why.
 - **Drag a corner of a hole, rectangle or slot you added** to resize it. A rectangle's width and height change separately, with both shown as you drag.
-- **Copy the title** (Ctrl+C, Ctrl+V): the copy says what the title says, with its own place, size and direction. New direction *On its side, mirrored* reads from the top, for a copy on the opposite side.
+- **Copy the title** (Ctrl+C, Ctrl+V): the copy says what the title says, with its own place, size and direction. Tick **Mirror image** on the title or on a copy to flip its letters left to right, for a mirrored pair. New direction *On its side, reading down* turns it the other way.
+- **A bigger preview when you want one:** drag the bar between the settings and the preview, or the bar above the buttons and the Result box. The sizes are remembered.
 - **Measure:** hold Ctrl (or Shift) to keep the ruler dead level or straight up and down.
 - **The ruler is also a guide.** After the first click, type a length (say 16) and press Enter to set the other end exactly that far away. The ruler then stays on the panel, and anything you drag, add or paste snaps to its ends and its middle. Type a new length to change it; *Clear ruler* removes it; M starts a new one.
 - **Openings section removed.** "Make every opening bigger" is no longer in the window (still on the command line as `--grow`), and parts that look like they need a cutout are always flagged.

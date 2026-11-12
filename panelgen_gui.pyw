@@ -28,7 +28,7 @@ MY_STYLE = 'My style'
 STYLE_VARS = ('labels_on', 'label_pos', 'label_gap', 'label_size', 'label_font', 'label_bold', 'label_caps', 'art_scale',
               'knob_size', 'art_rings', 'ring_width', 'ring_gap', 'art_outputs', 'art_tabs', 'art_border', 'border_gap',
               'border_radius', 'title_size', 'title_dir', 'art_maker', 'line_w') + tuple('art_groups_' + k for k in GROUP_KINDS)
-TITLE_DIRS = {'Across': 'off', 'Stacked': 'stacked', 'On its side': 'on', 'On its side, mirrored': 'on-mirror'}
+TITLE_DIRS = {'Across': 'off', 'Stacked': 'stacked', 'On its side': 'on', 'On its side, reading down': 'on-mirror'}
 SCALES = {'None': 'none', 'Ticks': 'ticks', 'Numbers 0-10': 'numbers', 'Centre zero (- 0 +)': 'bipolar'}
 KICAD_FONT = "KiCad's own font"
 HOLE_SIZES = ('3.2  ·  3 mm LED or M3 screw', '5.2  ·  5 mm LED or small toggle', '6.2  ·  3.5 mm jack', '6.5  ·  mini toggle switch',
@@ -137,7 +137,7 @@ class App(tk.Tk):
             v['art_groups_' + k] = tk.BooleanVar()
         v['art_tabs'] = tk.BooleanVar(); v['border_radius'] = tk.StringVar(value='0')
         v['border_gap'] = tk.StringVar(value='0'); v['ring_width'] = tk.StringVar(value='0.8'); v['ring_gap'] = tk.StringVar(value='0.8')
-        v['art_title'] = tk.StringVar(); v['art_maker'] = tk.StringVar()
+        v['art_title'] = tk.StringVar(); v['art_maker'] = tk.StringVar(); v['title_mirror'] = tk.BooleanVar()
         v['line_w'] = tk.StringVar(value='0.5')
         v['title_size'] = tk.StringVar(value='5'); v['knob_size'] = tk.StringVar(value='13')
         v['title_dir'] = tk.StringVar(value='Across')
@@ -198,11 +198,13 @@ class App(tk.Tk):
     def build(self):
         v = self.vars
         root = ttk.Frame(self, padding=(14, 10)); root.pack(fill='both', expand=True)
-        root.columnconfigure(1, weight=1); root.columnconfigure(0, minsize=530); root.rowconfigure(1, weight=1)
+        root.columnconfigure(2, weight=1); root.rowconfigure(1, weight=1)
 
 
         bg = ttk.Style(self).lookup('TFrame', 'background') or C_BG
-        lc = ttk.Frame(root); lc.grid(row=1, column=0, sticky='nsew', padx=(0, 10))
+        lc = self.left_col = ttk.Frame(root, width=int(self.cfg.get('left_w', 530))); lc.grid(row=1, column=0, sticky='nsew')
+        lc.pack_propagate(False)                  # its width is what you drag it to, not what its contents ask for
+        self.sash(root, 'v').grid(row=1, column=1, sticky='ns')
         self.sections, self.switches = {}, {}
         self.collapsed = set(self.cfg.get('collapsed', []))
         self.tab = 'panel'
@@ -233,7 +235,7 @@ class App(tk.Tk):
             Tip(bt, tip)
 
         sc_ = ttk.Frame(lc); sc_.pack(fill='both', expand=True)
-        cv = tk.Canvas(sc_, highlightthickness=0, width=520, bg=bg)
+        cv = tk.Canvas(sc_, highlightthickness=0, width=200, bg=bg)
         lsb = ttk.Scrollbar(sc_, orient='vertical', command=cv.yview)
         cv.configure(yscrollcommand=lsb.set)
         cv.pack(side='left', fill='both', expand=True)
@@ -422,9 +424,12 @@ class App(tk.Tk):
         ttk.Entry(field(f, 'Text'), textvariable=v['art_title'], width=27).pack(side='left')
         mm(field(f, 'Size', 'Or click the title in the preview and drag one of its corners.'), 'title_size')
         c = field(f, 'Direction', 'Across, along the top. Stacked: the letters one under another, each the right way up. '
-                                  'On its side: turned to read from the bottom. On its side, mirrored: turned the other way, to read from the top '
-                                  '(for a copy on the opposite side of the panel). Drag it anywhere after.')
+                                  'On its side: turned to read from the bottom. On its side, reading down: turned the other way. '
+                                  'Drag it anywhere after.')
         ttk.Combobox(c, textvariable=v['title_dir'], values=list(TITLE_DIRS), width=24, state='readonly').pack(side='left')
+        c = field(f, 'Mirror', 'The letters flipped left to right, as in a mirror. Usually for a copy of the title next to the '
+                               'real one: copy the title (Ctrl+C, Ctrl+V), click the copy and tick this on it.')
+        ttk.Checkbutton(c, text='Mirror image', variable=v['title_mirror']).pack(side='left')
         c = field(f, 'Maker name', 'Your name or brand, small, along the bottom. Leave empty for none.')
         ttk.Entry(c, textvariable=v['art_maker'], width=27).pack(side='left')
         self.sel_subs['title'] = sub(s, 'Selected')
@@ -516,9 +521,9 @@ class App(tk.Tk):
         self.left_end = ttk.Frame(left); self.left_end.pack(fill='x')
 
         # right: preview + result
-        right = ttk.Frame(root); right.grid(row=1, column=1, sticky='nsew')
+        right = ttk.Frame(root); right.grid(row=1, column=2, sticky='nsew')
         root.rowconfigure(0, weight=0)
-        right.rowconfigure(1, weight=5); right.rowconfigure(5, weight=1); right.columnconfigure(0, weight=1)
+        right.rowconfigure(1, weight=1); right.columnconfigure(0, weight=1)
         ph = ttk.Frame(right); ph.grid(row=0, column=0, sticky='ew')
         ttk.Label(ph, text='Preview', style='Head.TLabel').pack(side='left')
         self.chip = tk.Label(ph, text='', font=self.f_head, padx=8, pady=1); self.chip.pack(side='left', padx=10)
@@ -570,7 +575,8 @@ class App(tk.Tk):
         self.hover.grid(row=2, column=0, sticky='w', pady=(3, 0))
         self.legend(right).grid(row=2, column=0, sticky='e', pady=(3, 0))
 
-        go = ttk.Frame(right); go.grid(row=3, column=0, sticky='ew', pady=(12, 0))
+        self.sash(right, 'h').grid(row=3, column=0, sticky='ew', pady=(4, 0))
+        go = ttk.Frame(right); go.grid(row=4, column=0, sticky='ew', pady=(6, 0))
         self.go = ttk.Button(go, text='   Generate panel   ', style='Accent.TButton', command=self.generate)
         self.go.pack(side='right', ipady=3)
         gb = ttk.Button(go, text='Make gerbers', command=lambda: self.generate(gerbers=True)); gb.pack(side='right', padx=(0, 8), ipady=3)
@@ -583,8 +589,9 @@ class App(tk.Tk):
         self.status = tk.Label(st, text='', anchor='w', font=self.f_head, bg=ttk.Style(self).lookup('TFrame', 'background') or C_BG)
         self.status.pack(anchor='w')
         c = ttk.Checkbutton(st, text='Open in KiCad after generating', variable=v['open']); c.pack(anchor='w')
-        ttk.Label(right, text='Result', style='Head.TLabel').grid(row=4, column=0, sticky='w', pady=(8, 4))
-        outf = ttk.Frame(right); outf.grid(row=5, column=0, sticky='nsew')
+        ttk.Label(right, text='Result', style='Head.TLabel').grid(row=5, column=0, sticky='w', pady=(8, 4))
+        outf = self.result_box = ttk.Frame(right, height=int(self.cfg.get('result_h', 150))); outf.grid(row=6, column=0, sticky='nsew')
+        outf.pack_propagate(False)                # its height is what you drag it to
         self.out = tk.Text(outf, height=5, wrap='word', font=('Consolas', 9), relief='flat',
                            highlightthickness=1, highlightbackground='#d5dbe1', padx=8, pady=6)
         sb = ttk.Scrollbar(outf, command=self.out.yview); self.out['yscrollcommand'] = sb.set
@@ -600,6 +607,32 @@ class App(tk.Tk):
         self.notes_open, self.last_parts = False, []
         self.out.configure(state='disabled')
         self.renumber()
+
+    def sash(self, parent, way):
+        """A bar you drag to give the preview more room: 'v' between the settings and the preview, 'h' above the buttons
+        and the Result box."""
+        bar = tk.Frame(parent, width=10 if way == 'v' else 1, height=1 if way == 'v' else 8,
+                       cursor='sb_h_double_arrow' if way == 'v' else 'sb_v_double_arrow',
+                       bg=ttk.Style(self).lookup('TFrame', 'background') or C_BG)
+        grip = tk.Frame(bar, bg='#c3cad3', cursor=bar['cursor'])
+        grip.place(relx=0.5, rely=0.5, anchor='center', **(dict(width=3, relheight=0.12) if way == 'v' else dict(height=3, relwidth=0.08)))
+        Tip(bar, 'Drag to give the preview more room, or the settings.' if way == 'v' else
+                 'Drag to give the preview more room, or the Result box.')
+        def start(e):
+            bar._from = (e.x_root, e.y_root, self.left_col.winfo_width(), self.result_box.winfo_height())
+        def move(e):
+            x0, y0, w0, h0 = bar._from
+            if way == 'v':
+                w = max(260, min(self.winfo_width() - 320, w0 + e.x_root - x0))
+                self.left_col.configure(width=w); self.cfg['left_w'] = w
+            else:
+                h = max(0, min(self.winfo_height() - 320, h0 - (e.y_root - y0)))
+                self.result_box.configure(height=h); self.cfg['result_h'] = h
+        for w in (bar, grip):
+            w.bind('<ButtonPress-1>', start); w.bind('<B1-Motion>', move)
+            w.bind('<ButtonRelease-1>', lambda e: self.save_cfg())
+            w.bind('<Enter>', lambda e: grip.config(bg='#2563eb')); w.bind('<Leave>', lambda e: grip.config(bg='#c3cad3'))
+        return bar
 
     LABEL_W = 150            # every setting's name sits in a column this wide, so the boxes line up
 
@@ -996,6 +1029,7 @@ class App(tk.Tk):
             v['art_title'].set(s['art_title']); v['art_maker'].set(s['art_maker'])
             v['title_size'].set(f"{s['title_size']:g}"); v['knob_size'].set(f"{s['knob_size']:g}")
             v['title_dir'].set(next((k for k, x in TITLE_DIRS.items() if x == s.get('title_vertical', 'off')), 'Across'))
+            v['title_mirror'].set(s.get('title_mirror', 'off') == 'on')
             if s['auto_art'] != 'on':            # made artwork was switched off as a whole: that's every part of it off now
                 v['art_style'].set('None'); self.apply_style()
                 v['art_title'].set(''); v['art_maker'].set('')
@@ -1112,7 +1146,8 @@ class App(tk.Tk):
                      '--art-groups', ','.join(groups) or 'off', '--art-tabs', 'on' if v['art_tabs'].get() else 'off',
                      '--art-title', v['art_title'].get(), '--art-maker', v['art_maker'].get(),
                      '--title-size', f'{ts:g}', '--knob-size', f'{ks:g}',
-                     '--title-vertical', TITLE_DIRS.get(v['title_dir'].get(), 'off')]
+                     '--title-vertical', TITLE_DIRS.get(v['title_dir'].get(), 'off'),
+                     '--title-mirror', 'on' if v['title_mirror'].get() else 'off']
         else:
             args += ['--auto-art', 'off']
         args += ['--artwork', 'on' if v['art_on'].get() else 'off']
@@ -2022,8 +2057,10 @@ class App(tk.Tk):
             cb = ttk.Combobox(row, textvariable=tdir, values=list(TITLE_DIRS), width=24, state='readonly'); cb.pack(side='left')
             def setdir(_=None):
                 if o is not None:
-                    o['dir'] = TITLE_DIRS[tdir.get()]; self.persist_ui(); self.update_preview()
+                    o['dir'] = TITLE_DIRS[tdir.get()]; o['mirror'] = bool(tmir.get()); self.persist_ui(); self.update_preview()
             cb.bind('<<ComboboxSelected>>', setdir)
+            tmir = self._sel_tmir = tk.BooleanVar(value=bool(d.get('mirror')))
+            ttk.Checkbutton(fld('Mirror'), text='Mirror image', variable=tmir, command=setdir).pack(side='left')
             ttk.Label(box, text='It says what the title says. Drag it to move it; drag a corner to resize it.',
                       style='Dim.TLabel', wraplength=440, justify='left').pack(anchor='w', pady=(4, 0))
             ttk.Button(box, text='Delete this copy', command=lambda: self.title_delete(d['key'])).pack(anchor='w', pady=(6, 0))
@@ -2588,7 +2625,7 @@ class App(tk.Tk):
             self.clip = ('text', dict(text=d.get('text', ''), x=d['x'], y=d['y']))       # a PCB label pastes as a text of yours
         elif kind == 'art' and str(d['key']).startswith('title'):
             b = t[0]                                   # the title: the copy says the same, with its own place, size and direction
-            self.clip = ('title', dict(dir=d.get('vert') or 'off', size=d.get('h'), x=(b[0] + b[2]) / 2, y=(b[1] + b[3]) / 2,
+            self.clip = ('title', dict(dir=d.get('vert') or 'off', size=d.get('h'), mirror=bool(d.get('mirror')), x=(b[0] + b[2]) / 2, y=(b[1] + b[3]) / 2,
                                        ax=d['at'][0], ay=d['at'][1]))
         else:
             return say("That can't be copied: it's drawn from the panel. Copy works on holes you added, texts, labels, lines, pictures and the title.")
@@ -2623,7 +2660,7 @@ class App(tk.Tk):
         new = [dict(o, id=uuid.uuid4().hex[:8], x=round(o['x'] + mx, 3), y=round(o['y'] + my, 3)) for o in items]
         if kind == 'title':
             o = new[0]
-            self.ui.setdefault('titles', []).append(dict(id=o['id'], dir=o['dir'], size=o['size']))
+            self.ui.setdefault('titles', []).append(dict(id=o['id'], dir=o['dir'], size=o['size'], mirror=o.get('mirror', False)))
             self.ui.setdefault('art_pos', {})['title:' + o['id']] = [round(o['ax'] + mx, 2), round(o['ay'] + my, 2)]
             self.shape_sel, self.sel = [], ('art', 'title:' + o['id'])
         elif kind == 'line':
