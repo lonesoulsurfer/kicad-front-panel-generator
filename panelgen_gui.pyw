@@ -513,7 +513,8 @@ class App(tk.Tk):
                 'the ends of other lines and to the panel edges; hold Ctrl to keep it dead level or straight up and down, Alt '
                 'to place it freely. Lines are broken round holes. Click a line to change it, drag it to move it, drag an end '
                 'to re-aim it.')
-        mm(field(f, 'Thickness', 'For the next line you draw. Click a line to change its own.'), 'line_w')
+        mm(field(f, 'Thickness', 'For the next line you draw - or, with a line selected, that line.'), 'line_w')
+        v['line_w'].trace_add('write', lambda *_: self.line_w_changed())
         self.sel_subs['lines'] = sub(s, 'Selected')
         self.sel_boxes['lines'] = ttk.Frame(s); self.sel_boxes['lines'].pack(fill='x')
         self.line_from = None
@@ -2088,8 +2089,12 @@ class App(tk.Tk):
             def change(key, x):
                 if o is not None and x is not None and x != o.get(key):
                     o[key] = x; self.persist_ui(); self.update_preview()
-            row = fld('Thickness')
-            entry(row, f"{float(d.get('w', 0.5)):g}", lambda v: change('w', num(v, 0.15, 10))); ttk.Label(row, text='mm').pack(side='left')
+            if o is not None:                          # Thickness above shows this line's; changing it changes the line
+                self._line_sync, was = True, self.loading
+                self.loading = True
+                self.vars['line_w'].set(f"{float(o.get('w', 0.5)):g}")
+                self.loading, self._line_sync = was, False
+            ttk.Label(box, text='Change its thickness with Thickness, above.').pack(anchor='w')
             row = fld('Ends')
             ends = self._sel_ends = tk.StringVar(value=next((k for k, x in LINE_ENDS.items() if x == d.get('arrow', 'none')), 'Plain'))
             cb = ttk.Combobox(row, textvariable=ends, values=list(LINE_ENDS), width=24, state='readonly'); cb.pack(side='left')
@@ -2761,6 +2766,20 @@ class App(tk.Tk):
         m.add_command(label=f"Add a shape round {sh['label']}", command=lambda: self.add_mark(sh))
 
     # ------------------------------------------------------------------ lines you draw
+    def line_w_changed(self):
+        """Thickness changed: with a line selected, that line changes too."""
+        if self.loading or getattr(self, '_line_sync', False):
+            return
+        t = self.selected_target() if self.pv else None
+        o = self.own_line(t[2]['id']) if t and t[1] == 'line' else None
+        try:
+            w = max(0.15, min(10.0, float(self.vars['line_w'].get().replace(',', '.'))))
+        except ValueError:
+            return                                     # half-typed
+        if o is not None and abs(w - float(o.get('w', 0.5))) > 1e-6:
+            o['w'] = w
+            self.persist_ui(record=False)
+
     def own_line(self, lid):
         return next((o for o in self.ui.get('lines', []) if o['id'] == lid), None)
 

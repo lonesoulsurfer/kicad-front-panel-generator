@@ -2191,7 +2191,7 @@ def line_shapes(lines, groups, outline, log):
     """Lines you drew in the window (a divider, a signal-flow arrow, a bracket): silkscreen polygons, broken round holes.
     Each also gets '_box', its bounding box, for the window."""
     from shapely.geometry import LineString
-    holes = unary_union([g['geom'] for g in groups]).buffer(0.3) if groups else None
+    holes = unary_union([g['geom'] for g in groups]) if groups else None      # a line runs right up to the hole's edge
     inside = outline.buffer(-0.3)
     polys = []
     for ln in lines:
