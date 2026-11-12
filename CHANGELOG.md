@@ -27,7 +27,7 @@
 - **Drag a corner of a hole, rectangle or slot you added** to resize it. A rectangle's width and height change separately, with both shown as you drag.
 - **Copy the title** (Ctrl+C, Ctrl+V): the copy says what the title says, with its own place, size and direction. Tick **Mirror image** on the title or on a copy to flip its letters left to right, for a mirrored pair. New direction *On its side, reading down* turns it the other way.
 - **A bigger preview when you want one:** drag the bar between the settings and the preview, or the bar above the buttons and the Result box. The sizes are remembered.
-- **Reset** (next to Undo) starts the panel again from the PCB: the PCB's own size and holes, nothing added. It asks first, and Undo brings everything back.
+- **Reset** (next to Undo) starts the panel again from the PCB: the PCB's own size and holes, nothing added. That includes anything placed or changed in the panel file in KiCad (panel jacks, screws, drawn cutouts, edited holes); when you next generate, the old panel file is kept as `<board>_panel.before-reset.kicad_pcb`. It asks first, and Undo brings everything back.
 - **Shapes round any hole:** right-click a hole (from the PCB, the panel file or one you added) and pick a circle, box, triangle, hexagon or diamond, as an outline or filled. Or use *Shape round a hole…* in the new **Shapes** section. Click a shape to set its gap, line thickness and corners; drag its edges to resize it. Pull a filled box over a label and the label is cut out of it.
 - **Buttons and Jacks are now one Shapes section,** with the automatic rings, output boxes, edge tabs and row boxes under *Made for you*.
 - **Measure:** hold Ctrl (or Shift) to keep the ruler dead level or straight up and down.

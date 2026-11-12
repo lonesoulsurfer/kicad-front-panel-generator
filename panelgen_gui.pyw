@@ -1048,10 +1048,12 @@ class App(tk.Tk):
                                    "This takes the panel back to how it comes from your PCB: the same size as the PCB, with its "
                                    "holes and nothing else.\n\n"
                                    "It clears the extra size, corners and case holes, the labels and changes to them, your texts, "
-                                   "pictures, lines and extra holes, the title, scales, rings, boxes and border, and switches "
+                                   "pictures, lines, shapes and extra holes, the title, scales, rings, boxes and border, and switches "
                                    "Inkscape artwork off (your Inkscape file is not deleted).\n\n"
-                                   "Your PCB is not touched, and nothing changes in KiCad until you click Generate panel. "
-                                   "Undo brings everything back.\n\nStart again?", icon='warning', parent=self):
+                                   "It also leaves out everything you placed or changed in the panel file in KiCad: jacks, screws "
+                                   "and other panel parts, cutouts drawn on Edge.Cuts, and holes you moved, resized or deleted.\n\n"
+                                   "Your PCB is not touched. Nothing changes in KiCad until you click Generate panel, and then the "
+                                   "old panel file is kept as a backup. Undo brings everything back.\n\nStart again?", icon='warning', parent=self):
             return
         self.record_state()
         self.end_measure()
@@ -1059,7 +1061,8 @@ class App(tk.Tk):
         try:
             self.set_vars(dict(DEFAULTS))
             self.ui = {'ignore': self.ui.get('ignore', {}), 'label_edits': {}, 'texts': [], 'art_pos': {}, 'images': [],
-                       'shapes': [], 'lines': [], 'titles': [], 'marks': []}       # parts you said need no hole stay that way
+                       'shapes': [], 'lines': [], 'titles': [], 'marks': [],   # parts you said need no hole stay that way
+                       'fresh': True}       # and the panel file in KiCad is left out: its hand-placed parts, drawn cutouts, edits
         finally:
             self.loading = False
         self.sel, self.shape_sel, self.view = None, [], None
@@ -1106,6 +1109,8 @@ class App(tk.Tk):
             mem = load_json(panel_paths(self.board.get())[1]) if self.board.get() else {}
         self.restore_list.delete(0, 'end')
         self.restore_refs = []
+        if self.ui.get('fresh'):                       # started again: nothing from the old panel file to bring back
+            return
         for v in mem.get('suppressed', {}).values():
             self.restore_list.insert('end', f"{v['ref']}  - deleted"); self.restore_refs.append(('hole', v['ref']))
         for v in mem.get('kept', {}).values():
@@ -3271,6 +3276,7 @@ class App(tk.Tk):
         mem['lines'] = self.ui.get('lines', [])
         mem['titles'] = self.ui.get('titles', [])
         mem['marks'] = self.ui.get('marks', [])
+        mem['fresh'] = bool(self.ui.get('fresh'))
         try:
             with open(mem_path, 'w', encoding='utf-8') as f:
                 json.dump(mem, f, indent=1)

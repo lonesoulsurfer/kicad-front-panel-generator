@@ -2643,8 +2643,11 @@ def main(argv=None, preview=None):
 
     # memory of what panelgen made last time, and what you deleted
     memory = load_memory(mem_path)
-    suppressed = dict(memory.get('suppressed', {}))
-    kept = dict(memory.get('kept', {}))
+    # started again (Reset in the window): the panel file in KiCad is left out - its hand-placed parts, drawn cutouts and
+    # edited holes - and the next panel file is made from the PCB alone. The old one is kept as a backup when it's replaced.
+    fresh = bool(ui.get('fresh', mem0.get('fresh', False)))
+    suppressed = {} if fresh else dict(memory.get('suppressed', {}))
+    kept = {} if fresh else dict(memory.get('kept', {}))
     restored_ids = []
     def wanted(v):
         return any(w.lower() == 'all' or v['ref'].lower() == w.lower() or w.lower() in (r.lower() for r in v.get('refs', []))
@@ -2665,7 +2668,10 @@ def main(argv=None, preview=None):
                        + (f" (yours: {', '.join(names)})" if names else ""))
 
     existing_text, removed, manual = None, 0, []
-    if os.path.exists(out_path):
+    if fresh and os.path.exists(out_path):
+        log.append("NOTE  started again from the PCB: parts and cutouts placed in the panel file in KiCad are left out"
+                   + (" - the old panel file is kept as a backup when you generate" if preview is not None else ""))
+    if os.path.exists(out_path) and not fresh:
         t, tree = read_board(out_path)
         live = [c for c in cutouts if c['key'] not in {k for v in suppressed.values() for k in v['member_keys']}]
         trial, _ = merge_and_check(live, outline, a.min_web, [])
@@ -2828,6 +2834,11 @@ def main(argv=None, preview=None):
     else:
         text = header_from(pcb_text, pcb) + '\n'.join(items) + '\n' + group + '\n)\n'
         log.append(f"new   {out_path}")
+    if fresh and os.path.exists(out_path):
+        backup = re.sub(r'\.kicad_pcb$', '', out_path) + '.before-reset.kicad_pcb'
+        import shutil
+        shutil.copyfile(out_path, backup)
+        log.append(f"saved your old panel file as {os.path.basename(backup)} (it had the parts placed by hand in KiCad)")
     open(out_path, 'w', encoding='utf-8').write(text)
     json.dump({'panelgen': VERSION, 'note': 'panelgen memory: what it generated last run, and what you deleted or edited. Keep next to the panel.',
                'outline': outline_ids, 'outline_box': [round(v, 4) for v in (x1, y1, x2, y2)],
