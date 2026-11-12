@@ -23,6 +23,7 @@ ART_STYLES = {   # what each style switches on
 }
 STYLE_KEYS = ('scale', 'rings', 'outputs', 'border', 'tabs')
 GROUP_KINDS = ('pot', 'button', 'jack')
+MARKS = {'Circle': 'circle', 'Box': 'box', 'Triangle': 'triangle', 'Hexagon': 'hexagon', 'Diamond': 'diamond'}
 LINE_ENDS = {'Plain': 'none', 'Arrow at the end': 'end', 'Arrows at both ends': 'both'}
 MY_STYLE = 'My style'
 STYLE_VARS = ('labels_on', 'label_pos', 'label_gap', 'label_size', 'label_font', 'label_bold', 'label_caps', 'art_scale',
@@ -139,12 +140,14 @@ class App(tk.Tk):
         v['border_gap'] = tk.StringVar(value='0'); v['ring_width'] = tk.StringVar(value='0.8'); v['ring_gap'] = tk.StringVar(value='0.8')
         v['art_title'] = tk.StringVar(); v['art_maker'] = tk.StringVar(); v['title_mirror'] = tk.BooleanVar()
         v['line_w'] = tk.StringVar(value='0.5')
+        v['mark_kind'] = tk.StringVar(value='Circle'); v['mark_fill'] = tk.BooleanVar(); v['mark_gap'] = tk.StringVar(value='1')
+        v['mark_w'] = tk.StringVar(value='0.6'); v['mark_r'] = tk.StringVar(value='1')
         v['title_size'] = tk.StringVar(value='5'); v['knob_size'] = tk.StringVar(value='13')
         v['title_dir'] = tk.StringVar(value='Across')
         v['labels_on'] = tk.BooleanVar(); v['label_pos'] = tk.StringVar(value='above')
         v['label_gap'] = tk.StringVar(value='1.5'); v['label_size'] = tk.StringVar(value='2')
         v['label_font'] = tk.StringVar(value=KICAD_FONT); v['label_bold'] = tk.BooleanVar(); v['label_caps'] = tk.BooleanVar()
-        self.ui = {'ignore': {}, 'label_edits': {}, 'texts': [], 'art_pos': {}, 'images': [], 'shapes': [], 'lines': [], 'titles': []}   # ignored parts, label changes, your texts, moved title, pictures
+        self.ui = {'ignore': {}, 'label_edits': {}, 'texts': [], 'art_pos': {}, 'images': [], 'shapes': [], 'lines': [], 'titles': [], 'marks': []}   # ignored parts, label changes, your texts, moved title, pictures
         self.undo_stack, self.state_prev, self.restoring = [], None, False
         self.editor = None
         self.mode, self.pv, self.after_id, self.loading = None, None, None, False
@@ -450,31 +453,38 @@ class App(tk.Tk):
         self.sel_subs['pots'] = sub(s, 'Selected')
         self.sel_boxes['pots'] = ttk.Frame(s); self.sel_boxes['pots'].pack(fill='x')
 
-        # buttons
-        s = self.section('buttons', 'Buttons', 'Rings round push buttons, and a box round a row of them.')
+        # shapes round holes
+        s = self.section('shapes', 'Shapes', 'A circle, box, triangle, hexagon or diamond round any hole - an outline, or filled '
+                                             'with the label cut out of it.')
+        sub(s, 'Round one hole', first=True)
+        f = self.form(s)
+        c = field(f, 'Shape')
+        ttk.Combobox(c, textvariable=v['mark_kind'], values=list(MARKS), width=14, state='readonly').pack(side='left')
+        ttk.Checkbutton(c, text='Filled', variable=v['mark_fill']).pack(side='left', padx=(12, 0))
+        mm(field(f, 'Gap from the hole', 'From the edge of the hole to the inside of the shape.'), 'mark_gap')
+        mm(field(f, 'Line thickness', 'For an outline. A filled shape has no line.'), 'mark_w')
+        mm(field(f, 'Box corners', 'Corner radius of a box. 0 = square corners.'), 'mark_r', note='0 = square')
+        bt = ttk.Button(field(f, 'Add'), text='Shape round a hole…', command=self.start_mark); bt.pack(side='left')
+        Tip(bt, 'Click this, then click a hole - any hole, from the PCB, the panel file or one you added. Or right-click a hole and '
+                'pick a shape. Then click the shape to change it, or drag its edges to make it bigger or smaller.')
+        sub(s, 'Made for you')
         f = self.form(s)
         c = field(f, 'Rings')
-        ttk.Checkbutton(c, text='A ring round each push button', variable=v['art_rings'], command=self.refresh_states).pack(side='left')
+        ttk.Checkbutton(c, text='A ring round every push button', variable=v['art_rings'], command=self.refresh_states).pack(side='left')
         self.w_ringw = mm(field(f, 'Ring thickness', 'How thick the line of the ring is.'), 'ring_width')
-        self.w_ringg = mm(field(f, 'Gap from the hole', 'Between the edge of the button hole and the ring.'), 'ring_gap')
-        ttk.Checkbutton(field(f, 'Box', row_tip), text='A box round a row of buttons', variable=v['art_groups_button']).pack(side='left')
-        self.sel_subs['buttons'] = sub(s, 'Selected')
-        self.sel_boxes['buttons'] = ttk.Frame(s); self.sel_boxes['buttons'].pack(fill='x')
-
-        # jacks
-        s = self.section('jacks', 'Jacks', 'Boxes and tabs that show which jacks are outputs.')
-        f = self.form(s)
-        c = field(f, 'Vertical outputs', "Jacks that come up through the panel (the plug goes in from the front) and whose label "
-                                         "says OUT get a filled box with the label cut out of it - the usual way to tell outputs "
-                                         "from inputs. Set any jack to output or input in Edit labels.")
+        self.w_ringg = mm(field(f, 'Ring gap', 'Between the edge of the button hole and the ring.'), 'ring_gap')
+        c = field(f, 'Vertical outputs', "Jacks that come up through the panel and whose label says OUT get a filled box with the "
+                                         "label cut out of it. If a jack isn't picked up, right-click it and add a filled box instead.")
         ttk.Checkbutton(c, text='In filled boxes', variable=v['art_outputs']).pack(side='left')
         c = field(f, 'Horizontal jacks', "Jacks lying flat on the PCB at the panel edge (no hole, the plug goes in from the side) "
                                          "get a filled tab hanging from the edge with their labels cut out. Neighbours share a tab; "
                                          "labels with the same first word (MIDI IN, MIDI OUT) become IN / OUT with MIDI underneath.")
         ttk.Checkbutton(c, text='In tabs on the edge', variable=v['art_tabs']).pack(side='left')
-        ttk.Checkbutton(field(f, 'Box', row_tip), text='A box round a row of jacks', variable=v['art_groups_jack']).pack(side='left')
-        self.sel_subs['jacks'] = sub(s, 'Selected')
-        self.sel_boxes['jacks'] = ttk.Frame(s); self.sel_boxes['jacks'].pack(fill='x')
+        c = field(f, 'Rows', row_tip)
+        ttk.Checkbutton(c, text='Buttons', variable=v['art_groups_button']).pack(side='left', padx=(0, 12))
+        ttk.Checkbutton(c, text='Jacks', variable=v['art_groups_jack']).pack(side='left')
+        self.sel_subs['shapes'] = sub(s, 'Selected')
+        self.sel_boxes['shapes'] = ttk.Frame(s); self.sel_boxes['shapes'].pack(fill='x')
 
         # border
         s = self.section('border', 'Border', 'A line round the panel.', switch='art_border')
@@ -722,7 +732,7 @@ class App(tk.Tk):
         return e
 
     TABS = {'panel': ('size', 'rail', 'case', 'holes', 'restore'),
-            'art': ('style', 'title', 'labels', 'pots', 'buttons', 'jacks', 'border', 'lines', 'extras', 'art')}
+            'art': ('style', 'title', 'labels', 'pots', 'shapes', 'border', 'lines', 'extras', 'art')}
 
     def show_tab(self, tab):
         if tab != self.tab:
@@ -1049,7 +1059,7 @@ class App(tk.Tk):
         try:
             self.set_vars(dict(DEFAULTS))
             self.ui = {'ignore': self.ui.get('ignore', {}), 'label_edits': {}, 'texts': [], 'art_pos': {}, 'images': [],
-                       'shapes': [], 'lines': [], 'titles': []}       # parts you said need no hole stay that way
+                       'shapes': [], 'lines': [], 'titles': [], 'marks': []}       # parts you said need no hole stay that way
         finally:
             self.loading = False
         self.sel, self.shape_sel, self.view = None, [], None
@@ -1080,6 +1090,7 @@ class App(tk.Tk):
                        'images': [dict(i) for i in mem.get('images', [])],
                        'shapes': [dict(i) for i in mem.get('shapes', [])],
                        'lines': [dict(i) for i in mem.get('lines', [])],
+                       'marks': [dict(i) for i in mem.get('marks', [])],
                        'titles': [dict(i) for i in mem.get('titles', [])]}
             self.reset_undo()
         finally:
@@ -1431,6 +1442,10 @@ class App(tk.Tk):
         pad = 4 / self.cur_view[0]                    # a few pixels of slack round small text
         for b, kind, data in reversed(self.targets):
             if b[0] - pad <= x <= b[2] + pad and b[1] - pad <= y <= b[3] + pad:
+                if kind == 'tab' and data.get('kind') == 'mark':     # the hole inside a shape is the hole, not the shape
+                    h = data['hole']
+                    if h[0] <= x <= h[2] and h[1] <= y <= h[3]:
+                        continue
                 if kind == 'line':                    # a sloping line's box is mostly empty: it has to be near the line itself
                     ax, ay, bx, by = data['x1'], data['y1'], data['x2'], data['y2']
                     L2 = (bx - ax) ** 2 + (by - ay) ** 2
@@ -1489,7 +1504,7 @@ class App(tk.Tk):
             b = t[0]
             dist = {'l': abs(x - b[0]), 'r': abs(x - b[2]), 't': abs(y - b[1]), 'b': abs(y - b[3])}
             edge = min(t[2]['edges'], key=lambda k: dist[k])
-            if t[2]['kind'] == 'textbox' and dist[edge] > 6 / self.cur_view[0]:
+            if t[2]['kind'] in ('textbox', 'mark') and dist[edge] > 6 / self.cur_view[0]:
                 self.drag = ('item', e.x, e.y, t, False)        # the middle of a box round text: move it, texts and all
                 return
             self.drag = ('item', e.x, e.y, t, False, 0, 0, edge)
@@ -1513,6 +1528,8 @@ class App(tk.Tk):
             return False
         if d['kind'] == 'group':
             return edge in 'lr'
+        if d['kind'] == 'mark':                   # a box round a hole: its sides stay even, its top or bottom reaches for a label
+            return edge in 'lr' or d.get('shape') != 'box'
         return d['kind'] == 'textbox' and (edge in 'tb' or len(d.get('members', [])) > 1)
 
     def shape_size_drag(self, e):
@@ -1730,7 +1747,19 @@ class App(tk.Tk):
                     g.clear(); g.update({k: v for k, v in t[2].get('grow', {}).items() if abs(v) > 0.01})
                 grow = g.get(edge, 0.0) + (dx if edge in 'rb' else -dx)
                 grow = max(-1.2, grow) if group else grow          # a box round controls can also come in a little
-                if group:
+                mk = self.own_mark(t[2]['key']) if t[2]['kind'] == 'mark' else None
+                if mk is not None and t[2]['shape'] != 'box':      # a round shape: dragging it changes its gap from the hole
+                    mk['gap'] = round(max(0.0, float(mk.get('gap', 1.0)) + grow - g.get(edge, 0.0)), 2)
+                    g.clear()
+                elif mk is not None:                               # a box round a hole: can also come in, down to the hole
+                    grow = round(max(-float(mk.get('gap', 1.0)) + 0.2, grow), 3)
+                    sides = 'lrtb' if t[2]['shape'] != 'box' else (edge + {'l': 'r', 'r': 'l', 't': 'b', 'b': 't'}[edge] if mirror else edge)
+                    for k in sides:
+                        if abs(grow) > 0.01:
+                            g[k] = grow
+                        else:
+                            g.pop(k, None)
+                elif group:
                     for k in ('lr' if edge in 'lr' else edge):
                         if abs(grow) > 0.01:
                             g[k] = round(grow, 3)
@@ -1793,6 +1822,12 @@ class App(tk.Tk):
             if kind == 'text':
                 dx, dy, _, _ = self.snap(((x, y, x, y), 'new', None), 0, 0)
                 self.add_text_at(x + dx, y + dy)
+            elif kind == 'mark':
+                sh = self.hole_at(x, y)
+                if sh:
+                    self.add_mark(sh)
+                else:
+                    self.hover.config(text="That isn't a hole - click Shape round a hole… again and click on a hole.")
             elif kind == 'line':
                 if self.line_from is None:              # first click: where it starts
                     self.line_from = self.line_point(e)
@@ -1958,15 +1993,14 @@ class App(tk.Tk):
             home = ('lines' if kind == 'line' else 'extras' if kind == 'image' else
                     'labels' if kind in ('label', 'text') or (kind == 'tab' and d['kind'] == 'textbox') else
                     'title' if kind == 'art' else
-                    {'pot': 'pots', 'button': 'buttons'}.get(d.get('of'), 'jacks') if d['kind'] == 'group' else 'jacks')
+                    'pots' if d['kind'] == 'group' and d.get('of') == 'pot' else 'shapes')
         self.sel_home = home
         hints = {'labels': 'Click a label or one of your texts in the preview, or the box round one, to change it here.',
                  'extras': 'Click a picture in the preview to change it here.',
                  'lines': '',
                  'title': 'Click the title or the maker name in the preview to change it here.',
                  'pots': 'Click the box round the pots in the preview to change it here.',
-                 'buttons': 'Click the box round the buttons in the preview to change it here.',
-                 'jacks': 'Click an output box, a tab or the box round the jacks in the preview to change it here.'}
+                 'shapes': 'Click a shape in the preview to change it here.'}
         for k, b in boxes.items():
             for w in b.winfo_children():
                 w.destroy()
@@ -2111,6 +2145,32 @@ class App(tk.Tk):
             b.pack(anchor='w', pady=(6, 0))
             if not d.get('pinned'):
                 b.state(['disabled'])
+        elif kind == 'tab' and d['kind'] == 'mark':
+            o = self.own_mark(d['key'])
+            head.config(text=f"Shape round {d.get('ref', 'a hole')}")
+            def change(key, x):
+                if o is not None and x is not None and x != o.get(key):
+                    o[key] = x; self.persist_ui(); self.update_preview()
+            row = fld('Shape')
+            mk = self._sel_mk = tk.StringVar(value=next((k for k, x in MARKS.items() if x == d.get('shape')), 'Circle'))
+            cb = ttk.Combobox(row, textvariable=mk, values=list(MARKS), width=14, state='readonly'); cb.pack(side='left')
+            cb.bind('<<ComboboxSelected>>', lambda e: change('kind', MARKS[mk.get()]))
+            fl = self._sel_mfill = tk.BooleanVar(value=bool(o and o.get('fill')))
+            ttk.Checkbutton(row, text='Filled', variable=fl, command=lambda: change('fill', bool(fl.get()))).pack(side='left', padx=(12, 0))
+            row = fld('Gap from the hole')
+            entry(row, f"{float(o.get('gap', 1)) if o else 1:g}", lambda v: change('gap', num(v, 0, 50))); ttk.Label(row, text='mm').pack(side='left')
+            if not (o and o.get('fill')):
+                row = fld('Line thickness')
+                entry(row, f"{float(o.get('w', 0.6)) if o else 0.6:g}", lambda v: change('w', num(v, 0.15, 10))); ttk.Label(row, text='mm').pack(side='left')
+            if d.get('shape') == 'box':
+                row = fld('Corners')
+                entry(row, f"{float(o.get('r', 0)) if o else 0:g}", lambda v: change('r', num(v, 0, 50))); ttk.Label(row, text='mm').pack(side='left')
+            ttk.Label(box, text='Drag an edge in the preview to make it bigger or smaller. A box keeps its sides even (hold Shift to move '
+                                'just one); pull its top or bottom over the label and a filled box cuts the label out.', style='Dim.TLabel', wraplength=440, justify='left').pack(anchor='w', pady=(4, 0))
+            row = ttk.Frame(box); row.pack(anchor='w', pady=(6, 0))
+            ttk.Button(row, text='Back to its own size', command=lambda: (self.ui['label_edits'].pop(d['key'], None), self.persist_ui(),
+                                                                      self.update_preview())).pack(side='left')
+            ttk.Button(row, text='Delete shape', command=lambda: self.mark_delete(d['key'])).pack(side='left', padx=6)
         elif kind == 'tab':
             head.config(text={'edge': 'Horizontal jack tab: ', 'output': 'Vertical output box: ', 'textbox': 'Box round ',
                               'group': 'Box round '}.get(d['kind'], '') + d.get('ref', ''))
@@ -2566,6 +2626,56 @@ class App(tk.Tk):
         self.sel = None
         self.persist_ui(); self.update_preview()
 
+    # ------------------------------------------------------------------ shapes round holes
+    def own_mark(self, key):
+        return next((o for o in self.ui.get('marks', []) if 'mark:' + o['id'] == key), None)
+
+    def hole_at(self, x, y):
+        """The cutout under a point in the preview, if any."""
+        from shapely.geometry import Point
+        p = Point(x, y)
+        pad = 3 / self.cur_view[0]
+        return next((sh for sh in reversed((self.pv or {}).get('shapes', [])) if sh['geom'].buffer(pad).contains(p)), None)
+
+    def start_mark(self):
+        if not self.pv or 'message' in self.pv:
+            return
+        self.end_measure()
+        self.adding = 'mark'
+        self.canvas.config(cursor='crosshair')
+        self.hover.config(text='Click the hole the shape goes round. Esc to cancel.')
+
+    def add_mark(self, sh, kind=None, fill=None):
+        import uuid
+        v = self.vars
+        num = lambda k, d: float(v[k].get()) if v[k].get().strip() else d
+        try:
+            gap, w, r = num('mark_gap', 1.0), num('mark_w', 0.6), num('mark_r', 1.0)
+        except ValueError:
+            gap, w, r = 1.0, 0.6, 1.0
+        new = dict(id=uuid.uuid4().hex[:8], on=sh['anchor'], kind=kind or MARKS.get(v['mark_kind'].get(), 'circle'),
+                   fill=bool(v['mark_fill'].get()) if fill is None else fill, gap=max(0.0, gap), w=max(0.15, w), r=max(0.0, r))
+        self.ui.setdefault('marks', []).append(new)
+        self.shape_sel, self.sel = [], ('tab', 'mark:' + new['id'])
+        self.persist_ui(); self.update_preview()
+        self.hover.config(text='Shape added - drag its edges to resize it; its settings are on the left.')
+
+    def mark_delete(self, key):
+        self.ui['marks'] = [o for o in self.ui.get('marks', []) if 'mark:' + o['id'] != key]
+        self.ui['label_edits'].pop(key, None)
+        self.sel = None
+        self.persist_ui(); self.update_preview()
+
+    def mark_menu(self, m, sh):
+        """'Add a shape round it' with its choices, for the right-click menu of a hole."""
+        sm = tk.Menu(m, tearoff=0)
+        for name, kind in MARKS.items():
+            sm.add_command(label=name, command=lambda k=kind: self.add_mark(sh, k, False))
+            sm.add_command(label=f'{name}, filled', command=lambda k=kind: self.add_mark(sh, k, True))
+            if kind != 'diamond':
+                sm.add_separator()
+        m.add_cascade(label=f"Add a shape round {sh['label']}", menu=sm)
+
     # ------------------------------------------------------------------ lines you draw
     def own_line(self, lid):
         return next((o for o in self.ui.get('lines', []) if o['id'] == lid), None)
@@ -2633,6 +2743,8 @@ class App(tk.Tk):
         _, kind, d = t
         if kind == 'line':
             self.line_delete(d['id'])
+        elif kind == 'tab' and d['kind'] == 'mark':
+            self.mark_delete(d['key'])
         elif kind == 'art' and str(d['key']).startswith('title:'):
             self.title_delete(d['key'])
         elif kind == 'text':
@@ -2815,6 +2927,8 @@ class App(tk.Tk):
             if o:
                 for k, m in (('x1', dx), ('y1', dy), ('x2', dx), ('y2', dy)):
                     o[k] = round(o[k] + m, 3)
+        elif kind == 'tab' and d['kind'] == 'mark':
+            pass                                       # a shape stays round its hole
         elif kind == 'tab':                            # a box round text: everything in it moves with it
             for fid in d.get('members', []):
                 o = self.own_text(fid)
@@ -2838,6 +2952,11 @@ class App(tk.Tk):
                 return
             x, y = self.to_mm(e)
             m = tk.Menu(self, tearoff=0)
+            sh = self.hole_at(x, y)
+            if sh:                                     # on a hole: shapes round it
+                self.mark_menu(m, sh)
+                m.tk_popup(e.x_root, e.y_root)
+                return
             def here_text():
                 dx, dy, _, _ = self.snap(((x, y, x, y), 'new', None), 0, 0)
                 self.add_text_at(x + dx, y + dy)
@@ -2864,6 +2983,9 @@ class App(tk.Tk):
                 self.shape_sel = [d['id']]; self.sel = None
                 self.draw(); self.show_selected(); self.show_shapes()
             n = len(self.shape_sel)
+            sh = next((x for x in self.pv.get('shapes', []) if x.get('anchor') == 'add:' + d['id']), None)
+            if sh and n == 1:
+                self.mark_menu(m, sh); m.add_separator()
             m.add_command(label='Copy alongside' if n == 1 else f'Copy these {n} alongside', command=self.shapes_duplicate)
             m.add_command(label='Delete' if n == 1 else f'Delete these {n}', command=self.shapes_delete)
         elif kind == 'text':
@@ -2883,6 +3005,10 @@ class App(tk.Tk):
                           command=lambda: (self.ui['art_pos'].pop(d['key'], None), self.persist_ui(), self.update_preview()))
         elif kind == 'line':
             m.add_command(label='Delete line', command=lambda: self.line_delete(d['id']))
+        elif kind == 'tab' and d['kind'] == 'mark':
+            m.add_command(label='Back to its own size', command=lambda: (self.ui['label_edits'].pop(d['key'], None),
+                                                                         self.persist_ui(), self.update_preview()))
+            m.add_command(label='Delete shape', command=lambda: self.mark_delete(d['key']))
         elif kind == 'tab':
             m.add_command(label='Back to its own size', command=lambda: (self.ui['label_edits'].pop(d['key'], None),
                                                                          self.persist_ui(), self.update_preview()))
@@ -2986,6 +3112,7 @@ class App(tk.Tk):
                        'images': [dict(i) for i in mem.get('images', [])],
                        'shapes': [dict(i) for i in mem.get('shapes', [])],
                        'lines': [dict(i) for i in mem.get('lines', [])],
+                       'marks': [dict(i) for i in mem.get('marks', [])],
                        'titles': [dict(i) for i in mem.get('titles', [])]}
             self.state_prev = self.snapshot()          # keep the history; changes made in KiCad become the new start
         self.fill_restore()
@@ -3143,6 +3270,7 @@ class App(tk.Tk):
         mem['shapes'] = self.ui.get('shapes', [])
         mem['lines'] = self.ui.get('lines', [])
         mem['titles'] = self.ui.get('titles', [])
+        mem['marks'] = self.ui.get('marks', [])
         try:
             with open(mem_path, 'w', encoding='utf-8') as f:
                 json.dump(mem, f, indent=1)

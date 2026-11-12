@@ -64,6 +64,8 @@ def run():
     check('border gap and ring thickness accepted', 'message' not in app.pv)
     app.start_line(); mouse(1, px(x1 + 20, y2 - 4)); mouse(1, px(x1 + 60, y2 - 4)); app.update()
     check('a line drawn with two clicks', len(app.ui['lines']) == 1 and len(app.pv.get('lines', [])) == 1)
+    sh = app.pv['shapes'][1]; app.add_mark(sh, 'box', True); app.update()
+    check('a filled box round a hole', any(t['kind'] == 'mark' for t in app.pv['tab_boxes']))
     app.generate(open_after=False); app.update()
     panel = gui.panel_paths(board)[0]
     check('panel file written', os.path.exists(panel) and open(panel, encoding='utf-8').read().count('gr_circle') >= 8)

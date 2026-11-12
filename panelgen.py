@@ -949,8 +949,8 @@ def fill_preview(pv, groups, outline, panel_box, a, log, problems, eurorack, pcb
     pv.update(outline=outline, panel_box=panel_box, pcb_box=pcb_box, eurorack=eurorack, rail=ER_RAIL,
               rail_bad=rail_bad, uncut=list(uncut), log=list(log), problems=problems, label_font=a.label_font,
               label_bold=a.label_bold == 'on', **extra,
-              shapes=[dict(geom=g['geom'], label=fmt_refs_plain(g), rule=g.get('rule') or 'slot', key=g.get('key'),
-                           manual=g.get('manual', False), status=st) for g, st in zip(groups, status)])
+              shapes=[dict(geom=g['geom'], label=fmt_refs_plain(g), rule=g.get('rule') or 'slot', key=g.get('key'), anchor=an,
+                           manual=g.get('manual', False), status=st) for g, st, an in zip(groups, status, group_anchors(groups))])
 
 # footprint names that usually mean "this pokes through the panel"
 PANEL_HINTS = re.compile(r'jack|audio|potentiometer|(^|[_\W])pot|encoder|switch|(^|[_\W])sw[_\W]|button|toggle|tact|'
@@ -2228,6 +2228,83 @@ def line_shapes(lines, groups, outline, log):
                 polys += fracture(p)
     return polys
 
+MARK_KINDS = ('circle', 'box', 'triangle', 'hexagon', 'diamond')
+
+def group_anchors(groups):
+    """A name for each cutout that stays the same while the part moves: what a shape you put round a hole is attached to."""
+    seen, out = {}, []
+    for g in groups:
+        if g.get('key'):
+            out.append(g['key'])
+        else:
+            base = sorted(str(i) for i in g['ids'])[0]
+            seen[base] = seen.get(base, -1) + 1
+            out.append(f'{base}#{seen[base]}')
+    return out
+
+def mark_shapes(marks, groups, anchors, placed, a, edits, outline, log):
+    """Shapes you put round a hole (a ring, a box, a triangle, a hexagon, a diamond), as an outline or filled. A filled one
+    has any label inside it cut out of it. Returns (polygons, labels cut out)."""
+    font, bold = a.label_font, a.label_bold == 'on'
+    sbold = bold or not font
+    by_anchor = dict(zip(anchors, groups))
+    inside = outline.buffer(-0.6)
+    polys, knocked = [], set()
+    for m in marks:
+        g = by_anchor.get(m.get('on'))
+        if g is None:
+            log.append(f"NOTE  a shape you added was round a hole that isn't on the panel any more - it's left off")
+            continue
+        kind = m.get('kind', 'circle') if m.get('kind') in MARK_KINDS else 'circle'
+        gap, w = float(m.get('gap', 1.0)), max(0.15, float(m.get('w', 0.6)))
+        e = edits.get('mark:' + m['id'], {})
+        b = g['geom'].bounds
+        if g.get('circle'):
+            cx, cy, r0 = g['circle']
+        else:
+            cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
+            r0 = math.hypot(b[2] - b[0], b[3] - b[1]) / 2
+        if kind == 'box':
+            fb = (b[0] - gap - e.get('l', 0.0), b[1] - gap - e.get('t', 0.0), b[2] + gap + e.get('r', 0.0), b[3] + gap + e.get('b', 0.0))
+            if fb[2] - fb[0] < 0.5 or fb[3] - fb[1] < 0.5:
+                continue
+            shape = rounded_box(*fb, max(0.0, float(m.get('r', 0.0) or 0.0)))
+        else:
+            R = r0 + gap + max([e.get(k, 0.0) for k in 'lrtb'] or [0.0])
+            if R < 0.3:
+                continue
+            if kind == 'circle':
+                shape = Point(cx, cy).buffer(R, quad_segs=48)
+            else:
+                n, rot = {'triangle': (3, -90), 'hexagon': (6, 0), 'diamond': (4, -90)}[kind]
+                Rc = R / math.cos(math.pi / n)         # the hole fits inside: R is how far the flat sides are from the middle
+                shape = Polygon([(cx + Rc * math.cos(math.radians(rot + 360 * k / n)),
+                                  cy + Rc * math.sin(math.radians(rot + 360 * k / n))) for k in range(n)])
+        other = unary_union([x['geom'] for x in groups if x is not g])
+        if m.get('fill'):
+            ink = shape.difference(g['geom'].buffer(0.3))
+            for L in placed:                           # labels inside a filled shape are cut out of it
+                if L['fid'] in knocked or not shape.contains(Point(L['x'], L['y'])):
+                    continue
+                txt = text_shapes(L['text'], L['x'], L['y'], L['h'], font, sbold)
+                if txt:
+                    ink = ink.difference(unary_union(txt))
+                    knocked.add(L['fid'])
+                    a._knock_boxes[L['fid']] = dict(box=unary_union(txt).bounds, ref=L['ref'], text=L['text'], h=L['h'])
+        else:
+            ink = shape.difference(shape.buffer(-w, join_style=2))
+        if not other.is_empty:
+            ink = ink.difference(other.buffer(0.4))
+        if not inside.contains(ink):
+            log.append(f"NOTE  the shape round {fmt_refs_plain(g)} runs off the panel - that part is left off")
+            ink = ink.intersection(inside)
+        for p in (ink.geoms if hasattr(ink, 'geoms') else [ink]):
+            if p.geom_type == 'Polygon' and p.area > 1e-4:
+                polys += fracture(p)
+        a._tab_boxes.append(dict(key='mark:' + m['id'], kind='mark', edges='lrtb', box=shape.bounds, ref=fmt_refs_plain(g),
+                                 shape=kind, hole=list(b), id=m['id']))
+    return polys, knocked
+
 def shapely_translate(g, dx, dy):
     from shapely.affinity import translate
     return translate(g, dx, dy)
@@ -2464,6 +2541,7 @@ def main(argv=None, preview=None):
     texts = [dict(t) for t in ui.get('texts', mem0.get('texts', []))]
     images = [dict(i) for i in ui.get('images', mem0.get('images', []))]
     lines = [dict(i) for i in ui.get('lines', mem0.get('lines', []))]
+    marks = [dict(i) for i in ui.get('marks', mem0.get('marks', []))]
     a._titles = [dict(i) for i in ui.get('titles', mem0.get('titles', []))]
     a._art_pos = dict(ui.get('art_pos', mem0.get('art_pos', {})))
     added = [dict(s) for s in ui.get('shapes', mem0.get('shapes', []))]
@@ -2665,6 +2743,10 @@ def main(argv=None, preview=None):
         problems += sum(1 for l in log[n0:] if l.startswith('WARN'))
         log.append(f"auto  {len(a._auto)} shapes of artwork made for you"
                    + (f" ({len(knocked)} label{'s' if len(knocked) > 1 else ''} cut out of output boxes)" if knocked else ''))
+    anchors = group_anchors(groups)
+    mk_polys, mk_knocked = mark_shapes(marks, groups, anchors, [L for L in placed if L['fid'] not in knocked], a, label_edits, outline, log)
+    a._auto += mk_polys
+    knocked |= mk_knocked
     tb_polys, tb_knocked = text_boxes([L for L in placed if L['fid'] not in knocked], shown_texts, label_edits, a, groups, outline, log)
     a._auto += tb_polys
     a._auto += line_shapes(lines, groups, outline, log)
@@ -2756,7 +2838,7 @@ def main(argv=None, preview=None):
                                                     ref=L['ref']) for L in placed if not L.get('own')},
                'label_edits': label_edits, 'ignore_uncut': ignore_uncut, 'texts': texts, 'art_pos': a._art_pos,
                'images': [{k: v for k, v in i.items() if not k.startswith('_')} for i in images], 'shapes': added,
-               'lines': [{k: v for k, v in i.items() if not k.startswith('_')} for i in lines], 'titles': a._titles,
+               'lines': [{k: v for k, v in i.items() if not k.startswith('_')} for i in lines], 'titles': a._titles, 'marks': marks,
                'settings': dict(margin=a.margin, **{f'margin_{k}': v for k, v in m.items()},
                                 screws=a.screws, screw_dia=a.screw_dia, screw_inset=a.screw_inset, screw_slot=a.screw_slot, rail_slot=a.rail_slot,
                                 corner_radius=a.corner_radius, grow=a.grow, min_web=a.min_web,
