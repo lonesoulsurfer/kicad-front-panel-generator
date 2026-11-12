@@ -466,7 +466,10 @@ class App(tk.Tk):
         mm(field(f, 'Box corners', 'Corner radius of a box. 0 = square corners.'), 'mark_r', note='0 = square')
         bt = ttk.Button(field(f, 'Add'), text='Shape round a hole…', command=self.start_mark); bt.pack(side='left')
         Tip(bt, 'Click this, then click a hole - any hole, from the PCB, the panel file or one you added. Or right-click a hole and '
-                'pick a shape. Then click the shape to change it, or drag its edges to make it bigger or smaller.')
+                'choose Add a shape round it. It gets the settings above; change the one you added below, or drag its edges.')
+        ttk.Label(s, text='Set these, then right-click a hole and choose Add a shape round it. Each new shape gets these '
+                          'settings, and changing a shape sets them for the next one.', style='Dim.TLabel', wraplength=440,
+                  justify='left').pack(anchor='w', pady=(2, 0))
         sub(s, 'Made for you')
         f = self.form(s)
         c = field(f, 'Rings')
@@ -2155,7 +2158,9 @@ class App(tk.Tk):
             head.config(text=f"Shape round {d.get('ref', 'a hole')}")
             def change(key, x):
                 if o is not None and x is not None and x != o.get(key):
-                    o[key] = x; self.persist_ui(); self.update_preview()
+                    o[key] = x
+                    self.remember_mark(o)
+                    self.persist_ui(); self.update_preview()
             row = fld('Shape')
             mk = self._sel_mk = tk.StringVar(value=next((k for k, x in MARKS.items() if x == d.get('shape')), 'Circle'))
             cb = ttk.Combobox(row, textvariable=mk, values=list(MARKS), width=14, state='readonly'); cb.pack(side='left')
@@ -2648,7 +2653,7 @@ class App(tk.Tk):
         self.end_measure()
         self.adding = 'mark'
         self.canvas.config(cursor='crosshair')
-        self.hover.config(text='Click the hole the shape goes round. Esc to cancel.')
+        self.hover.config(text='Click the hole the shape goes round (or right-click any hole). Esc to cancel.')
 
     def add_mark(self, sh, kind=None, fill=None):
         import uuid
@@ -2663,7 +2668,18 @@ class App(tk.Tk):
         self.ui.setdefault('marks', []).append(new)
         self.shape_sel, self.sel = [], ('tab', 'mark:' + new['id'])
         self.persist_ui(); self.update_preview()
-        self.hover.config(text='Shape added - drag its edges to resize it; its settings are on the left.')
+        self.hover.config(text='Shape added with the settings under Shapes - change it there, or drag its edges. '
+                               'The next one you add gets the same.')
+        self.reveal('shapes', self.sel_boxes['shapes'])
+
+    def remember_mark(self, o):
+        """What you set on a shape becomes what the next one gets, so a row of them is quick to repeat."""
+        v = self.vars
+        v['mark_kind'].set(next((k for k, x in MARKS.items() if x == o.get('kind')), 'Circle'))
+        v['mark_fill'].set(bool(o.get('fill')))
+        for key, var in (('gap', 'mark_gap'), ('w', 'mark_w'), ('r', 'mark_r')):
+            if key in o:
+                v[var].set(f"{float(o[key]):g}")
 
     def mark_delete(self, key):
         self.ui['marks'] = [o for o in self.ui.get('marks', []) if 'mark:' + o['id'] != key]
@@ -2672,14 +2688,8 @@ class App(tk.Tk):
         self.persist_ui(); self.update_preview()
 
     def mark_menu(self, m, sh):
-        """'Add a shape round it' with its choices, for the right-click menu of a hole."""
-        sm = tk.Menu(m, tearoff=0)
-        for name, kind in MARKS.items():
-            sm.add_command(label=name, command=lambda k=kind: self.add_mark(sh, k, False))
-            sm.add_command(label=f'{name}, filled', command=lambda k=kind: self.add_mark(sh, k, True))
-            if kind != 'diamond':
-                sm.add_separator()
-        m.add_cascade(label=f"Add a shape round {sh['label']}", menu=sm)
+        """'Add a shape round it', for the right-click menu of a hole: it uses what's set under Shapes, and opens it there."""
+        m.add_command(label=f"Add a shape round {sh['label']}", command=lambda: self.add_mark(sh))
 
     # ------------------------------------------------------------------ lines you draw
     def own_line(self, lid):
