@@ -925,7 +925,7 @@ def check_rails(pcb, tpl, x1, y1, x2, y2, log, bad=None):
                 bad.append((fp.ref, b))
     return n
 
-def fill_preview(pv, groups, outline, panel_box, a, log, problems, eurorack, pcb_box, rail_bad, uncut=(), cutouts=(), **extra):
+def fill_preview(pv, groups, outline, panel_box, a, log, problems, eurorack, pcb_box, rail_bad, uncut=(), cutouts=(), fps=None, **extra):
     """Geometry for the window's live preview, each cutout marked ok / warn / error."""
     status = ['ok'] * len(groups)
     def mark(i, st):
@@ -950,7 +950,7 @@ def fill_preview(pv, groups, outline, panel_box, a, log, problems, eurorack, pcb
               rail_bad=rail_bad, uncut=list(uncut), log=list(log), problems=problems, label_font=a.label_font,
               label_bold=a.label_bold == 'on', **extra,
               shapes=[dict(geom=g['geom'], label=fmt_refs_plain(g), rule=g.get('rule') or 'slot', key=g.get('key'), anchor=an,
-                           manual=g.get('manual', False), status=st, points=part_points(g, cutouts))
+                           manual=g.get('manual', False), status=st, points=part_points(g, cutouts, fps))
                       for g, st, an in zip(groups, status, group_anchors(groups))])
 
 # footprint names that usually mean "this pokes through the panel"
@@ -2231,16 +2231,26 @@ def line_shapes(lines, groups, outline, log):
 
 MARK_KINDS = ('circle', 'box', 'triangle', 'hexagon', 'diamond')
 
-def part_points(g, cutouts):
-    """The middle of each part in a cutout made of several (keys merged into one slot), so a label can be put over each."""
-    if len(g.get('ids', ())) < 2:
-        return []
-    pts = []
-    for c in cutouts:
-        if c['id'] in g['ids']:
-            b = c['geom'].bounds
-            pts.append(((b[0] + b[2]) / 2, (b[1] + b[3]) / 2))
-    return sorted(set((round(x, 3), round(y, 3)) for x, y in pts))
+def part_points(g, cutouts, fps=None):
+    """The parts you can see through a cutout, so a label can be put over each: the keys merged into one slot, and any part
+    sitting under a window (Cherry switches under one big opening, say). Returns [(ref, (x, y), box)]."""
+    out = {}
+    if len(g.get('ids', ())) > 1:
+        for c in cutouts:
+            if c['id'] in g['ids']:
+                b = c['geom'].bounds
+                out[c['id']] = (c['ref'], ((b[0] + b[2]) / 2, (b[1] + b[3]) / 2), b)
+    geom = g['geom']
+    for uid, fp in (fps or {}).items():
+        if uid in g['ids'] or uid in out or not str(fp.layer).startswith('F.'):
+            continue
+        box = courtyard_box(fp)
+        # the middle of the part's outline - not its origin, which is often on pin 1 (Cherry MX switches, say)
+        mid = ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2) if box else (fp.world(*fp.fab_box_centre()) if fp.fab_box_centre() else (fp.x, fp.y))
+        if geom.contains(Point(*mid)):
+            out[uid] = (fp.ref, mid, box or (mid[0] - 2.5, mid[1] - 2.5, mid[0] + 2.5, mid[1] + 2.5))
+    return sorted(((r, (round(p[0], 3), round(p[1], 3)), tuple(round(v, 3) for v in b)) for r, p, b in out.values()),
+                  key=lambda t: (t[1][1], t[1][0]))
 
 def group_anchors(groups):
     """A name for each cutout that stays the same while the part moves: what a shape you put round a hole is attached to."""
@@ -2814,7 +2824,7 @@ def main(argv=None, preview=None):
             import shutil
             shutil.copyfile(svg_path, artwork_path_for(out_path))
     if preview is not None:
-        fill_preview(preview, groups, outline, (x1, y1, x2, y2), a, log, problems, cutouts=cutouts + manual,
+        fill_preview(preview, groups, outline, (x1, y1, x2, y2), a, log, problems, cutouts=cutouts + manual, fps=part_fps,
                      eurorack=hp if tpl else None,
                      pcb_box=((x1 + ER_PCB_INSET, y1 + ER_RAIL, x2 - ER_PCB_INSET, y2 - ER_RAIL) if tpl else (bx1, by1, bx2, by2)),
                      rail_bad=rail_bad, uncut=uncut, labels=placed, label_rows=label_rows,

@@ -1428,6 +1428,11 @@ class App(tk.Tk):
                         for hy in (Y(b[1]) - 3, Y(b[3]) + 3):
                             c.create_rectangle(hx - 4, hy - 4, hx + 4, hy + 4, fill='#ffffff', outline='#2563eb', width=2)
         self.draw_measure()
+        for sh in pv.get('shapes', []):               # the parts you see through a cutout (keys under a window): where
+            for ref, (px, py), pb in sh.get('points', []):    # each one is, so labels can be lined up over them
+                c.create_rectangle(X(pb[0]), Y(pb[1]), X(pb[2]), Y(pb[3]), outline=C_PCB, dash=(2, 3), width=1)
+                c.create_line(X(px) - 5, Y(py), X(px) + 5, Y(py), fill=C_PCB)
+                c.create_line(X(px), Y(py) - 5, X(px), Y(py) + 5, fill=C_PCB)
         for ref, (bx1, by1, bx2, by2) in pv.get('rail_bad', []):
             c.create_rectangle(X(bx1), Y(by1), X(bx2), Y(by2), outline=C_ERR, width=2, dash=(4, 2))
             c.create_text(X(bx2) + 10, Y(by1) - 2, text=f'{ref} hits the rail', anchor='nw', fill=C_ERR_TXT, font=self.f_small)
@@ -1927,11 +1932,11 @@ class App(tk.Tk):
             g = sh['geom'].bounds
             xs.append((g[0] + g[2]) / 2); ys.append((g[1] + g[3]) / 2)
             if texty:
-                sxs.append((g[0] + g[2]) / 2)
-            for px, py in sh.get('points', []):       # each key in a merged slot
+                sxs.append(((g[0] + g[2]) / 2, (g[1] + g[3]) / 2))
+            for _, (px, py), _b in sh.get('points', []):   # each key in a merged slot, each part under a window
                 xs.append(px)
                 if texty:
-                    sxs.append(px)
+                    sxs.append((px, py))
         for L in self.pv.get('labels', []):
             if d is not None and (L is d or (L.get('fid') is not None and L.get('fid') == d.get('fid'))):
                 continue
@@ -1982,7 +1987,11 @@ class App(tk.Tk):
                 return sb
             b_ = min(cands, key=lambda v: abs(v - at), default=None)
             return b_ if b_ is not None and abs(b_ - at) <= thr else None
-        gx, gy = pick(xs, sxs, cx), pick(ys, sys_, cy)
+        # over a part: of the holes and parts within reach across, the one nearest the text (the switch just above it,
+        # not a pot further up that happens to be a little closer across)
+        near = [p for p in sxs if abs(p[0] - cx) <= strong]
+        sx = [min(near, key=lambda p: math.hypot(p[0] - cx, p[1] - cy))[0]] if near else []
+        gx, gy = pick(xs, sx, cx), pick(ys, sys_, cy)
         if kind in ('shape', 'newshape'):              # not lined up with anything: whole half millimetres from the panel corner
             if gx is None:
                 dx += round((cx - x1) * 2) / 2 + x1 - cx
