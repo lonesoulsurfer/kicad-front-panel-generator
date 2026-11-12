@@ -536,6 +536,9 @@ class App(tk.Tk):
                             'down. After the first click you can type a length instead and press Enter. The ruler then stays as a '
                             'guide: anything you drag, add or paste snaps to its ends and its middle. Press M for a new one.')
         self.w_undo = ttk.Button(ph, text='Undo', command=self.undo, width=6); self.w_undo.pack(side='right', padx=(0, 6))
+        rs = ttk.Button(ph, text='Reset', command=self.reset_panel, width=6); rs.pack(side='right', padx=(0, 6))
+        Tip(rs, 'Start this panel again from the PCB: the same size as the PCB, with its holes and nothing else. Clears the '
+                'labels, artwork, your texts, pictures, lines and extra holes. It asks first, and Undo brings it all back.')
         self.w_undo.state(['disabled'])
         Tip(self.w_undo, 'Take back the last change (Ctrl+Z): a setting on the left, or a move, text, picture, box '
                          'or label edit in the preview. Up to 50 steps.')
@@ -984,6 +987,77 @@ class App(tk.Tk):
         if 0 <= i < len(rec) and rec[i] != self.board.get():
             self.board.set(rec[i]); self.board_changed()
 
+    def set_vars(self, s):
+        """Every setting on the left, from a panel's saved settings (or the bare defaults)."""
+        v = self.vars
+        sides = [s['margin_top'], s['margin_right'], s['margin_bottom'], s['margin_left']]
+        v['per_side'].set(len(set(sides)) > 1)
+        v['margin'].set(f"{max(sides):g}")
+        for name, val in zip(('top', 'right', 'bottom', 'left'), sides):
+            v[name].set(f"{val:g}")
+        v['screws'].set(s['screws'])
+        v['screw_dia'].set(f"{s['screw_dia']:g}"); v['screw_inset'].set(f"{s['screw_inset']:g}")
+        v['case_shape'].set('slot' if s['screw_slot'] > 0 else 'round')
+        if s['screw_slot'] > 0:
+            v['slot'].set(f"{s['screw_slot']:g}")
+        v['rail_shape'].set('slot' if s['rail_slot'] > 0 else 'round')
+        if s['rail_slot'] > 0:
+            v['rslot'].set(f"{s['rail_slot']:g}")
+        v['radius'].set(f"{s['corner_radius']:g}")
+        v['svg'].set(bool(s['svg']))
+        v['art_on'].set(s['artwork'] == 'on')
+        v['labels_on'].set(s['labels'] == 'on')
+        v['texts_on'].set(s.get('extras', 'on') in ('on', 'texts')); v['pictures_on'].set(s.get('extras', 'on') in ('on', 'pictures'))
+        v['art_style'].set(s.get('art_style') or 'Custom')
+        v['art_scale'].set(next((k for k, x in SCALES.items() if x == s['art_scale']), 'Ticks'))
+        v['art_rings'].set(s['art_rings'] == 'on'); v['art_outputs'].set(s['art_outputs'] == 'on')
+        v['art_border'].set(s['art_border'] == 'on')
+        kinds = GROUP_KINDS if s['art_groups'] == 'on' else [k for k in str(s['art_groups']).split(',')]
+        for k in GROUP_KINDS:
+            v['art_groups_' + k].set(k in kinds)
+        v['art_tabs'].set(s['art_tabs'] == 'on')
+        v['border_radius'].set(f"{s['art_border_radius']:g}"); v['border_gap'].set(f"{s['art_border_gap']:g}")
+        v['ring_width'].set(f"{s['ring_width']:g}"); v['ring_gap'].set(f"{s['ring_gap']:g}")
+        v['art_title'].set(s['art_title']); v['art_maker'].set(s['art_maker'])
+        v['title_size'].set(f"{s['title_size']:g}"); v['knob_size'].set(f"{s['knob_size']:g}")
+        v['title_dir'].set(next((k for k, x in TITLE_DIRS.items() if x == s.get('title_vertical', 'off')), 'Across'))
+        v['title_mirror'].set(s.get('title_mirror', 'off') == 'on')
+        if s['auto_art'] != 'on':            # made artwork was switched off as a whole: that's every part of it off now
+            v['art_style'].set('None'); self.apply_style()
+            v['art_title'].set(''); v['art_maker'].set('')
+        v['label_pos'].set(s['label_pos']); v['label_gap'].set(f"{s['label_gap']:g}"); v['label_size'].set(f"{s['label_size']:g}")
+        v['label_font'].set(s['label_font'] or KICAD_FONT)
+        v['label_bold'].set(s['label_bold'] == 'on'); v['label_caps'].set(s['label_caps'] == 'on')
+
+    def reset_panel(self):
+        """Back to the bare panel: the PCB's own shape and holes, nothing added. Undo brings it all back."""
+        b = self.board.get()
+        if not b or not os.path.exists(b) or not self.pv:
+            return
+        if not messagebox.askyesno('Start this panel again?',
+                                   "This takes the panel back to how it comes from your PCB: the same size as the PCB, with its "
+                                   "holes and nothing else.\n\n"
+                                   "It clears the extra size, corners and case holes, the labels and changes to them, your texts, "
+                                   "pictures, lines and extra holes, the title, scales, rings, boxes and border, and switches "
+                                   "Inkscape artwork off (your Inkscape file is not deleted).\n\n"
+                                   "Your PCB is not touched, and nothing changes in KiCad until you click Generate panel. "
+                                   "Undo brings everything back.\n\nStart again?", icon='warning', parent=self):
+            return
+        self.record_state()
+        self.end_measure()
+        self.loading = True
+        try:
+            self.set_vars(dict(DEFAULTS))
+            self.ui = {'ignore': self.ui.get('ignore', {}), 'label_edits': {}, 'texts': [], 'art_pos': {}, 'images': [],
+                       'shapes': [], 'lines': [], 'titles': []}       # parts you said need no hole stay that way
+        finally:
+            self.loading = False
+        self.sel, self.shape_sel, self.view = None, [], None
+        self.persist_ui()
+        self.refresh_states()
+        self.update_preview()
+        self.hover.config(text='Started again from the PCB. Undo brings everything back.')
+
     def board_changed(self):
         board = self.board.get()
         self.guides_at = None
@@ -998,44 +1072,7 @@ class App(tk.Tk):
         v = self.vars
         self.loading = True
         try:
-            sides = [s['margin_top'], s['margin_right'], s['margin_bottom'], s['margin_left']]
-            v['per_side'].set(len(set(sides)) > 1)
-            v['margin'].set(f"{max(sides):g}")
-            for name, val in zip(('top', 'right', 'bottom', 'left'), sides):
-                v[name].set(f"{val:g}")
-            v['screws'].set(s['screws'])
-            v['screw_dia'].set(f"{s['screw_dia']:g}"); v['screw_inset'].set(f"{s['screw_inset']:g}")
-            v['case_shape'].set('slot' if s['screw_slot'] > 0 else 'round')
-            if s['screw_slot'] > 0:
-                v['slot'].set(f"{s['screw_slot']:g}")
-            v['rail_shape'].set('slot' if s['rail_slot'] > 0 else 'round')
-            if s['rail_slot'] > 0:
-                v['rslot'].set(f"{s['rail_slot']:g}")
-            v['radius'].set(f"{s['corner_radius']:g}")
-            v['svg'].set(bool(s['svg']))
-            v['art_on'].set(s['artwork'] == 'on')
-            v['labels_on'].set(s['labels'] == 'on')
-            v['texts_on'].set(s.get('extras', 'on') in ('on', 'texts')); v['pictures_on'].set(s.get('extras', 'on') in ('on', 'pictures'))
-            v['art_style'].set(s.get('art_style') or 'Custom')
-            v['art_scale'].set(next((k for k, x in SCALES.items() if x == s['art_scale']), 'Ticks'))
-            v['art_rings'].set(s['art_rings'] == 'on'); v['art_outputs'].set(s['art_outputs'] == 'on')
-            v['art_border'].set(s['art_border'] == 'on')
-            kinds = GROUP_KINDS if s['art_groups'] == 'on' else [k for k in str(s['art_groups']).split(',')]
-            for k in GROUP_KINDS:
-                v['art_groups_' + k].set(k in kinds)
-            v['art_tabs'].set(s['art_tabs'] == 'on')
-            v['border_radius'].set(f"{s['art_border_radius']:g}"); v['border_gap'].set(f"{s['art_border_gap']:g}")
-            v['ring_width'].set(f"{s['ring_width']:g}"); v['ring_gap'].set(f"{s['ring_gap']:g}")
-            v['art_title'].set(s['art_title']); v['art_maker'].set(s['art_maker'])
-            v['title_size'].set(f"{s['title_size']:g}"); v['knob_size'].set(f"{s['knob_size']:g}")
-            v['title_dir'].set(next((k for k, x in TITLE_DIRS.items() if x == s.get('title_vertical', 'off')), 'Across'))
-            v['title_mirror'].set(s.get('title_mirror', 'off') == 'on')
-            if s['auto_art'] != 'on':            # made artwork was switched off as a whole: that's every part of it off now
-                v['art_style'].set('None'); self.apply_style()
-                v['art_title'].set(''); v['art_maker'].set('')
-            v['label_pos'].set(s['label_pos']); v['label_gap'].set(f"{s['label_gap']:g}"); v['label_size'].set(f"{s['label_size']:g}")
-            v['label_font'].set(s['label_font'] or KICAD_FONT)
-            v['label_bold'].set(s['label_bold'] == 'on'); v['label_caps'].set(s['label_caps'] == 'on')
+            self.set_vars(s)
             if not mem.get('settings'):          # a PCB you haven't made a panel for yet starts with your own look
                 self.use_my_style()
             self.ui = {'ignore': dict(mem.get('ignore_uncut', {})), 'label_edits': dict(mem.get('label_edits', {})),

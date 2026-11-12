@@ -106,6 +106,7 @@ Everything here is done in the preview. Your own texts live under **Labels** on 
 - **Lines:** under **Lines**, click **Line**, then click where it starts and where it ends (hold **Ctrl** to keep it dead level or straight up and down). Use them as dividers, brackets or signal-flow arrows. Click a line to set its thickness, add an arrowhead or type its exact length; drag an end to re-aim it. Lines are broken round holes.
 - **Pictures:** click **Picture…** and pick a PNG, JPG or SVG (a glider, a logo). Its dark parts print. Drag it into place, then click it to set its width, turn it, print its light parts instead, or delete it.
 - **Copy and paste:** select a text, a picture or holes you added, press **Ctrl+C**, then **Ctrl+V** to paste a copy at the pointer (or right-click the panel and choose *Paste here*). Copying a label from the PCB pastes it as a text of your own.
+- **Reset** (next to Undo) starts the panel again from your PCB: the same size as the PCB, with its holes and nothing else. It asks first, and Undo brings it all back.
 - **Undo** (or Ctrl+Z) takes back the last change, whether it's a setting on the left (panel size, labels, artwork options…) or something you did in the preview, up to 50 steps.
 
 ![Your own text, pictures and boxes](docs/images/text_pictures.png)
