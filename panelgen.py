@@ -925,7 +925,7 @@ def check_rails(pcb, tpl, x1, y1, x2, y2, log, bad=None):
                 bad.append((fp.ref, b))
     return n
 
-def fill_preview(pv, groups, outline, panel_box, a, log, problems, eurorack, pcb_box, rail_bad, uncut=(), **extra):
+def fill_preview(pv, groups, outline, panel_box, a, log, problems, eurorack, pcb_box, rail_bad, uncut=(), cutouts=(), **extra):
     """Geometry for the window's live preview, each cutout marked ok / warn / error."""
     status = ['ok'] * len(groups)
     def mark(i, st):
@@ -950,7 +950,8 @@ def fill_preview(pv, groups, outline, panel_box, a, log, problems, eurorack, pcb
               rail_bad=rail_bad, uncut=list(uncut), log=list(log), problems=problems, label_font=a.label_font,
               label_bold=a.label_bold == 'on', **extra,
               shapes=[dict(geom=g['geom'], label=fmt_refs_plain(g), rule=g.get('rule') or 'slot', key=g.get('key'), anchor=an,
-                           manual=g.get('manual', False), status=st) for g, st, an in zip(groups, status, group_anchors(groups))])
+                           manual=g.get('manual', False), status=st, points=part_points(g, cutouts))
+                      for g, st, an in zip(groups, status, group_anchors(groups))])
 
 # footprint names that usually mean "this pokes through the panel"
 PANEL_HINTS = re.compile(r'jack|audio|potentiometer|(^|[_\W])pot|encoder|switch|(^|[_\W])sw[_\W]|button|toggle|tact|'
@@ -2230,6 +2231,17 @@ def line_shapes(lines, groups, outline, log):
 
 MARK_KINDS = ('circle', 'box', 'triangle', 'hexagon', 'diamond')
 
+def part_points(g, cutouts):
+    """The middle of each part in a cutout made of several (keys merged into one slot), so a label can be put over each."""
+    if len(g.get('ids', ())) < 2:
+        return []
+    pts = []
+    for c in cutouts:
+        if c['id'] in g['ids']:
+            b = c['geom'].bounds
+            pts.append(((b[0] + b[2]) / 2, (b[1] + b[3]) / 2))
+    return sorted(set((round(x, 3), round(y, 3)) for x, y in pts))
+
 def group_anchors(groups):
     """A name for each cutout that stays the same while the part moves: what a shape you put round a hole is attached to."""
     seen, out = {}, []
@@ -2802,7 +2814,7 @@ def main(argv=None, preview=None):
             import shutil
             shutil.copyfile(svg_path, artwork_path_for(out_path))
     if preview is not None:
-        fill_preview(preview, groups, outline, (x1, y1, x2, y2), a, log, problems,
+        fill_preview(preview, groups, outline, (x1, y1, x2, y2), a, log, problems, cutouts=cutouts + manual,
                      eurorack=hp if tpl else None,
                      pcb_box=((x1 + ER_PCB_INSET, y1 + ER_RAIL, x2 - ER_PCB_INSET, y2 - ER_RAIL) if tpl else (bx1, by1, bx2, by2)),
                      rail_bad=rail_bad, uncut=uncut, labels=placed, label_rows=label_rows,

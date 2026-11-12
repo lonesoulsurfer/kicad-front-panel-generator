@@ -1913,21 +1913,31 @@ class App(tk.Tk):
         cx, cy = (b[0] + b[2]) / 2 + dx, (b[1] + b[3]) / 2 + dy
         if free or not self.pv:
             return dx, dy, None, None
-        thr = 8 / self.cur_view[0]                     # 8 pixels, in mm
-        xs, ys = [], []
+        thr = max(8 / self.cur_view[0], 0.8)          # 8 pixels, in mm (never less than 0.8 mm, however far you zoom in)
+        strong = max(8 / self.cur_view[0], 2.0)       # lining up with a row of labels or a part's middle reaches further
+        xs, ys, sxs, sys_ = [], [], [], []
         moving = {'add:' + i for i in self.shape_sel} if kind == 'shape' else set()
         holes = [sh for sh in self.pv.get('shapes', []) if sh.get('key') not in moving]
         if kind in ('shape', 'newshape'):
             ys.append((self.pv['panel_box'][1] + self.pv['panel_box'][3]) / 2)
         for rx, ry in self.ruler_points():             # a ruler left on the panel: its ends and middle
             xs.append(rx); ys.append(ry)
+        texty = kind not in ('shape', 'newshape')
         for sh in holes:
             g = sh['geom'].bounds
             xs.append((g[0] + g[2]) / 2); ys.append((g[1] + g[3]) / 2)
+            if texty:
+                sxs.append((g[0] + g[2]) / 2)
+            for px, py in sh.get('points', []):       # each key in a merged slot
+                xs.append(px)
+                if texty:
+                    sxs.append(px)
         for L in self.pv.get('labels', []):
-            if d is not None and L is d:
+            if d is not None and (L is d or (L.get('fid') is not None and L.get('fid') == d.get('fid'))):
                 continue
             xs.append(L['x']); ys.append(L['y'])
+            if texty:
+                sys_.append(L['y'])                    # level with the labels already there
         boxes = []                                     # other things on the panel, as boxes
         for key in ('art_items', 'knocked', 'images'):
             for it in self.pv.get(key, []):
@@ -1966,10 +1976,13 @@ class App(tk.Tk):
         top = max([o[3] for o in col if o[3] <= cy - h2 + 0.01] + [y1])
         bot = min([o[1] for o in col if o[1] >= cy + h2 - 0.01] + [y2])
         ys.append((top + bot) / 2)
-        bx = min(xs, key=lambda v: abs(v - cx), default=None)
-        by = min(ys, key=lambda v: abs(v - cy), default=None)
-        gx = bx if bx is not None and abs(bx - cx) <= thr else None
-        gy = by if by is not None and abs(by - cy) <= thr else None
+        def pick(cands, strong_cands, at):
+            sb = min(strong_cands, key=lambda v: abs(v - at), default=None)
+            if sb is not None and abs(sb - at) <= strong:
+                return sb
+            b_ = min(cands, key=lambda v: abs(v - at), default=None)
+            return b_ if b_ is not None and abs(b_ - at) <= thr else None
+        gx, gy = pick(xs, sxs, cx), pick(ys, sys_, cy)
         if kind in ('shape', 'newshape'):              # not lined up with anything: whole half millimetres from the panel corner
             if gx is None:
                 dx += round((cx - x1) * 2) / 2 + x1 - cx
