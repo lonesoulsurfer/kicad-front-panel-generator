@@ -1263,6 +1263,7 @@ class App(tk.Tk):
                 self.show_result(text, [], 2, preview=True)
             return
         self.pv = pv
+        self.save_settings(pv.get('settings'))
         self.note_guides(pv['log'])
         if 'label_edits' in pv:
             self.ui['label_edits'] = dict(pv['label_edits'])
@@ -3463,6 +3464,23 @@ class App(tk.Tk):
         self.refresh_states()
         self.update_preview()
         self.restoring = False
+
+    def save_settings(self, settings):
+        """The settings on the left, saved into the panel's memory file as you change them - not only when you generate -
+        so closing the window never loses them."""
+        b = self.board.get()
+        if not settings or not b:
+            return
+        mem_path = panel_paths(b)[1]
+        mem = load_json(mem_path)
+        if not mem or mem.get('settings') == settings:
+            return               # no panel yet (saved with the first Generate), or nothing changed
+        mem['settings'] = settings
+        try:
+            with open(mem_path, 'w', encoding='utf-8') as f:
+                json.dump(mem, f, indent=1)
+        except OSError:
+            pass
 
     def persist_ui(self, record=True):
         """Save ignored parts and label edits into the panel's memory file straight away (if there is one yet)."""

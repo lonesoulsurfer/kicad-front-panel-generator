@@ -136,7 +136,7 @@ The red holes aren't printed. They're redrawn from the PCB every time you genera
 
 When the preview looks right, click **Generate panel**. This makes the panel file (`<your board>_panel.kicad_pcb`) in a `Front Panel` folder next to your PCB, and opens it in KiCad so you can check it, including in the 3D viewer.
 
-Your settings are saved with each board. If you change the PCB, the settings or the artwork later, the status line next to the buttons tells you the panel is out of date. Click **Generate panel** again to update it.
+Your settings and everything you do in the preview are saved with each board as you go, so you can close the window at any time. If you change the PCB, the settings or the artwork later, the status line next to the buttons tells you the panel is out of date. Click **Generate panel** again to update it.
 
 Close the panel in KiCad before you generate again, so the file can be replaced.
 

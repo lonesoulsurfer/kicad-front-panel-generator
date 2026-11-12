@@ -34,6 +34,7 @@
 - **Delete key** works on whatever is selected. A label from the PCB is hidden rather than deleted (Edit labels or Undo brings it back).
 - **Parts under a window show in the preview:** keys under one big opening (or merged into one slot) are drawn as blue dotted outlines with a cross at their middle.
 - **Texts line up in rows by themselves:** a text you add or drag snaps over the middle of each of those keys (the nearest one to it), and level with the labels already there, from up to 2 mm away at any zoom.
+- **Settings save as you go.** The settings on the left are saved with the panel as soon as you change them, like your work in the preview, so closing the window without generating no longer loses them. (Generate panel is still what updates the panel file in KiCad.)
 - **Measure:** hold Ctrl (or Shift) to keep the ruler dead level or straight up and down.
 - **The ruler is also a guide.** After the first click, type a length (say 16) and press Enter to set the other end exactly that far away. The ruler then stays on the panel, and anything you drag, add or paste snaps to its ends and its middle. Type a new length to change it; *Clear ruler* removes it; M starts a new one.
 - **Openings section removed.** "Make every opening bigger" is no longer in the window (still on the command line as `--grow`), and parts that look like they need a cutout are always flagged.

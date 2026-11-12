@@ -2823,7 +2823,22 @@ def main(argv=None, preview=None):
         if not os.path.exists(artwork_path_for(out_path)):
             import shutil
             shutil.copyfile(svg_path, artwork_path_for(out_path))
+    def settings_now():
+        """Every setting, as saved in the panel's memory file (and given to the window with each preview)."""
+        return dict(margin=a.margin, **{f'margin_{k}': v for k, v in m.items()},
+                                       screws=a.screws, screw_dia=a.screw_dia, screw_inset=a.screw_inset, screw_slot=a.screw_slot, rail_slot=a.rail_slot,
+                                       corner_radius=a.corner_radius, grow=a.grow, min_web=a.min_web,
+                                       panel_layer=a.panel_layer, svg=bool(a.svg), check_uncut=a.check_uncut,
+                                       labels=a.labels, label_size=a.label_size, label_gap=a.label_gap, label_pos=a.label_pos,
+                                       label_font=a.label_font, label_bold=a.label_bold, label_caps=a.label_caps,
+                                       artwork=a.artwork, artwork_file=a.artwork_file,
+                                       **{k: getattr(a, k) for k in ('extras', 'auto_art', 'art_style', 'art_scale', 'art_rings', 'art_outputs', 'art_border',
+                                                                     'art_border_radius', 'art_border_gap', 'ring_width', 'ring_gap', 'art_groups', 'art_tabs',
+                                                                     'art_title', 'art_maker', 'title_size', 'title_font', 'title_bold', 'title_vertical', 'title_mirror',
+                                                                     'knob_size', 'pot_sweep', 'scale_text')})
+
     if preview is not None:
+        preview['settings'] = settings_now()
         fill_preview(preview, groups, outline, (x1, y1, x2, y2), a, log, problems, cutouts=cutouts + manual, fps=part_fps,
                      eurorack=hp if tpl else None,
                      pcb_box=((x1 + ER_PCB_INSET, y1 + ER_RAIL, x2 - ER_PCB_INSET, y2 - ER_RAIL) if tpl else (bx1, by1, bx2, by2)),
@@ -2872,17 +2887,7 @@ def main(argv=None, preview=None):
                'label_edits': label_edits, 'ignore_uncut': ignore_uncut, 'texts': texts, 'art_pos': a._art_pos,
                'images': [{k: v for k, v in i.items() if not k.startswith('_')} for i in images], 'shapes': added,
                'lines': [{k: v for k, v in i.items() if not k.startswith('_')} for i in lines], 'titles': a._titles, 'marks': marks,
-               'settings': dict(margin=a.margin, **{f'margin_{k}': v for k, v in m.items()},
-                                screws=a.screws, screw_dia=a.screw_dia, screw_inset=a.screw_inset, screw_slot=a.screw_slot, rail_slot=a.rail_slot,
-                                corner_radius=a.corner_radius, grow=a.grow, min_web=a.min_web,
-                                panel_layer=a.panel_layer, svg=bool(a.svg), check_uncut=a.check_uncut,
-                                labels=a.labels, label_size=a.label_size, label_gap=a.label_gap, label_pos=a.label_pos,
-                                label_font=a.label_font, label_bold=a.label_bold, label_caps=a.label_caps,
-                                artwork=a.artwork, artwork_file=a.artwork_file,
-                                **{k: getattr(a, k) for k in ('extras', 'auto_art', 'art_style', 'art_scale', 'art_rings', 'art_outputs', 'art_border',
-                                                              'art_border_radius', 'art_border_gap', 'ring_width', 'ring_gap', 'art_groups', 'art_tabs',
-                                                              'art_title', 'art_maker', 'title_size', 'title_font', 'title_bold', 'title_vertical', 'title_mirror',
-                                                              'knob_size', 'pot_sweep', 'scale_text')})},
+               'settings': settings_now()},
               open(mem_path, 'w', encoding='utf-8'), indent=1)
 
 
