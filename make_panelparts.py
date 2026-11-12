@@ -37,6 +37,7 @@ PARTS = {
     'Panel_Jack_6.2mm':      ('3.5 mm panel jack, 6.2 mm hole', [circle(0, 0, 6.2)], 5),
     'Panel_Jack_7.2mm':      ('Larger panel jack, 7.2 mm hole', [circle(0, 0, 7.2)], 5.5),
     'Panel_Toggle_5.2mm':    ('Panel-mounted toggle switch, 5.2 mm hole', [circle(0, 0, 5.2)], 4.5),
+    'Panel_Tact_4.0mm':      ('6x6 mm tactile switch button through the panel, 4.0 mm hole', [circle(0, 0, 4.0)], 3.5),
     'Panel_LED_3.2mm':       ('3 mm LED, 3.2 mm hole', [circle(0, 0, 3.2)], 3),
     'Panel_LED_5.2mm':       ('5 mm LED, 5.2 mm hole', [circle(0, 0, 5.2)], 4.5),
     'Panel_USB-C_Charge_12x4.3mm': (

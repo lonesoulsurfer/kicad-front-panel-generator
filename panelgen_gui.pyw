@@ -34,7 +34,7 @@ TITLE_DIRS = {'Across': 'off', 'Stacked': 'stacked', 'On its side': 'on', 'On it
 SCALES = {'None': 'none', 'Ticks': 'ticks', 'Numbers 0-10': 'numbers', 'Centre zero (- 0 +)': 'bipolar'}
 KICAD_FONT = "KiCad's own font"
 HOLE_SIZES = ('3.2  ·  3 mm LED or M3 screw', '5.2  ·  5 mm LED or small toggle', '6.2  ·  3.5 mm jack', '6.5  ·  mini toggle switch',
-              '7.5  ·  pot or encoder', '10  ·  6.35 mm jack', '2.7  ·  M2.5 screw', '2.2  ·  M2 screw')
+              '7.5  ·  pot or encoder', '4  ·  6x6 tactile switch', '10  ·  6.35 mm jack', '2.7  ·  M2.5 screw', '2.2  ·  M2 screw')
 SHAPE_NAMES = {'hole': 'hole', 'rect': 'rectangle', 'slot': 'slot'}
 ALT_MASK = 0x20000 if sys.platform == 'win32' else 0x0008   # Alt held (on Windows, 0x0008 is Num Lock)
 

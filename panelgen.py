@@ -258,6 +258,11 @@ def find_centre(fp, method, log):
             log.append(f"CHECK {fp.ref}: no F.Fab circle in {fp.lib}, centred on its silkscreen circle instead")
             return (c[0], c[1])
         return None
+    if method == 'circle_or_box':         # the round button on F.Fab if it's drawn, else the middle of the part
+        c = fp.body_circle()
+        if c:
+            return (c[0], c[1])
+        method = 'fab_box'
     if method == 'fab_box':
         c = fp.fab_box_centre()
         if c is None:

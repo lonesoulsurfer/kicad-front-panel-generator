@@ -95,6 +95,8 @@ Panels made by older versions (sitting next to the PCB) are **moved into the fol
 | 2.8" TFT, smaller module (`TFT_Displays:ILI9341_TFT`) | 56 × 41 window + mounting holes at 2.2 mm | centre of the F.Fab outline |
 | 2.4" ST7789V TFT | 49 × 37 + 0.5 clearance = 49.5 × 37.5 window + mounting holes | centre of the F.Fab outline |
 | Alps SKRC 9 mm switch | 6.6 mm | footprint origin (the stem) |
+| Tactile switch 6×6 mm (SW_PUSH_6mm, PTS645, B3S-1000…) | 4.0 mm | the button circle on F.Fab, else the middle of the part |
+| Tactile switch 12×12 mm (SW_PUSH_12mm, PTS125…) | 7.5 mm | the button circle on F.Fab, else the middle of the part |
 | 3.5" ST7796S TFT | 85.8 × 56.5 window (landscape; glass is 85.00 × 55.26) + mounting holes at 2.2 mm | middle of the module's mounting holes |
 | PJ-320D jacks (horizontal), 3×6 tactile switch | no cutout, and no "no cutout" warning | - |
 | Mounting holes | 2.2 mm | footprint origin |
@@ -234,7 +236,7 @@ For a part with several holes that must not drift apart (a USB-C charge port and
 
 Add `PanelParts.pretty` as a footprint library. Place its parts in the **panel** file and position them exactly using KiCad's properties (X/Y), Align and Distribute.
 
-- `Panel_Jack_6.2mm`, `Panel_Jack_7.2mm`, `Panel_Toggle_5.2mm`, `Panel_LED_3.2mm`, `Panel_LED_5.2mm`
+- `Panel_Jack_6.2mm`, `Panel_Jack_7.2mm`, `Panel_Toggle_5.2mm`, `Panel_Tact_4.0mm`, `Panel_LED_3.2mm`, `Panel_LED_5.2mm`
 - `Panel_USB-C_Charge_12x4.3mm`: slot and both screw holes in one footprint, so they can't drift
 - `Panel_Screw_2.2mm`, `Panel_Screw_3.2mm`
 
