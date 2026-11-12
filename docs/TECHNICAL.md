@@ -105,6 +105,21 @@ Panels made by older versions (sitting next to the PCB) are **moved into the fol
 
 Edit `panel_rules.json` to add parts. Rules match on the footprint library ID (a single glob or a list). `clearance` adds wiggle room to each dimension. `"shape": "none"` marks a part that never goes through the panel (no cutout, and no warning about it). `"centre": "npth_centre"` centres a cutout on the middle of the footprint's mounting holes, which suits screen modules.
 
+### Changing one part's hole: the Panel field
+
+Add a field named **`Panel`** to a footprint on the PCB (or to its symbol in the schematic, then Update PCB from Schematic) to set that part's cutout yourself. It's centred where the part's rule would centre it (or on the middle of its F.Fab outline if there's no rule), and moves with the part.
+
+| Value | Cutout |
+|---|---|
+| `circle:6.5` | round hole, 6.5 mm across |
+| `square:7` | square, 7 mm across |
+| `rect:8x6` | rectangle, 8 mm wide by 6 mm high (as the part sits at 0 degrees) |
+| `skip` | no cutout, and no "no cutout?" warning |
+
+After the shape you can add `holes` (also cut the part's mounting holes, at 2.2 mm), `holes=3.2` (at that size), or `offset=X,Y` (move the cutout X, Y mm from its usual centre). For example `rect:56x40 holes offset=0,1.5`.
+
+Typical use: a tactile switch with a cap on it, `circle:` the cap's size plus 0.5 mm.
+
 ### Drawing a cutout on the PCB (User.1)
 
 **Anything you draw on the User.1 layer of the PCB becomes a cutout, exactly as drawn.** It's the quickest way to add a screen window, an odd-shaped hole, or anything panelgen has no rule for:

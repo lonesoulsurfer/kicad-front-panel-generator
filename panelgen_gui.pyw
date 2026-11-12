@@ -23,6 +23,9 @@ ART_STYLES = {   # what each style switches on
 }
 STYLE_KEYS = ('scale', 'rings', 'outputs', 'border', 'tabs')
 GROUP_KINDS = ('pot', 'button', 'jack')
+TECH_URL = 'https://github.com/lonesoulsurfer/kicad-front-panel-generator/blob/main/docs/TECHNICAL.md'
+HOW_PANEL = [("Change the size of one part's hole", "In KiCad, on the PCB, open the part's properties and add a field named Panel. Its value sets the hole: circle:6.5 (a 6.5 mm round hole), square:7, rect:8x6. The hole stays centred on the part and moves with it. For several parts the same (all the tactile switches with caps, say), add the field to the symbol in the schematic and use Update PCB from Schematic."), ("Give a hole to a part the generator doesn't know", 'Draw the hole on the User.1 layer of the PCB: any closed shape there is cut exactly as drawn. Or add a Panel field (above). If you use the part often, add a rule for it to panel_rules.json, next to the app.'), ('Stop a part getting a hole', "Add a Panel field with the value skip. Or, if it shows an orange 'no cutout?' box, click the box. Or delete its hole in the panel file in KiCad - it then stays off, and is listed under Holes you removed or changed."), ("Add a hole for something that isn't on the PCB", 'A jack or switch wired to the board: use Extra holes above. Or, in the panel file in KiCad, place a part from PanelParts.pretty (jacks, LEDs, toggles, tactile switch, screws, a USB-C charge slot).'), ('Move or resize a hole just on the panel', 'Change it in the panel file in KiCad and save. Your version is kept every time you generate, and listed under Holes you removed or changed - pick it there and click Bring back to undo it.'), ('Show where a part is without cutting a hole', 'Draw it on the User.2 layer of the PCB. It shows in the preview as a blue guide to line things up with, and is never cut or printed.'), ('Start again from the PCB', 'Reset (above the preview) takes the panel back to the bare PCB: its own size and holes, nothing added. Undo brings it all back.')]
+HOW_ART = [('Change what a label says', "Click it (or right-click, Change text). To set it on the PCB so it's the same every time, add a field named Label to the part in KiCad - it's used instead of the part's Value."), ('Line labels up', 'Drag a label: it snaps level with the others, to the middle of holes and of the keys under a window (the blue dotted outlines), and half way between two holes. Hold Alt to place it freely.'), ('Change several things at once', 'Drag a box round them, or Shift-click each. Then drag them together, copy them (Ctrl+C, Ctrl+V), or press Delete.'), ('White text on a black bar', "Click the text and set Box to A filled bar - the text is cut out of it. Drag the bar's ends to stretch it over a row of keys."), ('Put a shape round a hole', 'Set it up under Shapes, then right-click the hole and choose Add a shape round it. A filled box pulled over a label cuts the label out of it.'), ('Measure, or place something an exact distance away', 'Click Measure, click the first point, then type a length and press Enter. The ruler stays as a guide: things snap to its ends and middle. Hold Ctrl to keep it straight.'), ('Anything else', 'Switch on Artwork from Inkscape and draw it there: black prints, white cuts out of black.')]
 MULTI = ('text', 'label', 'line', 'image')    # what a box or Shift-click can pick up, besides holes you added
 MARKS = {'Circle': 'circle', 'Box': 'box', 'Triangle': 'triangle', 'Hexagon': 'hexagon', 'Diamond': 'diamond'}
 LINE_ENDS = {'Plain': 'none', 'Arrow at the end': 'end', 'Arrows at both ends': 'both'}
@@ -542,6 +545,15 @@ class App(tk.Tk):
         ttk.Label(det, text="Draw on the 'Artwork' layer, save in Inkscape, and the preview updates by itself.",
                   style='Dim.TLabel', wraplength=440).pack(anchor='w', pady=(4, 0))
 
+
+        # how to: the tricks for what the generator can't guess, at the bottom of each tab
+        for key, items in (('howto_panel', HOW_PANEL), ('howto_art', HOW_ART)):
+            s = self.section(key, 'How to…', 'Tricks for what the generator can\'t guess. Click a question to see the answer.')
+            for q, a in items:
+                self.howto_item(s, q, a)
+            row = ttk.Frame(s); row.pack(fill='x', pady=(8, 0))
+            ttk.Button(row, text='The full technical guide', command=lambda: __import__('webbrowser').open(TECH_URL)).pack(side='left')
+
         self.show_selected()
         self.left_end = ttk.Frame(left); self.left_end.pack(fill='x')
 
@@ -718,6 +730,19 @@ class App(tk.Tk):
             elif not shut and not body.winfo_manager():
                 body.pack(fill='x')
 
+    def howto_item(self, parent, q, a):
+        """A question you click to show (or hide) its answer."""
+        f = ttk.Frame(parent); f.pack(fill='x', pady=(2, 0))
+        head = ttk.Label(f, text='▸  ' + q, cursor='hand2', foreground='#2563eb')
+        head.pack(anchor='w')
+        ans = ttk.Label(f, text=a, wraplength=420, justify='left', style='Dim.TLabel')
+        def flip(_=None):
+            if ans.winfo_manager():
+                ans.pack_forget(); head.config(text='▸  ' + q)
+            else:
+                ans.pack(anchor='w', padx=(18, 0), pady=(2, 6)); head.config(text='▾  ' + q)
+        head.bind('<Button-1>', flip)
+
     def form(self, parent):
         """A block of settings: names down the left, their boxes lined up down the right."""
         f = ttk.Frame(parent); f.pack(fill='x')
@@ -747,8 +772,8 @@ class App(tk.Tk):
             ttk.Label(cell, text=note, style='Dim.TLabel').pack(side='left', padx=(10, 0))
         return e
 
-    TABS = {'panel': ('size', 'rail', 'case', 'holes', 'restore'),
-            'art': ('style', 'title', 'labels', 'pots', 'shapes', 'border', 'lines', 'extras', 'art')}
+    TABS = {'panel': ('size', 'rail', 'case', 'holes', 'restore', 'howto_panel'),
+            'art': ('style', 'title', 'labels', 'pots', 'shapes', 'border', 'lines', 'extras', 'art', 'howto_art')}
 
     def show_tab(self, tab):
         if tab != self.tab:
