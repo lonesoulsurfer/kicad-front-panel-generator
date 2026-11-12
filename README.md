@@ -52,7 +52,7 @@ Every change shows in the preview straight away. Use the **mouse wheel** to zoom
 
 - Pick a **hole size** from the list (or type your own), click **Hole**, then click the panel where it goes. **Rectangle** and **Slot** work the same way. You can also right-click the panel and add one there.
 - It snaps into line with the other holes; where there's nothing to line up with, it lands on a whole half millimetre. Hold **Alt** to place it freely.
-- Click it and its settings appear on the left: how far its middle is from the panel's **left edge** and **top edge**, and its size. Type exact numbers there.
+- Click it and its settings appear on the left: how far its middle is from the panel's **left edge** and **top edge**, and its size. Type exact numbers there. Or drag one of its white corner squares to resize it; a rectangle shows its width and height as you drag.
 - **Several at once:** drag a box round holes you added (or Shift-click them) to select them, then drag them together, **line them up** in a row or column, or type their **spacing**, middle to middle.
 - **Copy** (Ctrl+D) repeats the selection with the same sizes and spacing. Two holes in a row become four, evenly spaced; drag the copy if it belongs somewhere else. **Delete** removes them.
 - **Measure** (above the preview) is a ruler: click two points to see how far apart they are. It snaps to the middle and the edge of holes and to the panel edges. Hold **Ctrl** to keep the measurement dead level or straight up and down.
@@ -84,7 +84,7 @@ Don't want to open Inkscape? The **Artwork** tab can draw the artwork from your 
 
 - **Pot scales:** tick marks, 0–10 numbers or centre-zero (− 0 +) round each pot, over a 300° turn. Set the **Knob** size so the scale and the label start outside the knob.
 - **Rings** round push buttons. Set how thick the ring is and how far it sits from the hole.
-- **Vertical outputs in filled boxes:** any jack that comes up through the panel and whose label says OUT gets a solid box with the label cut out of it, the usual way modular panels show outputs. A text you add saying OUT right next to a jack counts too.
+- **Vertical outputs in filled boxes:** any jack that comes up through the panel and whose label says OUT gets a solid box with the label cut out of it, the usual way modular panels show outputs. A text you add saying OUT right next to a jack counts too. So does a round hole you added under Extra holes with such a text next to it (a wired jack that isn't on the PCB).
 - **Boxes round rows of controls:** tick *Box* under Pots, Buttons or Jacks for a box round 3 or more of them in a row or column, scales and labels inside. Drag its top, bottom or a side to resize it; the other side follows so it stays centred.
 - **Horizontal jacks in tabs:** jacks lying flat at the panel edge (the plug goes in from the side) get a filled tab hanging from the edge with their labels cut out. Labels like MIDI IN and MIDI OUT become IN / OUT with MIDI underneath. Drag an edge of a tab or output box to make it bigger; it snaps to the edges of the others, so you can make them all the same size.
 - **Border** (square, following the panel, or with its own rounded corners; set its **gap from the edge**, or leave 0 and it sits just inside the case holes) and a **title**, across the top, stacked down a side (letters one under another) or turned on its side (plus your name or brand, small, along the bottom). They go in the first free spot; drag them anywhere.

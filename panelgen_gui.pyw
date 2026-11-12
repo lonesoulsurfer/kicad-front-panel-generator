@@ -28,7 +28,7 @@ MY_STYLE = 'My style'
 STYLE_VARS = ('labels_on', 'label_pos', 'label_gap', 'label_size', 'label_font', 'label_bold', 'label_caps', 'art_scale',
               'knob_size', 'art_rings', 'ring_width', 'ring_gap', 'art_outputs', 'art_tabs', 'art_border', 'border_gap',
               'border_radius', 'title_size', 'title_dir', 'art_maker', 'line_w') + tuple('art_groups_' + k for k in GROUP_KINDS)
-TITLE_DIRS = {'Across': 'off', 'Stacked': 'stacked', 'On its side': 'on'}
+TITLE_DIRS = {'Across': 'off', 'Stacked': 'stacked', 'On its side': 'on', 'On its side, mirrored': 'on-mirror'}
 SCALES = {'None': 'none', 'Ticks': 'ticks', 'Numbers 0-10': 'numbers', 'Centre zero (- 0 +)': 'bipolar'}
 KICAD_FONT = "KiCad's own font"
 HOLE_SIZES = ('3.2  ·  3 mm LED or M3 screw', '5.2  ·  5 mm LED or small toggle', '6.2  ·  3.5 mm jack', '6.5  ·  mini toggle switch',
@@ -144,7 +144,7 @@ class App(tk.Tk):
         v['labels_on'] = tk.BooleanVar(); v['label_pos'] = tk.StringVar(value='above')
         v['label_gap'] = tk.StringVar(value='1.5'); v['label_size'] = tk.StringVar(value='2')
         v['label_font'] = tk.StringVar(value=KICAD_FONT); v['label_bold'] = tk.BooleanVar(); v['label_caps'] = tk.BooleanVar()
-        self.ui = {'ignore': {}, 'label_edits': {}, 'texts': [], 'art_pos': {}, 'images': [], 'shapes': [], 'lines': []}   # ignored parts, label changes, your texts, moved title, pictures
+        self.ui = {'ignore': {}, 'label_edits': {}, 'texts': [], 'art_pos': {}, 'images': [], 'shapes': [], 'lines': [], 'titles': []}   # ignored parts, label changes, your texts, moved title, pictures
         self.undo_stack, self.state_prev, self.restoring = [], None, False
         self.editor = None
         self.mode, self.pv, self.after_id, self.loading = None, None, None, False
@@ -422,7 +422,8 @@ class App(tk.Tk):
         ttk.Entry(field(f, 'Text'), textvariable=v['art_title'], width=27).pack(side='left')
         mm(field(f, 'Size', 'Or click the title in the preview and drag one of its corners.'), 'title_size')
         c = field(f, 'Direction', 'Across, along the top. Stacked: the letters one under another, each the right way up. '
-                                  'On its side: turned to read from the bottom. Drag it anywhere after.')
+                                  'On its side: turned to read from the bottom. On its side, mirrored: turned the other way, to read from the top '
+                                  '(for a copy on the opposite side of the panel). Drag it anywhere after.')
         ttk.Combobox(c, textvariable=v['title_dir'], values=list(TITLE_DIRS), width=24, state='readonly').pack(side='left')
         c = field(f, 'Maker name', 'Your name or brand, small, along the bottom. Leave empty for none.')
         ttk.Entry(c, textvariable=v['art_maker'], width=27).pack(side='left')
@@ -1007,7 +1008,8 @@ class App(tk.Tk):
                        'texts': [dict(t) for t in mem.get('texts', [])], 'art_pos': dict(mem.get('art_pos', {})),
                        'images': [dict(i) for i in mem.get('images', [])],
                        'shapes': [dict(i) for i in mem.get('shapes', [])],
-                       'lines': [dict(i) for i in mem.get('lines', [])]}
+                       'lines': [dict(i) for i in mem.get('lines', [])],
+                       'titles': [dict(i) for i in mem.get('titles', [])]}
             self.reset_undo()
         finally:
             self.loading = False
@@ -1319,6 +1321,10 @@ class App(tk.Tk):
             if a['id'] in self.shape_sel:
                 b = a['box']
                 c.create_rectangle(X(b[0]) - 3, Y(b[1]) - 3, X(b[2]) + 3, Y(b[3]) + 3, outline='#2563eb', width=2, dash=(5, 2))
+                if len(self.shape_sel) == 1:           # one on its own: a square on each corner to drag it bigger or smaller
+                    for hx in (X(b[0]) - 3, X(b[2]) + 3):
+                        for hy in (Y(b[1]) - 3, Y(b[3]) + 3):
+                            c.create_rectangle(hx - 4, hy - 4, hx + 4, hy + 4, fill='#ffffff', outline='#2563eb', width=2)
         self.draw_measure()
         for ref, (bx1, by1, bx2, by2) in pv.get('rail_bad', []):
             c.create_rectangle(X(bx1), Y(by1), X(bx2), Y(by2), outline=C_ERR, width=2, dash=(4, 2))
@@ -1368,6 +1374,16 @@ class App(tk.Tk):
             return
         t = None if self.adding else self.target_at(e)
         sel = None if self.adding else self.selected_target()
+        if not self.adding and len(self.shape_sel) == 1 and self.pv and getattr(self, 'cur_view', None):
+            sc, ox, oy = self.cur_view                     # a corner of the one hole, rectangle or slot that's selected
+            a = next((a for a in self.pv.get('added', []) if a['id'] == self.shape_sel[0]), None)
+            if a:
+                b = a['box']
+                for i, hx in enumerate((ox + b[0] * sc - 3, ox + b[2] * sc + 3)):
+                    for j, hy in enumerate((oy + b[1] * sc - 3, oy + b[3] * sc + 3)):
+                        if abs(e.x - hx) <= 8 and abs(e.y - hy) <= 8:
+                            self.drag = ('shapesize', e.x, e.y, a, False, (i, j), None)
+                            return
         if sel and sel[1] == 'line' and getattr(self, 'cur_view', None):          # an end of the selected line: re-aim it
             sc, ox, oy = self.cur_view
             d = sel[2]
@@ -1427,8 +1443,40 @@ class App(tk.Tk):
             return edge in 'lr'
         return d['kind'] == 'textbox' and (edge in 'tb' or len(d.get('members', [])) > 1)
 
+    def shape_size_drag(self, e):
+        """Dragging a corner of a hole, rectangle or slot you added. A rectangle or slot keeps its opposite corner where it
+        is, and its width and height change separately; a hole grows about its middle. Sizes go in 0.1 mm steps (Alt: finer)."""
+        _, x0, y0, a, moved, (i, j), _ = self.drag
+        if not moved and abs(e.x - x0) + abs(e.y - y0) < 3:
+            return
+        sc, ox, oy = self.cur_view
+        x, y = self.to_mm(e)
+        b = a['box']
+        step = 0.01 if getattr(e, 'state', 0) & ALT_MASK else 0.1
+        rnd = lambda v: max(0.5, round(v / step) * step)
+        if a['kind'] == 'hole':
+            cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
+            d = rnd(2 * max(abs(x - cx), abs(y - cy)))
+            new, nb, txt = dict(d=round(d, 3)), (cx - d / 2, cy - d / 2, cx + d / 2, cy + d / 2), f'{d:g} mm across'
+        else:
+            fx, fy = b[2] if i == 0 else b[0], b[3] if j == 0 else b[1]         # the corner that stays put
+            w, h = rnd(abs(x - fx)), rnd(abs(y - fy))
+            nx, ny = (fx - w if i == 0 else fx + w), (fy - h if j == 0 else fy + h)
+            nb = (min(fx, nx), min(fy, ny), max(fx, nx), max(fy, ny))
+            new = dict(w=round(w, 3), h=round(h, 3), x=round((nb[0] + nb[2]) / 2, 3), y=round((nb[1] + nb[3]) / 2, 3))
+            txt = f'{w:g} × {h:g} mm'
+        c = self.canvas
+        c.delete('dragbox')
+        c.create_rectangle(ox + nb[0] * sc, oy + nb[1] * sc, ox + nb[2] * sc, oy + nb[3] * sc, outline='#ffd28a', dash=(4, 2),
+                           width=2, tags='dragbox')
+        ti = c.create_text(ox + (nb[0] + nb[2]) / 2 * sc, oy + nb[1] * sc - 14, text=txt, fill='#ffffff', font=self.f_head, tags='dragbox')
+        r = c.create_rectangle(*[v + o_ for v, o_ in zip(c.bbox(ti), (-4, -2, 4, 2))], fill='#1f3a7a', outline='#ffd28a', tags='dragbox')
+        c.tag_raise(ti, r)
+        self.hover.config(text=('Hole: ' if a['kind'] == 'hole' else 'Width × height: ') + txt)
+        self.drag = ('shapesize', x0, y0, a, True, (i, j), new)
+
     def resizable(self, t):
-        return t[1] in ('image', 'text') or (t[1] == 'art' and t[2].get('key') == 'title')
+        return t[1] in ('image', 'text') or (t[1] == 'art' and str(t[2].get('key')).startswith('title'))
 
     def resize_drag(self, e):
         """Dragging a corner: the thing grows or shrinks about its middle, keeping its shape."""
@@ -1461,6 +1509,12 @@ class App(tk.Tk):
             if not dry and o:
                 o['size'] = new
             return f'Text: {new:g} mm'
+        if str(d.get('key')).startswith('title:'):          # a copy of the title has its own size
+            new = round(max(1.5, min(60.0, float(d.get('h', 5)) * f)), 1)
+            o = self.own_title(d['key'])
+            if not dry and o is not None:
+                o['size'] = new
+            return f'Title copy: {new:g} mm'
         try:
             cur = float(self.vars['title_size'].get())
         except ValueError:
@@ -1473,6 +1527,8 @@ class App(tk.Tk):
     def motion(self, e):
         if self.drag and self.drag[0] == 'resize':
             return self.resize_drag(e)
+        if self.drag and self.drag[0] == 'shapesize':
+            return self.shape_size_drag(e)
         if self.drag and self.drag[0] == 'lineend':
             _, x0, y0, t, moved, n, _ = self.drag
             if not moved and abs(e.x - x0) + abs(e.y - y0) < 3:
@@ -1559,6 +1615,17 @@ class App(tk.Tk):
         self.drag = ('band', x0, y0, True)
 
     def release(self, e):
+        if self.drag and self.drag[0] == 'shapesize':
+            _, _, _, a, moved, _, new = self.drag
+            self.drag = None
+            self.canvas.delete('dragbox')
+            o = next((o for o in self.ui.get('shapes', []) if o['id'] == a['id']), None)
+            if moved and new and o:
+                o.update(new)
+                if o['kind'] != 'hole':
+                    self.last_size[o['kind']] = (o['w'], o['h'])
+                self.persist_ui(); self.update_preview()
+            return
         if self.drag and self.drag[0] == 'lineend':
             _, _, _, t, moved, n, p = self.drag
             self.drag = None
@@ -1941,6 +2008,25 @@ class App(tk.Tk):
             if not fid.startswith('tabword:'):
                 ttk.Button(row, text='Hide', command=lambda: (self.label_hide(fid), self.select(None))).pack(side='left', padx=6)
                 ttk.Button(row, text='Edit labels…', command=lambda: (self.edit_labels(), self.editor.focus_row(fid))).pack(side='left')
+        elif kind == 'art' and str(d['key']).startswith('title:'):
+            o = self.own_title(d['key'])
+            head.config(text='Copy of the title')
+            row = fld('Size')
+            def setts(v):
+                x = num(v, 1.5, 60)
+                if o is not None and x is not None and x != o.get('size'):
+                    o['size'] = x; self.persist_ui(); self.update_preview()
+            entry(row, f"{float(d.get('h', 5)):g}", setts); ttk.Label(row, text='mm').pack(side='left')
+            row = fld('Direction')
+            tdir = self._sel_tdir = tk.StringVar(value=next((k for k, x in TITLE_DIRS.items() if x == d.get('vert')), 'Across'))
+            cb = ttk.Combobox(row, textvariable=tdir, values=list(TITLE_DIRS), width=24, state='readonly'); cb.pack(side='left')
+            def setdir(_=None):
+                if o is not None:
+                    o['dir'] = TITLE_DIRS[tdir.get()]; self.persist_ui(); self.update_preview()
+            cb.bind('<<ComboboxSelected>>', setdir)
+            ttk.Label(box, text='It says what the title says. Drag it to move it; drag a corner to resize it.',
+                      style='Dim.TLabel', wraplength=440, justify='left').pack(anchor='w', pady=(4, 0))
+            ttk.Button(box, text='Delete this copy', command=lambda: self.title_delete(d['key'])).pack(anchor='w', pady=(6, 0))
         elif kind == 'art':
             head.config(text='Title' if d['key'] == 'title' else 'Maker name')
             ttk.Label(box, text=('Its text and size are just above. Or drag a corner of it in the preview to resize it.'
@@ -2397,6 +2483,15 @@ class App(tk.Tk):
         else:
             self.hover.config(text='Ruler: ' + txt + '  ·  click to set it, or type a length in mm and press Enter')
 
+    def own_title(self, key):
+        return next((o for o in self.ui.get('titles', []) if 'title:' + o['id'] == key), None)
+
+    def title_delete(self, key):
+        self.ui['titles'] = [o for o in self.ui.get('titles', []) if 'title:' + o['id'] != key]
+        self.ui.get('art_pos', {}).pop(key, None)
+        self.sel = None
+        self.persist_ui(); self.update_preview()
+
     # ------------------------------------------------------------------ lines you draw
     def own_line(self, lid):
         return next((o for o in self.ui.get('lines', []) if o['id'] == lid), None)
@@ -2464,6 +2559,8 @@ class App(tk.Tk):
         _, kind, d = t
         if kind == 'line':
             self.line_delete(d['id'])
+        elif kind == 'art' and str(d['key']).startswith('title:'):
+            self.title_delete(d['key'])
         elif kind == 'text':
             self.text_delete(d['fid']); self.select(None)
         elif kind == 'image':
@@ -2489,8 +2586,12 @@ class App(tk.Tk):
             self.clip = ('line', dict(o, x=(o['x1'] + o['x2']) / 2, y=(o['y1'] + o['y2']) / 2))
         elif kind == 'label' and not str(d['fid']).startswith('tabword:'):
             self.clip = ('text', dict(text=d.get('text', ''), x=d['x'], y=d['y']))       # a PCB label pastes as a text of yours
+        elif kind == 'art' and str(d['key']).startswith('title'):
+            b = t[0]                                   # the title: the copy says the same, with its own place, size and direction
+            self.clip = ('title', dict(dir=d.get('vert') or 'off', size=d.get('h'), x=(b[0] + b[2]) / 2, y=(b[1] + b[3]) / 2,
+                                       ax=d['at'][0], ay=d['at'][1]))
         else:
-            return say("That can't be copied: it's drawn from the panel. Copy works on holes you added, texts, labels, lines and pictures.")
+            return say("That can't be copied: it's drawn from the panel. Copy works on holes you added, texts, labels, lines, pictures and the title.")
         say('Copied - Ctrl+V pastes at the pointer.')
 
     def paste(self, at=None):
@@ -2520,7 +2621,12 @@ class App(tk.Tk):
         dx, dy, _, _ = self.snap(((tx, ty, tx, ty), 'newshape' if kind == 'shapes' else 'new', None), 0, 0)
         mx, my = tx + dx - cx, ty + dy - cy
         new = [dict(o, id=uuid.uuid4().hex[:8], x=round(o['x'] + mx, 3), y=round(o['y'] + my, 3)) for o in items]
-        if kind == 'line':
+        if kind == 'title':
+            o = new[0]
+            self.ui.setdefault('titles', []).append(dict(id=o['id'], dir=o['dir'], size=o['size']))
+            self.ui.setdefault('art_pos', {})['title:' + o['id']] = [round(o['ax'] + mx, 2), round(o['ay'] + my, 2)]
+            self.shape_sel, self.sel = [], ('art', 'title:' + o['id'])
+        elif kind == 'line':
             o = new[0]
             for k, m in (('x1', mx), ('y1', my), ('x2', mx), ('y2', my)):
                 o[k] = round(o[k] + m, 3)
@@ -2696,6 +2802,8 @@ class App(tk.Tk):
             m.add_command(label='Print the light parts instead' if not d.get('invert') else 'Print the dark parts',
                           command=lambda: self.image_invert(d['id']))
             m.add_command(label='Delete', command=lambda: self.image_delete(d['id']))
+        elif kind == 'art' and str(d['key']).startswith('title:'):
+            m.add_command(label='Delete this copy of the title', command=lambda: self.title_delete(d['key']))
         elif kind == 'art':
             m.add_command(label=f"Put the {d['what']} back in its automatic place", state='normal' if d.get('pinned') else 'disabled',
                           command=lambda: (self.ui['art_pos'].pop(d['key'], None), self.persist_ui(), self.update_preview()))
@@ -2803,7 +2911,8 @@ class App(tk.Tk):
                        'texts': [dict(t) for t in mem.get('texts', [])], 'art_pos': dict(mem.get('art_pos', {})),
                        'images': [dict(i) for i in mem.get('images', [])],
                        'shapes': [dict(i) for i in mem.get('shapes', [])],
-                       'lines': [dict(i) for i in mem.get('lines', [])]}
+                       'lines': [dict(i) for i in mem.get('lines', [])],
+                       'titles': [dict(i) for i in mem.get('titles', [])]}
             self.state_prev = self.snapshot()          # keep the history; changes made in KiCad become the new start
         self.fill_restore()
         panel, _ = panel_paths(board)
@@ -2959,6 +3068,7 @@ class App(tk.Tk):
         mem['texts'] = self.ui.get('texts', []); mem['art_pos'] = self.ui.get('art_pos', {}); mem['images'] = self.ui.get('images', [])
         mem['shapes'] = self.ui.get('shapes', [])
         mem['lines'] = self.ui.get('lines', [])
+        mem['titles'] = self.ui.get('titles', [])
         try:
             with open(mem_path, 'w', encoding='utf-8') as f:
                 json.dump(mem, f, indent=1)

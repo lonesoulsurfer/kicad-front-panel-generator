@@ -489,10 +489,12 @@ def manual_cutouts(tree, names=None):
         parts = []
         for x, y, ang, w, h in fp.npth_all():
             wx, wy = fp.world(x, y)
-            parts.append(Point(wx, wy).buffer(w / 2, quad_segs=64) if h is None else slot_geom(wx, wy, ang, w, h))
-        parts += edge_shapes(node, 'fp_', fp.world)
-        for g in parts:
-            out.append({'id': fid, 'ref': fp.ref, 'rule': 'hand-placed', 'merge': False, 'geom': g, 'manual': True, 'fp': fp})
+            parts.append((Point(wx, wy).buffer(w / 2, quad_segs=64), (wx, wy, w / 2)) if h is None
+                         else (slot_geom(wx, wy, ang, w, h), None))
+        parts += [(g, None) for g in edge_shapes(node, 'fp_', fp.world)]
+        for g, circ in parts:
+            out.append({'id': fid, 'ref': fp.ref, 'rule': 'hand-placed', 'merge': False, 'geom': g, 'manual': True, 'fp': fp,
+                        'circle': circ})
     # shapes drawn straight onto the panel's Edge.Cuts (not part of the panelgen group)
     names = names or {}
     for n, (g, _, uid) in enumerate(edge_shapes(tree, 'gr_', detail=True)):
@@ -1746,6 +1748,10 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
         tabs = []
         jacks = {fid: next(x for x in cs if x.get('circle'))['circle'] for fid, cs in parts.items()
                  if any(x.get('circle') for x in cs) and part_kind(next(x for x in cs if x.get('circle')), fps.get(fid)) == 'jack'}
+        # a round hole you added in the window is a jack too, as far as outputs go (a wired jack isn't on the PCB)
+        added = {c['id']: [c] for c in cutouts if str(c.get('key', '')).startswith('add:') and c.get('circle')}
+        jacks.update({fid: cs[0]['circle'] for fid, cs in added.items()})
+        ref_of = lambda fid: fps[fid].ref if fid in fps else added[fid][0]['ref']
         own_out = {}                              # text you added saying OUT, next to a jack: that jack's label
         for T in placed:
             if not T.get('own') or not re.search(r'\bOUT\b', T['text'], re.I) or not jacks:
@@ -1754,9 +1760,9 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             d_ = math.hypot(jx - T['x'], jy - T['y'])
             if d_ <= jr + 10 and (jf not in own_out or d_ < own_out[jf][0]):
                 own_out[jf] = (d_, T)
-        for fid, cs in parts.items():
+        for fid, cs in list(parts.items()) + list(added.items()):
             c = next((x for x in cs if x.get('circle')), None)
-            if not c or part_kind(c, fps.get(fid)) != 'jack':
+            if not c or (fid not in added and part_kind(c, fps.get(fid)) != 'jack'):
                 continue
             L = next((x for x in placed if x['fid'] == fid), None)
             io = edits.get(fid, {}).get('io')
@@ -1781,12 +1787,17 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
                 a._knock_boxes[L['fid']] = dict(box=unary_union(txt).bounds, ref=L['ref'], text=L['text'], h=L['h'])
             others = holes.difference(own.buffer(0.01)).buffer(0.5)
             if tab.intersection(others).area > 0.05:
-                log.append(f"NOTE  the output box for {fps[fid].ref} runs into a nearby hole - it's trimmed there. "
+                log.append(f"NOTE  the output box for {ref_of(fid)} runs into a nearby hole - it's trimmed there. "
                            "Move the label or the part if it looks odd")
             tabs.append(tab.difference(own.buffer(0.3)).difference(others))
-            a._tab_boxes.append(dict(key=tkey, kind='output', edges='ltrb', box=tab.bounds, ref=fps[fid].ref))
+            a._tab_boxes.append(dict(key=tkey, kind='output', edges='ltrb', box=tab.bounds, ref=ref_of(fid)))
         if tabs:
             shapes.append(unary_union(tabs).intersection(inside))
+        else:
+            log.append("NOTE  outputs in filled boxes: none found. A jack counts as an output when its label says OUT, when a "
+                       "text you added next to it says OUT, or when you set it to Output in Edit labels"
+                       + ('' if jacks else ". No jacks were found on this panel either: a hole only counts as a jack if its part "
+                                           "is one, or if you added the hole under Extra holes"))
 
     tab_areas = []
     # 4. tabs for jacks on the panel edge (no hole, the plug goes in from the side): a filled tab hanging from the edge
@@ -1963,11 +1974,12 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
     edge = border_in + 1.2 if a.art_border == 'on' else 2.0
     region = outline.buffer(-edge + 0.01)
     a._art_items = []
-    def place(text, h, spots, what, key):
+    def place(text, h, spots, what, key, vert=None):
         if not text.strip():
             return
+        vert = vert or a.title_vertical
         tf, tbold = a.title_font or font, a.title_bold == 'on' if what == 'title' else sbold
-        if what == 'title' and a.title_vertical == 'stacked':  # letters one under another, each the right way up
+        if what == 'title' and vert == 'stacked':  # letters one under another, each the right way up
             pitch = h * 1.35
             n = len(text)
             sh = []
@@ -1978,15 +1990,15 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             sh = text_shapes(text, 0, 0, h, tf, tbold)
         if not sh:
             return
-        if what == 'title' and a.title_vertical == 'on':       # turned on its side, read from the bottom
-            sh = [affinity.rotate(p, -90, origin=(0, 0)) for p in sh]
+        if what == 'title' and vert in ('on', 'on-mirror'):    # turned on its side: read from the bottom, or from the top
+            sh = [affinity.rotate(p, -90 if vert == 'on' else 90, origin=(0, 0)) for p in sh]
         u = unary_union(sh); bx = u.bounds; w = bx[2] - bx[0]; hh = bx[3] - bx[1]
         pin = (a._art_pos or {}).get(key)
         def put(sx, sy):
             moved = [shapely_translate(p, sx, sy) for p in sh]
             shapes.extend(moved)
             a._art_items.append(dict(key=key, what=what, text=text, at=[round(sx, 3), round(sy, 3)], pinned=bool(pin),
-                                     box=unary_union(moved).bounds))
+                                     box=unary_union(moved).bounds, h=h, vert=vert))
             return unary_union(moved)
         if pin:                                   # where you dragged it
             mu = put(*pin)
@@ -2000,13 +2012,16 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
         log.append(f"WARN  no free space for the {what} '{text}' - drag it in the preview, make the text smaller, or turn it off")
     m = edge + 0.4
     th = a.title_size
-    if a.title_vertical in ('on', 'stacked'):
+    if a.title_vertical in ('on', 'on-mirror', 'stacked'):
         title_spots = lambda w, hh: [(x1 + m + w / 2, (y1 + y2) / 2), (x2 - m - w / 2, (y1 + y2) / 2),
                                      (x1 + m + w / 2, y1 + m + hh / 2), (x2 - m - w / 2, y1 + m + hh / 2)]
     else:
         title_spots = lambda w, hh: [((x1 + x2) / 2, y1 + m + hh / 2), (x1 + m + w / 2, y1 + m + hh / 2),
                                      (x2 - m - w / 2, y1 + m + hh / 2), ((x1 + x2) / 2, y2 - m - hh / 2)]
     place(a.art_title, th, title_spots, 'title', 'title')
+    for t in getattr(a, '_titles', []):           # copies of the title: the same words, each with its own place, size and direction
+        if ('title:' + t['id']) in (a._art_pos or {}):
+            place(a.art_title, float(t.get('size') or th), lambda w, hh: [], 'title', 'title:' + t['id'], vert=t.get('dir'))
     ms = max(1.5, a.label_size * 0.8)
     place(a.art_maker, ms, lambda w, hh: [(x2 - m - w / 2, y2 - m - ms / 2), (x1 + m + w / 2, y2 - m - ms / 2),
                                       ((x1 + x2) / 2, y2 - m - ms / 2)], 'maker name', 'maker')
@@ -2390,7 +2405,7 @@ def main(argv=None, preview=None):
     ap.add_argument('--title-size', type=float, help='title height, mm (default 5)')
     ap.add_argument('--title-font', help='font for the title ("" = the label font)')
     ap.add_argument('--title-bold', choices=['on', 'off'])
-    ap.add_argument('--title-vertical', choices=['off', 'stacked', 'on'],
+    ap.add_argument('--title-vertical', choices=['off', 'stacked', 'on', 'on-mirror'],
                     help='title down a side: stacked = letters one under another; on = turned on its side, read from the bottom')
     ap.add_argument('--knob-size', type=float, help='knob diameter, mm: the pot scale starts outside it (default 13)')
     ap.add_argument('--pot-sweep', type=float, help='how far the pots turn, degrees (default 300)')
@@ -2444,6 +2459,7 @@ def main(argv=None, preview=None):
     texts = [dict(t) for t in ui.get('texts', mem0.get('texts', []))]
     images = [dict(i) for i in ui.get('images', mem0.get('images', []))]
     lines = [dict(i) for i in ui.get('lines', mem0.get('lines', []))]
+    a._titles = [dict(i) for i in ui.get('titles', mem0.get('titles', []))]
     a._art_pos = dict(ui.get('art_pos', mem0.get('art_pos', {})))
     added = [dict(s) for s in ui.get('shapes', mem0.get('shapes', []))]
     cfg = json.load(open(a.rules))
@@ -2735,7 +2751,7 @@ def main(argv=None, preview=None):
                                                     ref=L['ref']) for L in placed if not L.get('own')},
                'label_edits': label_edits, 'ignore_uncut': ignore_uncut, 'texts': texts, 'art_pos': a._art_pos,
                'images': [{k: v for k, v in i.items() if not k.startswith('_')} for i in images], 'shapes': added,
-               'lines': [{k: v for k, v in i.items() if not k.startswith('_')} for i in lines],
+               'lines': [{k: v for k, v in i.items() if not k.startswith('_')} for i in lines], 'titles': a._titles,
                'settings': dict(margin=a.margin, **{f'margin_{k}': v for k, v in m.items()},
                                 screws=a.screws, screw_dia=a.screw_dia, screw_inset=a.screw_inset, screw_slot=a.screw_slot, rail_slot=a.rail_slot,
                                 corner_radius=a.corner_radius, grow=a.grow, min_web=a.min_web,
