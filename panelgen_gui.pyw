@@ -327,8 +327,14 @@ class App(tk.Tk):
         c = field(f, 'Hole size', 'Pick a usual size or type your own in mm. These are common sizes: check them against your own parts.')
         self.hole_size = tk.StringVar(value=HOLE_SIZES[2])
         self.hole_size.trace_add('write', lambda *_: self.hole_size_changed())   # changes the selected hole, if one is
-        ttk.Combobox(c, textvariable=self.hole_size, values=HOLE_SIZES, width=28).pack(side='left')
+        hb = self.w_hole_size = ttk.Combobox(c, textvariable=self.hole_size, width=28); hb.pack(side='left')
         ttk.Label(c, text='mm').pack(side='left', padx=(4, 0))
+        hb.bind('<<ComboboxSelected>>', lambda e: self.hole_size_picked())
+        hb.bind('<Return>', lambda e: self.keep_hole_size()); hb.bind('<FocusOut>', lambda e: self.keep_hole_size())
+        self.hole_list()
+        ttk.Label(f, text='Pick a size, or choose "Your own size…" (or just type one in the box) - e.g. 4.5. Sizes you '
+                          'type are added to the list.', style='Dim.TLabel', wraplength=420, justify='left'
+                  ).grid(row=f._rows, column=0, columnspan=2, sticky='w'); f._rows += 1
         c = field(f, 'Add')
         for kind, txt in (('hole', 'Hole'), ('rect', 'Rectangle'), ('slot', 'Slot')):
             bt = ttk.Button(c, text=txt, command=lambda k=kind: self.start_add(k)); bt.pack(side='left', padx=(0, 6))
@@ -2274,8 +2280,34 @@ class App(tk.Tk):
         import re
         m = re.match(r'\s*(\d+(?:[.,]\d+)?)', self.hole_size.get())
         if not m or not 0.3 <= float(m.group(1).replace(',', '.')) <= 200:
-            raise ValueError('Hole size: type a size in mm, e.g. 6.2')
+            raise ValueError('Hole size: pick one from the list, or type a size in mm (e.g. 4.5)')
         return float(m.group(1).replace(',', '.'))
+
+    OWN_SIZE = 'Your own size…'
+
+    def hole_list(self):
+        """The sizes in the list: your own (the ones you've typed before) first, then the usual ones."""
+        mine = [f"{d:g}  ·  your size" for d in self.cfg.get('hole_sizes', [])]
+        self.w_hole_size['values'] = mine + list(HOLE_SIZES) + [self.OWN_SIZE]
+
+    def hole_size_picked(self):
+        if self.hole_size.get() == self.OWN_SIZE:      # an empty box to type into
+            self.hole_size.set('')
+            self.w_hole_size.focus_set(); self.w_hole_size.icursor('end')
+            self.hover.config(text='Type the hole size in mm (e.g. 4.5) and press Enter.')
+
+    def keep_hole_size(self):
+        """A size you typed that isn't in the list goes into it, so it's there next time."""
+        try:
+            d = round(self.hole_dia(), 3)
+        except ValueError:
+            return
+        if any(abs(float(h.split()[0]) - d) < 1e-6 for h in HOLE_SIZES):
+            return
+        mine = [x for x in self.cfg.get('hole_sizes', []) if abs(x - d) > 1e-6]
+        self.cfg['hole_sizes'] = ([d] + mine)[:6]
+        self.save_cfg()
+        self.hole_list()
 
     def hole_size_changed(self):
         """Hole size picked or typed: with one hole you added selected, it changes to that size."""

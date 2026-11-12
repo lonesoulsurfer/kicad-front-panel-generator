@@ -42,6 +42,7 @@
 
 - **Extra holes:** add round holes (usual sizes in a list, or your own), rectangles and slots in the window, for things that aren't on the PCB. Click to place, or right-click the panel. They snap into line with the other holes.
 - **Click a hole you added and pick a Hole size** from the list (or type one): the hole changes to that size.
+- **Your own hole sizes:** choose *Your own size…* at the bottom of the Hole size list (or type straight into the box). Sizes you type are kept at the top of the list for next time.
 - **Exact place and size** on the left, measured from the panel's left and top edges to the middle of the hole.
 - **Select several** by dragging a box round them (or Shift-click), then move them together, line them up in a row or column, or type their spacing.
 - **Copy** (Ctrl+D) repeats the selection with the same sizes and spacing; **Delete** removes it.
