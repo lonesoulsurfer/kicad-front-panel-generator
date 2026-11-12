@@ -456,7 +456,7 @@ class App(tk.Tk):
         # shapes round holes
         s = self.section('shapes', 'Shapes', 'A circle, box, triangle, hexagon or diamond round any hole - an outline, or filled '
                                              'with the label cut out of it.')
-        sub(s, 'Round one hole', first=True)
+        sub(s, 'Shape settings', first=True)
         f = self.form(s)
         c = field(f, 'Shape')
         ttk.Combobox(c, textvariable=v['mark_kind'], values=list(MARKS), width=14, state='readonly').pack(side='left')
@@ -467,8 +467,11 @@ class App(tk.Tk):
         bt = ttk.Button(field(f, 'Add'), text='Shape round a hole…', command=self.start_mark); bt.pack(side='left')
         Tip(bt, 'Click this, then click a hole - any hole, from the PCB, the panel file or one you added. Or right-click a hole and '
                 'choose Add a shape round it. It gets the settings above; change the one you added below, or drag its edges.')
-        ttk.Label(s, text='Set these, then right-click a hole and choose Add a shape round it. Each new shape gets these '
-                          'settings, and changing a shape sets them for the next one.', style='Dim.TLabel', wraplength=440,
+        self.w_mark_note = ttk.Label(s, text='', style='Dim.TLabel', wraplength=440, justify='left'); self.w_mark_note.pack(anchor='w', pady=(2, 0))
+        for k in ('mark_kind', 'mark_fill', 'mark_gap', 'mark_w', 'mark_r'):     # these change the selected shape, if one is
+            v[k].trace_add('write', lambda *_: self.mark_vars_changed())
+        ttk.Label(s, text='Right-click any hole and choose Add a shape round it. A new shape gets these settings; click a '
+                          'shape and these change it.', style='Dim.TLabel', wraplength=440,
                   justify='left').pack(anchor='w', pady=(2, 0))
         sub(s, 'Made for you')
         f = self.form(s)
@@ -2003,6 +2006,10 @@ class App(tk.Tk):
                     'title' if kind == 'art' else
                     'pots' if d['kind'] == 'group' and d.get('of') == 'pot' else 'shapes')
         self.sel_home = home
+        if hasattr(self, 'w_mark_note'):
+            on_mark = bool(t and t[1] == 'tab' and t[2].get('kind') == 'mark')
+            self.w_mark_note.config(text=f"Changing the shape round {t[2].get('ref')}." if on_mark else
+                                    'For the next shape you add.', style='Head.TLabel' if on_mark else 'Dim.TLabel')
         hints = {'labels': 'Click a label or one of your texts in the preview, or the box round one, to change it here.',
                  'extras': 'Click a picture in the preview to change it here.',
                  'lines': '',
@@ -2156,25 +2163,10 @@ class App(tk.Tk):
         elif kind == 'tab' and d['kind'] == 'mark':
             o = self.own_mark(d['key'])
             head.config(text=f"Shape round {d.get('ref', 'a hole')}")
-            def change(key, x):
-                if o is not None and x is not None and x != o.get(key):
-                    o[key] = x
-                    self.remember_mark(o)
-                    self.persist_ui(); self.update_preview()
-            row = fld('Shape')
-            mk = self._sel_mk = tk.StringVar(value=next((k for k, x in MARKS.items() if x == d.get('shape')), 'Circle'))
-            cb = ttk.Combobox(row, textvariable=mk, values=list(MARKS), width=14, state='readonly'); cb.pack(side='left')
-            cb.bind('<<ComboboxSelected>>', lambda e: change('kind', MARKS[mk.get()]))
-            fl = self._sel_mfill = tk.BooleanVar(value=bool(o and o.get('fill')))
-            ttk.Checkbutton(row, text='Filled', variable=fl, command=lambda: change('fill', bool(fl.get()))).pack(side='left', padx=(12, 0))
-            row = fld('Gap from the hole')
-            entry(row, f"{float(o.get('gap', 1)) if o else 1:g}", lambda v: change('gap', num(v, 0, 50))); ttk.Label(row, text='mm').pack(side='left')
-            if not (o and o.get('fill')):
-                row = fld('Line thickness')
-                entry(row, f"{float(o.get('w', 0.6)) if o else 0.6:g}", lambda v: change('w', num(v, 0.15, 10))); ttk.Label(row, text='mm').pack(side='left')
-            if d.get('shape') == 'box':
-                row = fld('Corners')
-                entry(row, f"{float(o.get('r', 0)) if o else 0:g}", lambda v: change('r', num(v, 0, 50))); ttk.Label(row, text='mm').pack(side='left')
+            if o is not None:
+                self.remember_mark(o)
+            ttk.Label(box, text='Change it with the Shape settings above: shape, filled, gap, line thickness and corners.',
+                      wraplength=440, justify='left').pack(anchor='w')
             ttk.Label(box, text='Drag an edge in the preview to make it bigger or smaller. A box keeps its sides even (hold Shift to move '
                                 'just one); pull its top or bottom over the label and a filled box cuts the label out.', style='Dim.TLabel', wraplength=440, justify='left').pack(anchor='w', pady=(4, 0))
             row = ttk.Frame(box); row.pack(anchor='w', pady=(6, 0))
@@ -2672,14 +2664,37 @@ class App(tk.Tk):
                                'The next one you add gets the same.')
         self.reveal('shapes', self.sel_boxes['shapes'])
 
-    def remember_mark(self, o):
-        """What you set on a shape becomes what the next one gets, so a row of them is quick to repeat."""
+    def mark_vars_changed(self):
+        """The Shape settings changed: if a shape is selected, it changes with them."""
+        if self.loading or getattr(self, '_mark_sync', False):
+            return
+        t = self.selected_target() if self.pv else None
+        if not (t and t[1] == 'tab' and t[2].get('kind') == 'mark'):
+            return
+        o = self.own_mark(t[2]['key'])
+        if o is None:
+            return
         v = self.vars
+        o['kind'] = MARKS.get(v['mark_kind'].get(), o.get('kind', 'circle'))
+        o['fill'] = bool(v['mark_fill'].get())
+        for key, var, lo in (('gap', 'mark_gap', 0.0), ('w', 'mark_w', 0.15), ('r', 'mark_r', 0.0)):
+            try:
+                o[key] = max(lo, float(v[var].get().replace(',', '.')))
+            except ValueError:
+                pass                                   # half-typed: keep what it was
+        self.persist_ui(record=False)
+
+    def remember_mark(self, o):
+        """Show a shape's own values in the Shape settings (without changing anything)."""
+        v = self.vars
+        self._mark_sync, was = True, self.loading
+        self.loading = True
         v['mark_kind'].set(next((k for k, x in MARKS.items() if x == o.get('kind')), 'Circle'))
         v['mark_fill'].set(bool(o.get('fill')))
         for key, var in (('gap', 'mark_gap'), ('w', 'mark_w'), ('r', 'mark_r')):
             if key in o:
                 v[var].set(f"{float(o[key]):g}")
+        self.loading, self._mark_sync = was, False
 
     def mark_delete(self, key):
         self.ui['marks'] = [o for o in self.ui.get('marks', []) if 'mark:' + o['id'] != key]
