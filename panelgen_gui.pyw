@@ -325,6 +325,7 @@ class App(tk.Tk):
         f = self.form(s)
         c = field(f, 'Hole size', 'Pick a usual size or type your own in mm. These are common sizes: check them against your own parts.')
         self.hole_size = tk.StringVar(value=HOLE_SIZES[2])
+        self.hole_size.trace_add('write', lambda *_: self.hole_size_changed())   # changes the selected hole, if one is
         ttk.Combobox(c, textvariable=self.hole_size, values=HOLE_SIZES, width=28).pack(side='left')
         ttk.Label(c, text='mm').pack(side='left', padx=(4, 0))
         c = field(f, 'Add')
@@ -2214,6 +2215,19 @@ class App(tk.Tk):
             raise ValueError('Hole size: type a size in mm, e.g. 6.2')
         return float(m.group(1).replace(',', '.'))
 
+    def hole_size_changed(self):
+        """Hole size picked or typed: with one hole you added selected, it changes to that size."""
+        if getattr(self, '_hole_sync', False) or len(getattr(self, 'shape_sel', [])) != 1:
+            return
+        o = next((o for o in self.ui.get('shapes', []) if o['id'] == self.shape_sel[0] and o['kind'] == 'hole'), None)
+        try:
+            d = self.hole_dia()
+        except ValueError:
+            return                                     # half-typed
+        if o is not None and abs(d - o['d']) > 1e-6:
+            o['d'] = d
+            self.persist_ui(); self.update_preview()
+
     def start_add(self, kind):
         if not self.pv or 'message' in self.pv:
             return
@@ -2364,7 +2378,12 @@ class App(tk.Tk):
             entry(f, 'From the left edge', nice(o['x'] - px1), lambda x: change(o, 'x', x + px1, -1e4, 1e4), 'to its middle', tip)
             entry(f, 'From the top edge', nice(o['y'] - py1), lambda x: change(o, 'y', x + py1, -1e4, 1e4), 'to its middle', tip)
             if o['kind'] == 'hole':
-                entry(f, 'Hole size', f"{o['d']:g}", lambda x: change(o, 'd', x))
+                self._hole_sync = True                 # Hole size above shows this hole's size; picking one changes it
+                self.hole_size.set(next((h for h in HOLE_SIZES if abs(float(h.split()[0]) - o['d']) < 1e-6), f"{o['d']:g}"))
+                self._hole_sync = False
+                ttk.Label(f, text='Change its size with Hole size, above.').grid(row=f._rows, column=0, columnspan=2,
+                                                                                  sticky='w', pady=3)
+                f._rows += 1
             elif o['kind'] == 'rect':
                 entry(f, 'Width', f"{o['w']:g}", lambda x: change(o, 'w', x))
                 entry(f, 'Height', f"{o['h']:g}", lambda x: change(o, 'h', x))

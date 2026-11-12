@@ -52,7 +52,7 @@ Every change shows in the preview straight away. To give the preview more room, 
 
 - Pick a **hole size** from the list (or type your own), click **Hole**, then click the panel where it goes. **Rectangle** and **Slot** work the same way. You can also right-click the panel and add one there.
 - It snaps into line with the other holes; where there's nothing to line up with, it lands on a whole half millimetre. Hold **Alt** to place it freely.
-- Click it and its settings appear on the left: how far its middle is from the panel's **left edge** and **top edge**, and its size. Type exact numbers there. Or drag one of its white corner squares to resize it; a rectangle shows its width and height as you drag.
+- Click it and its settings appear on the left: how far its middle is from the panel's **left edge** and **top edge**, and its size. For a round hole, pick a new **Hole size** from the list and it changes to that size. Type exact numbers there. Or drag one of its white corner squares to resize it; a rectangle shows its width and height as you drag.
 - **Several at once:** drag a box round holes you added (or Shift-click them) to select them, then drag them together, **line them up** in a row or column, or type their **spacing**, middle to middle.
 - **Copy** (Ctrl+D) repeats the selection with the same sizes and spacing. Two holes in a row become four, evenly spaced; drag the copy if it belongs somewhere else. **Delete** removes them.
 - **Measure** (above the preview) is a ruler: click two points to see how far apart they are. It snaps to the middle and the edge of holes and to the panel edges. Hold **Ctrl** to keep the measurement dead level or straight up and down.
