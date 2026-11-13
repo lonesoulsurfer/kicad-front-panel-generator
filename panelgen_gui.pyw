@@ -1750,7 +1750,13 @@ class App(tk.Tk):
                           [((k['box'][0] + k['box'][2]) / 2, (k['box'][1] + k['box'][3]) / 2) for k in self.pv.get('knocked', [])]
                     inside = lambda q: sum(1 for x, y in pts if q[0] <= x <= q[2] and q[1] <= y <= q[3])
                     reach = inside(nb) != inside(b) or abs(pos - b[0 if edge == 'l' else 2]) > 6
-                    mirror = not reach
+                    # Only an even bar keeps even: once its ends sit differently past its first and last label (one
+                    # lined up with a cutout, say), pulling one end moves just that end.
+                    xs = [x for x, y in pts if b[0] <= x <= b[2] and b[1] <= y <= b[3]]
+                    even = not xs or abs((b[0] - min(xs)) + (b[2] - max(xs))) < 0.5
+                    mirror = not reach and even
+                if mirror and g is not None and t[2]['kind'] == 'textbox':   # it snapped to an edge: you're lining up this end, not both
+                    mirror = False
                 if mirror:                                     # the opposite side follows, so what's inside stays centred
                     i, j = {'l': (0, 2), 'r': (2, 0), 't': (1, 3), 'b': (3, 1)}[edge]
                     nb[j] = b[j] - (pos - b[i])
