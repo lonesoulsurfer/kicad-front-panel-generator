@@ -336,8 +336,9 @@ class App(tk.Tk):
                                   'Covers the PCB mounting holes, the case holes and the screw holes of parts such as screens.')
         hb = ttk.Combobox(c, textvariable=v['screw_head'], values=SCREW_HEADS, width=24); hb.pack(side='left')
         ttk.Label(c, text='mm').pack(side='left', padx=(4, 0))
-        hb.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
-        hb.bind('<Return>', lambda e: self.update_preview()); hb.bind('<FocusOut>', lambda e: self.update_preview())
+        # (the preview follows the box by itself, a moment after it changes - nothing bound here, so the list opens at once)
+        ttk.Label(f, text='Or drag the edge of any dotted circle in the preview: every screw head changes to that size.',
+                  style='Dim.TLabel', wraplength=420, justify='left').grid(row=f._rows, column=0, columnspan=2, sticky='w'); f._rows += 1
 
         # holes you add yourself
         s = self.section('holes', 'Extra holes', "Holes, rectangles and slots for things that aren't on the PCB "
@@ -1560,6 +1561,10 @@ class App(tk.Tk):
         if self.measuring:
             self.drag = None
             return
+        k = None if self.adding else self.head_at(e)
+        if k is not None:                              # the edge of a screw head: drag it to set every head's size
+            self.drag = ('head', e.x, e.y, k, False, None)
+            return
         hit = None if self.adding else self.body_at(e)
         if hit:                                        # the edge of a part-size guide: drag it bigger or smaller
             self.body_sel = hit[0]['id']
@@ -1740,7 +1745,51 @@ class App(tk.Tk):
             self.vars['title_size'].set(f'{new:g}')
         return f'Title: {new:g} mm'
 
+    def head_at(self, e):
+        """A round screw-head circle whose dotted edge is under the pointer (and nothing you could drag is)."""
+        if not self.pv or 'message' in self.pv or not getattr(self, 'cur_view', None) or not self.pv.get('keepouts'):
+            return None
+        if self.target_at(e):
+            return None
+        x, y = self.to_mm(e)
+        pad = 5 / self.cur_view[0]
+        for k in self.pv['keepouts']:
+            b = k['geom'].bounds
+            if abs((b[2] - b[0]) - (b[3] - b[1])) > 0.05:          # a slot's head: not this way
+                continue
+            if abs(math.hypot(x - (b[0] + b[2]) / 2, y - (b[1] + b[3]) / 2) - (b[2] - b[0]) / 2) <= pad:
+                return k
+        return None
+
+    def head_drag(self, e):
+        _, x0, y0, k, moved, _ = self.drag
+        if not moved and abs(e.x - x0) + abs(e.y - y0) < 3:
+            return
+        sc, ox, oy = self.cur_view
+        x, y = self.to_mm(e)
+        b = k['geom'].bounds
+        cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
+        step = 0.01 if getattr(e, 'state', 0) & ALT_MASK else 0.1
+        d = max(0.5, round(2 * math.hypot(x - cx, y - cy) / step) * step)
+        c = self.canvas
+        c.delete('dragbox')
+        for kk in self.pv['keepouts']:                 # all of them change together
+            bb = kk['geom'].bounds
+            if abs((bb[2] - bb[0]) - (bb[3] - bb[1])) > 0.05:
+                continue
+            mx, my = (bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2
+            c.create_oval(ox + (mx - d / 2) * sc, oy + (my - d / 2) * sc, ox + (mx + d / 2) * sc, oy + (my + d / 2) * sc,
+                          outline='#ffd28a', dash=(2, 3), width=2, tags='dragbox')
+        ti = c.create_text(ox + cx * sc, oy + (cy - d / 2) * sc - 14, text=f'{d:g} mm across', fill='#ffffff',
+                           font=self.f_head, tags='dragbox')
+        r = c.create_rectangle(*[v + o_ for v, o_ in zip(c.bbox(ti), (-4, -2, 4, 2))], fill='#1f3a7a', outline='#ffd28a', tags='dragbox')
+        c.tag_raise(ti, r)
+        self.hover.config(text=f'Screw heads: {d:g} mm across - every screw head changes to this when you let go (Alt: finer steps)')
+        self.drag = ('head', x0, y0, k, True, d)
+
     def motion(self, e):
+        if self.drag and self.drag[0] == 'head':
+            return self.head_drag(e)
         if self.drag and self.drag[0] == 'body':
             return self.body_drag(e)
         if self.drag and self.drag[0] == 'resize':
@@ -1840,6 +1889,13 @@ class App(tk.Tk):
         self.drag = ('band', x0, y0, True)
 
     def release(self, e):
+        if self.drag and self.drag[0] == 'head':
+            _, _, _, _, moved, d = self.drag
+            self.drag = None
+            self.canvas.delete('dragbox')
+            if moved and d:
+                self.vars['screw_head'].set(f'{round(d, 2):g}')   # the preview redraws from the setting
+            return
         if self.drag and self.drag[0] == 'body':
             _, _, _, (b, _), moved, new, _ = self.drag
             self.drag = None
