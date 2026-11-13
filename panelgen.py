@@ -930,6 +930,49 @@ def check_rails(pcb, tpl, x1, y1, x2, y2, log, bad=None):
                 bad.append((fp.ref, b))
     return n
 
+SCREW_RULES = ('Mounting hole', 'case screw', 'case slot', 'rail hole', 'rail slot')
+
+def screw_keepouts(groups, a):
+    """Where screw heads will sit on the front of the panel: [(group, keep-out shape, head size)]. A screw's head is
+    wider than its hole, so text or artwork right next to a mounting hole ends up under the head."""
+    mode = str(a.screw_head or 'auto').strip().lower()
+    if mode in ('off', 'none', '0', ''):
+        return []
+    try:
+        fixed = None if mode == 'auto' else float(mode)
+    except ValueError:
+        fixed = None
+    out = []
+    for g in groups:
+        keys = [str(k) for k in (g.get('member_keys') or [g.get('key')]) if k]
+        if not (g.get('rule') in SCREW_RULES or any(':mount' in k for k in keys)):
+            continue
+        b = g['geom'].bounds
+        hole = min(b[2] - b[0], b[3] - b[1])
+        head = fixed if fixed else 2 * hole
+        if head <= hole + 0.01:
+            continue
+        out.append((g, g['geom'].buffer((head - hole) / 2, quad_segs=32), head))
+    return out
+
+def check_keepouts(keeps, placed, art, log):
+    """WARN for labels and artwork under a screw head. Returns [(shape, covered?)] for the preview."""
+    res = []
+    for g, k, head in keeps:
+        ring = k.difference(g['geom'])
+        hit = []
+        for L in placed:
+            if box(L['x'] - L['w'] / 2, L['y'] - L['h'] / 2, L['x'] + L['w'] / 2, L['y'] + L['h'] / 2).intersection(ring).area > 0.01:
+                L['status'] = 'warn'
+                hit.append(f"'{L['text']}'")
+        if any(p.intersection(ring).area > 0.05 for p in art if hasattr(p, 'intersection')):
+            hit.append('artwork')
+        if hit:
+            log.append(f"WARN  screw head at {fmt_refs_plain(g)} ({head:g} mm) would cover {', '.join(hit)} - move it, "
+                       f"or set Screw heads in the Panel tab")
+        res.append((k, bool(hit)))
+    return res
+
 def fill_preview(pv, groups, outline, panel_box, a, log, problems, eurorack, pcb_box, rail_bad, uncut=(), cutouts=(), fps=None, **extra):
     """Geometry for the window's live preview, each cutout marked ok / warn / error."""
     status = ['ok'] * len(groups)
@@ -2475,6 +2518,8 @@ def main(argv=None, preview=None):
     ap.add_argument('--screw-dia', type=float, help='case screw hole diameter (default 2.2)')
     ap.add_argument('--screw-slot', type=float, help='make case holes slots this long, end to end, running along the edge (0 = round, default). --screw-inset is measured to the centre of the slot end nearest each edge')
     ap.add_argument('--rail-slot', type=float, help='Eurorack: make the rail holes horizontal slots this long, end to end (0 = round, default)')
+    ap.add_argument('--screw-head', help="keep-out round screw holes for the screw's head: 'auto' (twice the hole, the default), "
+                    "'off', or the head's size in mm. Labels and artwork inside it are warned about")
     ap.add_argument('--screw-inset', type=float, help='case screw centre distance from panel edges (default 3.5)')
     ap.add_argument('--screws', choices=['none', 'corners', 'corners+mid'], help='case screw holes around the panel edge (default none)')
     ap.add_argument('--min-web', type=float, help='warn when material between cutouts is thinner (default 1.0 mm)')
@@ -2544,7 +2589,7 @@ def main(argv=None, preview=None):
         move_old_panel(a.pcb, out_path, early)
     mem_path = re.sub(r'\.kicad_pcb$', '', out_path) + '.panelgen.json'
     saved = load_memory(mem_path).get('settings', {}) if a.again else {}
-    defaults = dict(margin=0.0, corner_radius=0.0, screw_dia=2.2, screw_inset=3.5, screw_slot=0.0, rail_slot=0.0, screws='none',
+    defaults = dict(margin=0.0, corner_radius=0.0, screw_dia=2.2, screw_inset=3.5, screw_slot=0.0, rail_slot=0.0, screws='none', screw_head='auto',
                     min_web=1.0, svg=False, grow=0.0, panel_layer='User.1', check_uncut='on',
                     artwork='off', artwork_file='',
                     labels='off', label_size=2.0, label_gap=1.5, label_pos='above', label_font='', label_bold='off', label_caps='off',
@@ -2821,6 +2866,8 @@ def main(argv=None, preview=None):
     art = art + a._auto
     if shown_images:
         art = art + image_items(shown_images, os.path.dirname(out_path), outline, groups, log)
+    keep_res = check_keepouts(screw_keepouts(groups, a), placed, art, log)
+    problems += sum(1 for _, bad in keep_res if bad)
     if preview is not None and a.make_artwork_file:      # the window's 'Create artwork file' button: no panel written
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         svg_path = re.sub(r'\.kicad_pcb$', '', out_path) + '_template.svg'
@@ -2831,7 +2878,7 @@ def main(argv=None, preview=None):
     def settings_now():
         """Every setting, as saved in the panel's memory file (and given to the window with each preview)."""
         return dict(margin=a.margin, **{f'margin_{k}': v for k, v in m.items()},
-                                       screws=a.screws, screw_dia=a.screw_dia, screw_inset=a.screw_inset, screw_slot=a.screw_slot, rail_slot=a.rail_slot,
+                                       screws=a.screws, screw_dia=a.screw_dia, screw_inset=a.screw_inset, screw_head=a.screw_head, screw_slot=a.screw_slot, rail_slot=a.rail_slot,
                                        corner_radius=a.corner_radius, grow=a.grow, min_web=a.min_web,
                                        panel_layer=a.panel_layer, svg=bool(a.svg), check_uncut=a.check_uncut,
                                        labels=a.labels, label_size=a.label_size, label_gap=a.label_gap, label_pos=a.label_pos,
@@ -2852,6 +2899,7 @@ def main(argv=None, preview=None):
                      art_items=a._art_items, texts=texts, art_pos=a._art_pos,
                      added=[dict(s, box=list(c['geom'].bounds), ref=c['ref']) for s in added
                             for c in cutouts if c['key'] == f"add:{s['id']}"],
+                     keepouts=[dict(geom=k, bad=bad) for k, bad in keep_res],
                      knocked=[dict(fid=f, **v) for f, v in a._knock_boxes.items()], tab_boxes=a._tab_boxes,
                      lines=[dict(i, box=i['_box']) for i in lines if '_box' in i],
                      images=[dict(id=i['id'], box=i['_box'], w=i['w'], invert=i.get('invert', False), rot=i.get('rot', 0))

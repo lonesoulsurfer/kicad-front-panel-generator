@@ -9,12 +9,14 @@ sys.path.insert(0, HERE)
 CONFIG = os.path.join(os.environ.get('APPDATA') or os.path.expanduser('~'), 'panelgen', 'gui.json')
 
 DEFAULTS = dict(margin=0.0, margin_top=0.0, margin_right=0.0, margin_bottom=0.0, margin_left=0.0,
-                screws='none', screw_dia=2.2, screw_inset=3.5, screw_slot=0.0, rail_slot=0.0,
+                screws='none', screw_dia=2.2, screw_inset=3.5, screw_slot=0.0, rail_slot=0.0, screw_head='auto',
                 corner_radius=0.0, grow=0.0, svg=False, check_uncut='on',
                 artwork='off', labels='off', label_size=2.0, label_gap=1.5, label_pos='above', label_font='', label_bold='off', label_caps='off',
                 extras='on', auto_art='off', art_style='Classic synth', art_scale='ticks', art_rings='on', art_outputs='off', art_border='off',
                 art_border_radius=0.0, art_border_gap=0.0, ring_width=0.8, ring_gap=0.8, art_groups='off', art_tabs='off',
                 art_title='', art_maker='', title_size=5.0, knob_size=13.0)
+SCREW_HEADS = ['Auto (twice the hole)', 'Off', '4 · M2 pan head', '5 · M2.5 pan head', '5.6 · M3 pan head',
+               '5.7 · M3 button head', '7 · M3 with washer']
 ART_STYLES = {   # what each style switches on
     'None': dict(scale='None', rings=False, outputs=False, border=False, groups=False, tabs=False),
     'Minimal': dict(scale='Ticks', rings=False, outputs=False, border=False, groups=False, tabs=False),
@@ -25,7 +27,7 @@ STYLE_KEYS = ('scale', 'rings', 'outputs', 'border', 'tabs')
 GROUP_KINDS = ('pot', 'button', 'jack')
 TECH_URL = 'https://github.com/lonesoulsurfer/kicad-front-panel-generator/blob/main/docs/TECHNICAL.md'
 HOW_PANEL = [("Change the size of one part's hole", "In KiCad, on the PCB, open the part's properties and add a field named Panel. Its value sets the hole: circle:6.5 (a 6.5 mm round hole), square:7, rect:8x6. The hole stays centred on the part and moves with it. For several parts the same (all the tactile switches with caps, say), add the field to the symbol in the schematic and use Update PCB from Schematic."), ("Give a hole to a part the generator doesn't know", 'Draw the hole on the User.1 layer of the PCB: any closed shape there is cut exactly as drawn. Or add a Panel field (above). If you use the part often, add a rule for it to panel_rules.json, next to the app.'), ('Stop a part getting a hole', "Add a Panel field with the value skip. Or, if it shows an orange 'no cutout?' box, click the box. Or delete its hole in the panel file in KiCad - it then stays off, and is listed under Holes you removed or changed."), ("Add a hole for something that isn't on the PCB", 'A jack or switch wired to the board: use Extra holes above. Or, in the panel file in KiCad, place a part from PanelParts.pretty (jacks, LEDs, toggles, tactile switch, screws, a USB-C charge slot).'), ('Move or resize a hole just on the panel', 'Change it in the panel file in KiCad and save. Your version is kept every time you generate, and listed under Holes you removed or changed - pick it there and click Bring back to undo it.'), ('Show where a part is without cutting a hole', 'Draw it on the User.2 layer of the PCB. It shows in the preview as a blue guide to line things up with, and is never cut or printed.'), ('Check the spacing by the size of the parts',
-  "Right-click a hole and choose Show the part's size round it: a dashed blue circle or rectangle for the part's body, nut or knob. Drag its edge to set the size - the size and the gap to the nearest part show as you drag. Or put one on every hole that size at once. They're never cut or printed."),
+  "Right-click a hole and choose Show the part's size round it: a dashed blue circle or rectangle for the part's body, nut or knob. Drag its edge to set the size - the size and the gap to the nearest part show as you drag. A rectangle's sides move one at a time, so it can stick out to one side of its hole (a board with its connector at one end); a corner moves two sides; Shift keeps it even round the hole. Or put one on every hole that size at once. They're never cut or printed."),
  ('Start again from the PCB', 'Reset (above the preview) takes the panel back to the bare PCB: its own size and holes, nothing added. Undo brings it all back.')]
 HOW_ART = [('Change what a label says', "Click it (or right-click, Change text). To set it on the PCB so it's the same every time, add a field named Label to the part in KiCad - it's used instead of the part's Value."), ('Line labels up', 'Drag a label: it snaps level with the others, to the middle of holes and of the keys under a window (the blue dotted outlines), and half way between two holes. Hold Alt to place it freely.'), ('Change several things at once', 'Drag a box round them, or Shift-click each. Then drag them together, copy them (Ctrl+C, Ctrl+V), or press Delete.'), ('White text on a black bar', "Click the text and set Box to A filled bar - the text is cut out of it. Drag the bar's ends to stretch it over a row of keys."), ('Put a shape round a hole', 'Set it up under Shapes, then right-click the hole and choose Add a shape round it. A filled box pulled over a label cuts the label out of it.'), ('Measure, or place something an exact distance away', 'Click Measure, click the first point, then type a length and press Enter. The ruler stays as a guide: things snap to its ends and middle. Hold Ctrl to keep it straight.'), ('Anything else', 'Switch on Artwork from Inkscape and draw it there: black prints, white cuts out of black.')]
 MULTI = ('text', 'label', 'line', 'image')    # what a box or Shift-click can pick up, besides holes you added
@@ -130,6 +132,7 @@ class App(tk.Tk):
         for s in ('top', 'right', 'bottom', 'left'):
             v[s] = tk.StringVar(value='0')
         v['screws'] = tk.StringVar(value='none')
+        v['screw_head'] = tk.StringVar(value=SCREW_HEADS[0])
         v['screw_dia'] = tk.StringVar(value='2.2'); v['screw_inset'] = tk.StringVar(value='3.5')
         v['case_shape'] = tk.StringVar(value='round'); v['slot'] = tk.StringVar(value='4')
         v['rail_shape'] = tk.StringVar(value='round'); v['rslot'] = tk.StringVar(value='5')
@@ -324,6 +327,17 @@ class App(tk.Tk):
         self.w_slot = mm(field(f, 'Slot length', 'End to end.'), 'slot')
         self.edge_info = tk.Label(det, text='', anchor='w', justify='left', wraplength=440, font=self.f_small)
         self.edge_info.pack(anchor='w', pady=(4, 0))
+
+        # screw heads: a keep-out round every screw hole
+        s = self.section('heads', 'Screw heads', "A screw's head is wider than its hole. Labels and artwork under a head "
+                                                 'are warned about, and the head shows as a dotted circle.')
+        f = self.form(s)
+        c = field(f, 'Head size', 'Across the head, in mm. Auto is twice the hole: about right for pan-head screws. '
+                                  'Covers the PCB mounting holes, the case holes and the screw holes of parts such as screens.')
+        hb = ttk.Combobox(c, textvariable=v['screw_head'], values=SCREW_HEADS, width=24); hb.pack(side='left')
+        ttk.Label(c, text='mm').pack(side='left', padx=(4, 0))
+        hb.bind('<<ComboboxSelected>>', lambda e: self.update_preview())
+        hb.bind('<Return>', lambda e: self.update_preview()); hb.bind('<FocusOut>', lambda e: self.update_preview())
 
         # holes you add yourself
         s = self.section('holes', 'Extra holes', "Holes, rectangles and slots for things that aren't on the PCB "
@@ -782,7 +796,7 @@ class App(tk.Tk):
             ttk.Label(cell, text=note, style='Dim.TLabel').pack(side='left', padx=(10, 0))
         return e
 
-    TABS = {'panel': ('size', 'rail', 'case', 'holes', 'restore', 'howto_panel'),
+    TABS = {'panel': ('size', 'rail', 'case', 'heads', 'holes', 'restore', 'howto_panel'),
             'art': ('style', 'title', 'labels', 'pots', 'shapes', 'border', 'lines', 'extras', 'art', 'howto_art')}
 
     def show_tab(self, tab):
@@ -1048,6 +1062,15 @@ class App(tk.Tk):
         if 0 <= i < len(rec) and rec[i] != self.board.get():
             self.board.set(rec[i]); self.board_changed()
 
+    def screw_head(self):
+        t = self.vars['screw_head'].get().strip().split(' ')[0].lower()
+        if t in ('auto', 'off'):
+            return t
+        try:
+            return f'{max(0.0, float(t.replace(",", "."))):g}'
+        except ValueError:
+            raise ValueError('Screw head size: pick one from the list, or type a size in mm')
+
     def set_vars(self, s):
         """Every setting on the left, from a panel's saved settings (or the bare defaults)."""
         v = self.vars
@@ -1057,6 +1080,8 @@ class App(tk.Tk):
         for name, val in zip(('top', 'right', 'bottom', 'left'), sides):
             v[name].set(f"{val:g}")
         v['screws'].set(s['screws'])
+        sh = str(s.get('screw_head', 'auto'))
+        v['screw_head'].set(next((x for x in SCREW_HEADS if x.split(' ')[0].lower() == sh.lower()), sh))
         v['screw_dia'].set(f"{s['screw_dia']:g}"); v['screw_inset'].set(f"{s['screw_inset']:g}")
         v['case_shape'].set('slot' if s['screw_slot'] > 0 else 'round')
         if s['screw_slot'] > 0:
@@ -1221,7 +1246,7 @@ class App(tk.Tk):
             else:
                 args += ['--screws', 'none']
             args += ['--corner-radius', f"{self.number('radius', 'corner radius'):g}"]
-        args += ['--grow', '0']
+        args += ['--grow', '0', '--screw-head', self.screw_head()]
         size = self.number('label_size', 'label text size')          # your own texts use these too
         if size < 0.5:
             raise ValueError('Label text size must be at least 0.5 mm (1 mm or more is safer for silkscreen)')
@@ -1414,6 +1439,14 @@ class App(tk.Tk):
                 self.hover_items[i] = s
                 c.tag_bind(i, '<Enter>', lambda e, s=s: self.show_hover(s))
                 c.tag_bind(i, '<Leave>', lambda e: self.hover.config(text='Hover over a cutout to see what it is.'))
+        for k in pv.get('keepouts', []):              # where screw heads will sit (never cut or printed)
+            kb = k['geom'].bounds
+            i = c.create_oval(X(kb[0]), Y(kb[1]), X(kb[2]), Y(kb[3]), outline=C_WARN if k['bad'] else '#7d8590',
+                              dash=(2, 3), width=2 if k['bad'] else 1)
+            c.tag_bind(i, '<Enter>', lambda e, b=k['bad'], d=kb[2] - kb[0]: self.hover.config(
+                text=f"Screw head, {d:.1f} mm across (dotted - never cut or printed)" +
+                     ("  ·  something is under it - see Result" if b else '')))
+            c.tag_bind(i, '<Leave>', lambda e: self.hover.config(text='Hover over a cutout to see what it is.'))
         for ref, (bx1, by1, bx2, by2), fid in pv.get('uncut', []):
             i = c.create_rectangle(X(bx1), Y(by1), X(bx2), Y(by2), outline=C_WARN, width=2, dash=(3, 3), fill=C_PANEL)
             self.clicks[i] = lambda r=ref, f=fid: self.ignore_part(r, f)
@@ -1530,7 +1563,14 @@ class App(tk.Tk):
         hit = None if self.adding else self.body_at(e)
         if hit:                                        # the edge of a part-size guide: drag it bigger or smaller
             self.body_sel = hit[0]['id']
-            self.drag = ('body', e.x, e.y, hit, False, None)
+            edges = ''
+            if hit[0]['kind'] != 'circle':             # which side(s) of a rectangle you took hold of
+                gb = next(g for o, g, sh in self.body_shapes() if o['id'] == hit[0]['id']).bounds
+                x, y = self.to_mm(e)
+                pad = 6 / self.cur_view[0]
+                edges = ''.join(k for k, near in (('l', abs(x - gb[0])), ('r', abs(x - gb[2])), ('t', abs(y - gb[1])),
+                                                  ('b', abs(y - gb[3]))) if near <= pad) or 'r'
+            self.drag = ('body', e.x, e.y, hit, False, None, edges)
             self.draw()
             return
         if getattr(self, 'body_sel', None):
@@ -1801,14 +1841,14 @@ class App(tk.Tk):
 
     def release(self, e):
         if self.drag and self.drag[0] == 'body':
-            _, _, _, (b, _), moved, new = self.drag
+            _, _, _, (b, _), moved, new, _ = self.drag
             self.drag = None
             self.canvas.delete('dragbox')
             if moved and new:
                 o = next((o for o in self.ui.get('bodies', []) if o['id'] == b['id']), None)
                 if o is not None:
                     o.update(new)
-                    self.cfg['body_' + o['kind']] = {k: v for k, v in new.items()}   # the next one starts this size
+                    self.cfg['body_' + o['kind']] = {k: v for k, v in new.items() if k not in ('ox', 'oy')}   # the next one starts this size
                     self.persist_ui()
             self.draw()
             return
@@ -2994,7 +3034,7 @@ class App(tk.Tk):
             if x['anchor'] not in have:
                 self.ui.setdefault('bodies', []).append(dict(id=uuid.uuid4().hex[:8], on=x['anchor'], kind=kind, **size))
         self.persist_ui(); self.draw()
-        self.hover.config(text="Part size shown (dashed blue - never cut or printed). Drag its edge to set the size; the gap to "
+        self.hover.config(text="Part size shown (dashed blue - never cut or printed). Drag a side or corner to set the size; the gap to "
                                "the nearest part shows as you drag. Right-click the hole to remove it.")
 
     def body_delete(self, bid):
@@ -3013,8 +3053,11 @@ class App(tk.Tk):
                 continue
             b = sh['geom'].bounds
             cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
-            g = Point(cx, cy).buffer(float(o.get('d', 7.5)) / 2, quad_segs=48) if o['kind'] == 'circle' else \
-                box(cx - float(o['w']) / 2, cy - float(o['h']) / 2, cx + float(o['w']) / 2, cy + float(o['h']) / 2)
+            if o['kind'] == 'circle':
+                g = Point(cx, cy).buffer(float(o.get('d', 7.5)) / 2, quad_segs=48)
+            else:                                      # a rectangle can sit off the hole's middle (a board with the hole at one end)
+                mx, my = cx + float(o.get('ox', 0)), cy + float(o.get('oy', 0))
+                g = box(mx - float(o['w']) / 2, my - float(o['h']) / 2, mx + float(o['w']) / 2, my + float(o['h']) / 2)
             out.append((o, g, sh))
         return out
 
@@ -3039,7 +3082,7 @@ class App(tk.Tk):
         return min((g.distance(x) for x in others), default=None)
 
     def body_drag(self, e):
-        _, x0, y0, (o, sh), moved, _ = self.drag
+        _, x0, y0, (o, sh), moved, _, edges = self.drag
         if not moved and abs(e.x - x0) + abs(e.y - y0) < 3:
             return
         from shapely.geometry import Point, box
@@ -3052,14 +3095,27 @@ class App(tk.Tk):
         if o['kind'] == 'circle':
             d = rnd(2 * math.hypot(x - cx, y - cy))
             new, g, txt = dict(d=round(d, 3)), Point(cx, cy).buffer(d / 2, quad_segs=48), f'{d:g} mm across'
-        else:                                          # a rectangle grows evenly round the hole; the side you pull sets its size
+        elif getattr(e, 'state', 0) & 0x0001:          # Shift: a rectangle grows evenly round the hole
             w, h = float(o['w']), float(o['h'])
             dx, dy = abs(x - cx), abs(y - cy)
-            if dx / max(w, 0.1) >= dy / max(h, 0.1) - 0.15:
+            if 'l' in edges or 'r' in edges:
                 w = rnd(2 * dx)
-            if dy / max(h, 0.1) >= dx / max(w, 0.1) - 0.15:
+            if 't' in edges or 'b' in edges:
                 h = rnd(2 * dy)
-            new, g, txt = dict(w=round(w, 3), h=round(h, 3)), box(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2), f'{w:g} × {h:g} mm'
+            new, g, txt = dict(w=round(w, 3), h=round(h, 3), ox=0.0, oy=0.0), box(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2), \
+                f'{w:g} × {h:g} mm'
+        else:                                          # the side you pull moves; the opposite side stays where it is
+            b0 = list(next(g for oo, g, s_ in self.body_shapes() if oo['id'] == o['id']).bounds)
+            nb = list(b0)
+            for k in edges:
+                i, j = {'l': (0, 2), 'r': (2, 0), 't': (1, 3), 'b': (3, 1)}[k]
+                v = x if i in (0, 2) else y
+                size = rnd(abs(v - b0[j]))
+                nb[i] = b0[j] + size if i > j else b0[j] - size
+            nb = [min(nb[0], nb[2]), min(nb[1], nb[3]), max(nb[0], nb[2]), max(nb[1], nb[3])]
+            w, h = round(nb[2] - nb[0], 3), round(nb[3] - nb[1], 3)
+            new = dict(w=w, h=h, ox=round((nb[0] + nb[2]) / 2 - cx, 3), oy=round((nb[1] + nb[3]) / 2 - cy, 3))
+            g, txt = box(*nb), f'{w:g} × {h:g} mm'
         gap = self.body_gap(g, o)
         if gap is not None:
             txt += f'   ·   {gap:.1f} mm to the nearest' if gap > 0.005 else '   ·   touching or overlapping'
@@ -3070,11 +3126,11 @@ class App(tk.Tk):
             c.create_oval(ox + gb[0] * sc, oy + gb[1] * sc, ox + gb[2] * sc, oy + gb[3] * sc, outline='#0284c7', dash=(4, 3), width=2, tags='dragbox')
         else:
             c.create_rectangle(ox + gb[0] * sc, oy + gb[1] * sc, ox + gb[2] * sc, oy + gb[3] * sc, outline='#0284c7', dash=(4, 3), width=2, tags='dragbox')
-        ti = c.create_text(ox + cx * sc, oy + gb[1] * sc - 14, text=txt, fill='#ffffff', font=self.f_head, tags='dragbox')
+        ti = c.create_text(ox + (gb[0] + gb[2]) / 2 * sc, oy + gb[1] * sc - 14, text=txt, fill='#ffffff', font=self.f_head, tags='dragbox')
         r = c.create_rectangle(*[v + o_ for v, o_ in zip(c.bbox(ti), (-4, -2, 4, 2))], fill='#075985', outline='#38bdf8', tags='dragbox')
         c.tag_raise(ti, r)
         self.hover.config(text="Part size: " + txt + '  (Alt for finer steps)')
-        self.drag = ('body', x0, y0, (o, sh), True, new)
+        self.drag = ('body', x0, y0, (o, sh), True, new, edges)
 
     def draw_bodies(self):
         if not self.ui.get('bodies') or not getattr(self, 'cur_view', None):

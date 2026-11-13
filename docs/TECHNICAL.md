@@ -64,6 +64,7 @@ makes the panel 10 mm bigger all round and adds a case screw in each corner. Add
 | `--screws` | none | Case screw holes round the panel edge: `none`, `corners`, `corners+mid` |
 | `--screw-dia` / `--screw-inset` | 2.2 / 3.5 | Case screw size, and distance from the panel edge to the hole **centre**. The window shows how much panel is left between hole and edge as you type |
 | `--rail-slot` | 0 | Eurorack only: rail holes as horizontal slots this long |
+| `--screw-head` | auto | Keep-out for screw heads: a WARN for any label or artwork under the head of a screw in a mounting hole (rule *Mounting hole*), a case or rail hole, or a part's screw hole (`:mount`). `auto` = twice the hole, `off`, or the head size in mm |
 | `--screw-slot` | 0 | Make the case holes slots this long, end to end (e.g. `--screw-slot 4` with a 2.5 mm hole). 0 = round |
 | `--corner-radius` | 0 | Rounded panel corners |
 | `--min-web` | 1.0 | Warn when material between two parts' cutouts is thinner |
