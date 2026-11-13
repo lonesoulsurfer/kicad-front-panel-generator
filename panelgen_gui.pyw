@@ -3188,6 +3188,33 @@ class App(tk.Tk):
             self.text_delete(d['fid']); self.select(None)
         elif kind == 'image':
             self.image_delete(d['id']); self.select(None)
+        elif kind == 'tab' and d['kind'] == 'textbox':
+            self.textbox_delete(d)
+        elif kind == 'tab':                            # a box the artwork made (round outputs, an edge tab, a row of pots)
+            self.ui['label_edits'][d['key']] = {'off': True}
+            self.sel = None
+            self.persist_ui(); self.update_preview()
+            self.hover.config(text='Box deleted - Undo, or right-click the panel and choose Bring back deleted boxes.')
+        elif kind == 'art' and d.get('what') in ('title', 'maker'):
+            self.vars['art_title' if d['what'] == 'title' else 'art_maker'].set('')
+            self.sel = None
+            self.hover.config(text=f"{'Title' if d['what'] == 'title' else 'Maker'} deleted - Undo brings it back.")
+
+    def textbox_delete(self, d):
+        """A box you put round a label or text: the box goes, the text stays (and so do others it reached over)."""
+        fid = (d.get('members') or [None])[0] or str(d['key'])[4:]
+        o = self.own_text(fid) if str(fid).startswith('text:') else None
+        if o is not None:
+            o.pop('box', None)
+        else:
+            e = self.ui['label_edits'].get(fid, {})
+            e.pop('box', None)
+            if not e:
+                self.ui['label_edits'].pop(fid, None)
+        self.ui['label_edits'].pop(d['key'], None)
+        self.sel = None
+        self.persist_ui(); self.update_preview()
+        self.hover.config(text='Box deleted - the text stays. Undo brings the box back.')
 
     # ------------------------------------------------------------------ copy and paste
     def clip_item(self, t):
@@ -3461,6 +3488,11 @@ class App(tk.Tk):
                 pass
             m.add_command(label='Add rectangle here', command=lambda: self.add_shape_at('rect', x, y))
             m.add_command(label='Add slot here', command=lambda: self.add_shape_at('slot', x, y))
+            gone = [k for k, v in self.ui['label_edits'].items() if isinstance(v, dict) and v.get('off')]
+            if gone:
+                m.add_separator()
+                m.add_command(label=f'Bring back deleted boxes ({len(gone)})', command=lambda: (
+                    [self.ui['label_edits'].pop(k, None) for k in gone], self.persist_ui(), self.update_preview()))
             if self.undo_stack:
                 m.add_separator(); m.add_command(label='Undo', command=self.undo)
             m.tk_popup(e.x_root, e.y_root)
@@ -3501,6 +3533,7 @@ class App(tk.Tk):
         elif kind == 'tab':
             m.add_command(label='Back to its own size', command=lambda: (self.ui['label_edits'].pop(d['key'], None),
                                                                          self.persist_ui(), self.update_preview()))
+            m.add_command(label='Delete box', command=lambda: (self.select(t), self.delete_selected()))
         else:
             if not str(d['fid']).startswith('tabword:'):
                 m.add_command(label='Change text…', command=lambda: self.label_change(d))

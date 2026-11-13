@@ -1818,7 +1818,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             if io != 'in' and fid in own_out and (L is None or not re.search(r'\bOUT', L['text'], re.I)):
                 L = own_out[fid][1]
             out = io == 'out' or (io != 'in' and L is not None and re.search(r'\bOUT', L['text'], re.I))
-            if not out:
+            if not out or edits.get('tab:' + fid, {}).get('off'):     # deleted in the window
                 continue
             own = unary_union([x['geom'] for x in cs])
             bx = list(own.buffer(1.2).bounds)
@@ -1872,6 +1872,8 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
                 else:
                     runs.append([p])
             for run in runs:
+                if edits.get('tab:' + run[0][2]['fid'], {}).get('off'):  # deleted in the window
+                    continue
                 h = run[0][2]['h']
                 sgn = 1 if side == 'top' else -1
                 edge_y = py1 if side == 'top' else py2
@@ -1956,7 +1958,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
         boxes_done = []
         for run in sorted(runs_of(0) + runs_of(1), key=len, reverse=True):
             ids = {i['fid'] for i in run}
-            if any(ids & d for d in boxes_done):
+            if any(ids & d for d in boxes_done) or edits.get('group:' + min(ids), {}).get('off'):
                 continue
             parts_geo = []
             for i in run:
