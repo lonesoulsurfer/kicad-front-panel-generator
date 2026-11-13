@@ -38,27 +38,22 @@ Panel Generator only reads the saved 'kicad_pcb' file, so save in KiCad again wh
 
 ### 2. Set the size, corners and case holes
 
-The settings on the left are in two tabs: **Panel** (the board itself: size, shape and holes) and **Artwork** (everything printed on it). Each section has a heading you can click to fold it away, and the optional ones have a switch to turn them on.
+By default the panel is the same size as your PCB. Use the settings on the left to change it:
 
-By default the panel is the same size as your PCB. On the **Panel** tab:
-
-- **Extra round the PCB**: makes the panel bigger on every side, good for when you are adding a case (tick *Set each side separately* to give each side its own amount).
-- **Corner radius**: rounds the corners. 0 is square.
+- **Make the panel bigger than the PCB by**: increases the panel size around each edge, good for when you are adding a case (tick *Different amount on each side* to set each side separately).
+- **Rounded corners**: sets the corner radius.
 - **Case mounting holes**: screw holes to fix the panel to your case, in the corners or in the corners and the middle of each side. Set the hole size and how far its centre sits from the edge. The line underneath tells you how much panel is left between the hole and the edge. Pick **Slots** instead of round holes if you want some play to line the panel up.
-- **Screw heads**: a screw's head is wider than its hole, so text right next to a mounting hole ends up under it. Each screw hole (the PCB's mounting holes, the case holes, and screw holes for parts such as screens) shows a dotted circle the size of the head, and anything printed under it is flagged in orange and listed in Result. *Auto* is twice the hole, about right for pan-head screws; pick a screw from the list or type the head size for yours, or *Off*.
 
-Every change shows in the preview straight away. To give the preview more room, drag the bar between the settings and the preview, or the one above the buttons and the Result box. Use the **mouse wheel** to zoom in, **drag with the right mouse button** to move around, and **Fit** to see the whole panel again. Hover over any hole to see which part it's for and how big it is.
+Every change shows in the preview straight away. Use the **mouse wheel** to zoom in, **drag with the right mouse button** to move around, and **Fit** to see the whole panel again. Hover over any hole to see which part it's for and how big it is.
 
 **Extra holes** are for things that aren't on the PCB, such as a jack or switch wired to the board, or a window:
 
-- Pick a **hole size** from the list, or choose *Your own size…* and type one (sizes you type are kept in the list for next time). Then click **Hole**, and click the panel where it goes. **Rectangle** and **Slot** work the same way. You can also right-click the panel and add one there.
-- It snaps into line with the other holes; where there's nothing to line up with, it lands on a whole half millimetre. Hold **Alt** to place it freely, or untick **Snap** above the preview. For small moves, click it and use the **arrow keys**: 0.1 mm a press, 1 mm with Shift.
-- Click it and its settings appear on the left: how far its middle is from the panel's **left edge** and **top edge**, and its size. For a round hole, pick a new **Hole size** from the list and it changes to that size. Type exact numbers there. Or drag one of its white corner squares to resize it; a rectangle shows its width and height as you drag.
+- Pick a **hole size** from the list (or type your own), click **Add hole**, then click the panel where it goes. **Add rectangle** and **Add slot** work the same way. You can also right-click the panel and add one there.
+- It snaps into line with the other holes; where there's nothing to line up with, it lands on a whole half millimetre. Hold **Alt** to place it freely.
+- Click it and its settings appear on the left: how far its middle is from the panel's **left edge** and **top edge**, and its size. Type exact numbers there.
 - **Several at once:** drag a box round holes you added (or Shift-click them) to select them, then drag them together, **line them up** in a row or column, or type their **spacing**, middle to middle.
 - **Copy** (Ctrl+D) repeats the selection with the same sizes and spacing. Two holes in a row become four, evenly spaced; drag the copy if it belongs somewhere else. **Delete** removes them.
-- **Part sizes:** right-click any hole and choose *Show the part's size round it*. A dashed blue circle or rectangle shows how big the part really is (a jack's nut, a knob), so you can space the holes by it. Drag its edge to set the size: the size and the gap to the nearest part show as you drag. A rectangle's sides move one at a time, so it can stick out to one side of its hole (a USB board with the connector at one end); drag a corner to move two sides, or hold **Shift** to keep it even round the hole. It's never cut or printed.
-- **Measure** (above the preview) is a ruler: click two points to see how far apart they are. It snaps to the middle and the edge of holes and to the panel edges. Hold **Ctrl** to keep the measurement dead level or straight up and down.
-- **The ruler is a guide too.** After the first click, type a length (for example `16`) and press Enter: the other end lands exactly that far away. The ruler stays on the panel until you click **Clear ruler**, and anything you drag, add or paste snaps to its ends and its middle. So for two holes 16 mm apart with a slot between them: add a hole, measure 16 mm from its middle, paste a second hole on the far end, and drop the rectangle on the ruler's middle.
+- **Measure** (above the preview) is a ruler: click two points to see how far apart they are. It snaps to the middle and the edge of holes and to the panel edges. Press Esc when you're done.
 
 Extra holes are checked like every other hole (too close to an edge, overlapping a part), and stay where they are relative to the PCB if you later make the panel bigger.
 
@@ -72,7 +67,7 @@ The **Result** box under the preview lists anything that needs your attention.
 
 ### 3. Add labels (optional)
 
-On the **Artwork** tab, open **Labels** and tick *A name next to each control*. Each pot, jack and switch gets a name printed next to its hole on the panel's silkscreen. The name comes from the PCB: a `Label` field if you've added one to the part, otherwise its Value (for example, a pot with the Value `Cutoff` is labelled CUTOFF).
+Tick **Add labels from the PCB** and a label section opens. Each pot, jack and switch gets a name printed next to its hole on the panel's silkscreen. The name comes from the PCB: a `Label` field if you've added one to the part, otherwise its Value (for example, a pot with the Value `Cutoff` is labelled CUTOFF).
 
 - Choose whether labels go **above** or **below** the holes, and the **gap** between label and hole.
 - Set the **text size** and **font**, and turn **bold** and **ALL CAPS** on or off.
@@ -82,17 +77,16 @@ On the **Artwork** tab, open **Labels** and tick *A name next to each control*. 
 
 ### 4. Let it make the artwork (optional)
 
-Don't want to open Inkscape? The **Artwork** tab can draw the artwork from your panel. Pick a **Style** at the top to start from, then change anything in the sections below it (Title, Pots, Buttons, Jacks, Border):
+Don't want to open Inkscape? Tick **Make artwork for me** and Panel Generator draws the artwork from your panel:
 
 - **Pot scales:** tick marks, 0–10 numbers or centre-zero (− 0 +) round each pot, over a 300° turn. Set the **Knob** size so the scale and the label start outside the knob.
-- **Shapes round any hole:** under **Shapes**, set the shape (circle, box, triangle, hexagon or diamond), filled or outline, gap and line thickness. Then right-click a hole and choose *Add a shape round it*. Each new shape gets those settings, so a row of them is quick. To change a shape, click it: the same settings then change that shape. Click the shape to set its gap from the hole, line thickness and corners, or drag its edges to resize it. Pull a filled box over a label and the label is cut out of it. This works on every hole, including ones the automatic options below don't pick up.
-- **Rings** round push buttons. Set how thick the ring is and how far it sits from the hole.
-- **Vertical outputs in filled boxes:** any jack that comes up through the panel and whose label says OUT gets a solid box with the label cut out of it, the usual way modular panels show outputs. A text you add saying OUT right next to a jack counts too. So does a round hole you added under Extra holes with such a text next to it (a wired jack that isn't on the PCB).
-- **Boxes round rows of controls:** tick *Box* under Pots, Buttons or Jacks for a box round 3 or more of them in a row or column, scales and labels inside. Drag its top, bottom or a side to resize it; the other side follows so it stays centred.
-- **Horizontal jacks in tabs:** jacks lying flat at the panel edge (the plug goes in from the side) get a filled tab hanging from the edge with their labels cut out. Labels like MIDI IN and MIDI OUT become IN / OUT with MIDI underneath. Drag an edge of a tab or output box to make it bigger; it snaps to the edges of the others, so you can make them all the same size.
-- **Border** (square, following the panel, or with its own rounded corners; set its **gap from the edge**, or leave 0 and it sits just inside the case holes) and a **title**, across the top, stacked down a side (letters one under another) or turned on its side (plus your name or brand, small, along the bottom). They go in the first free spot; drag them anywhere.
+- **Rings** round push buttons.
+- **Outputs in filled boxes:** any jack whose label says OUT gets a solid box with the label cut out of it, the usual way modular panels show outputs. A text you add saying OUT right next to a jack counts too.
+- **Boxes round rows of controls:** a box round 3 or more of the same control in a row or column, scales and labels inside.
+- **Tabs for edge jacks:** jacks on the panel edge (the plug goes in from the side) get a filled tab hanging from the edge with their labels cut out. Labels like MIDI IN and MIDI OUT become IN / OUT with MIDI underneath. Drag an edge of a tab or output box to make it bigger; it snaps to the edges of the others, so you can make them all the same size.
+- **Border** (square, following the panel, or with its own rounded corners) and a **title**, across the top, stacked down a side (letters one under another) or turned on its side (plus your name or brand, small, along the bottom). They go in the first free spot; drag them anywhere.
 
-The styles are *None*, *Minimal*, *Classic synth* and *Modular*; change anything after and it becomes *Custom*. Once a panel looks the way you like, click **Save this look as my style**: every new PCB then starts with the same fonts, sizes, scales, rings and border, and *My style* appears in the Style list. To change one part (a centre-zero scale for a pan pot, or a jack that's an output but isn't labelled OUT), click its **Artwork** cell in **Edit labels**. Anything that would hit a hole, a label or the edge is left out, and you get a note.
+Pick a **Style** to start from (*Minimal*, *Classic synth* or *Modular*) and change anything after. To change one part (a centre-zero scale for a pan pot, or a jack that's an output but isn't labelled OUT), click its **Artwork** cell in **Edit labels**. Anything that would hit a hole, a label or the edge is left out, and you get a note.
 
 ![Artwork made for you](docs/images/auto_artwork.png)
 
@@ -100,24 +94,20 @@ You can use this and Inkscape together: the made artwork appears in the Inkscape
 
 ### 5. Add your own text, pictures and boxes (optional)
 
-Everything here is done in the preview. Your own texts live under **Labels** on the left and pictures under **Pictures**. Untick *My own texts on the panel*, or switch Pictures off, to leave them off the panel (for example when you change to Inkscape artwork that has its own text) without losing them.
+Everything here is done in the preview, with the settings under **Your text and pictures** on the left. Untick **Put my text and pictures on the panel** to leave them all off (for example when you switch to Inkscape artwork that has its own text); tick it again and they're back.
 
-- **Move anything by dragging it:** a label, your text, a picture or the title. It snaps into line with the other labels, to the middle of holes (and of each key you can see through a window or a merged slot, shown as a blue dotted outline with a cross at its middle), half way between two holes (a MIDI label over its IN and OUT jacks), and to the middle of the gap between two things. Hold **Alt** to place it freely.
-- **Click anything to change it.** Its settings appear on the left: text, size, put it back, hide or delete. To resize the title, a picture or one of your texts, click it and drag one of its white corner squares.
-- **Add text** for things that aren't on the PCB, such as what each key does: under Labels → Your own, click **Text…** (or right-click the panel and choose *Add text here*), then click where it goes and type it.
+- **Move anything by dragging it:** a label, your text, a picture or the title. It snaps into line with the other labels, to the middle of holes, half way between two holes (a MIDI label over its IN and OUT jacks), and to the middle of the gap between two things. Hold **Alt** to place it freely.
+- **Click anything to change it.** Its settings appear on the left: text, size, put it back, hide or delete.
+- **Add text** for things that aren't on the PCB, such as what each key does: click **Add text…** (or right-click the panel and choose *Add text here*), then click where it goes and type it.
 - **Boxes round text:** for a key with two jobs, or a function that needs two keys pressed, click the text and set **Box** to *Line round it* or *Filled bar* (text cut out). Then drag the box's ends to stretch it over the keys. It snaps to the key labels and to other boxes. Stretch it over other texts and they go into the box too, where they are: one long bar under a row of keys. A box round just one text keeps it in the middle.
-- **Lines:** under **Lines**, click **Line**, then click where it starts and where it ends (hold **Ctrl** to keep it dead level or straight up and down). Use them as dividers, brackets or signal-flow arrows. Click a line and **Thickness** changes it; you can also add an arrowhead or type its exact length, and drag an end to re-aim it. A line that ends at a hole runs right up to the hole's edge.
-- **Pictures:** click **Picture…** and pick a PNG, JPG or SVG (a glider, a logo). Its dark parts print. Drag it into place, then click it to set its width, turn it, print its light parts instead, or delete it.
-- **Several at once:** drag a box round them (or Shift-click each). Labels, texts, lines, pictures and holes you added can all be picked together, then dragged, copied or deleted as one. The **Delete** key removes what's selected; a PCB label is hidden instead, and Edit labels brings it back. On a box round text it removes just the box. A box the artwork made (round an output, an edge tab, a row of pots) can be deleted too; right-click the panel and choose *Bring back deleted boxes* to get them back.
-- **Copy and paste:** select a text, a picture or holes you added, press **Ctrl+C**, then **Ctrl+V** to paste a copy at the pointer (or right-click the panel and choose *Paste here*). Copying a label from the PCB pastes it as a text of your own.
-- **Reset** (next to Undo) starts the panel again from your PCB: the same size as the PCB, with its holes and nothing else. That includes parts and cutouts you placed in the panel file in KiCad; the old panel file is kept as a backup (`…_panel.before-reset.kicad_pcb`) when you next generate. It asks first, and Undo brings it all back.
+- **Pictures:** click **Add picture…** and pick a PNG, JPG or SVG (a glider, a logo). Its dark parts print. Drag it into place, then click it to set its width, turn it, print its light parts instead, or delete it.
 - **Undo** (or Ctrl+Z) takes back the last change, whether it's a setting on the left (panel size, labels, artwork options…) or something you did in the preview, up to 50 steps.
 
 ![Your own text, pictures and boxes](docs/images/text_pictures.png)
 
 ### 6. Draw your own artwork in Inkscape (optional)
 
-Labels only do text. For anything else (borders, logos, boxes, white-on-black text, your own fonts), switch on **Artwork from Inkscape** and click **Create artwork file**.
+Labels only do text. For anything else (borders, logos, boxes, white-on-black text, your own fonts), tick **Add my artwork to the silkscreen** and click **Create artwork file**.
 
 This saves an Inkscape file in the `Front Panel` folder and opens it. The Inkscape page is an exact 1:1 copy of your panel, and every hole is drawn in red so you can see where things go. You can also line your designs up with the red holes using Inkscape's **Align and Distribute**.
 
@@ -138,7 +128,7 @@ The red holes aren't printed. They're redrawn from the PCB every time you genera
 
 When the preview looks right, click **Generate panel**. This makes the panel file (`<your board>_panel.kicad_pcb`) in a `Front Panel` folder next to your PCB, and opens it in KiCad so you can check it, including in the 3D viewer.
 
-Your settings and everything you do in the preview are saved with each board as you go, so you can close the window at any time. If you change the PCB, the settings or the artwork later, the status line next to the buttons tells you the panel is out of date. Click **Generate panel** again to update it.
+Your settings are saved with each board. If you change the PCB, the settings or the artwork later, the status line next to the buttons tells you the panel is out of date. Click **Generate panel** again to update it.
 
 Close the panel in KiCad before you generate again, so the file can be replaced.
 
