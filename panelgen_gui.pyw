@@ -13,7 +13,7 @@ DEFAULTS = dict(margin=0.0, margin_top=0.0, margin_right=0.0, margin_bottom=0.0,
                 corner_radius=0.0, grow=0.0, svg=False, check_uncut='on',
                 artwork='off', labels='off', label_size=2.0, label_gap=1.5, label_pos='above', label_font='', label_bold='off', label_caps='off',
                 extras='on', auto_art='off', art_style='Classic synth', art_scale='ticks', art_rings='on', art_outputs='off', art_border='off',
-                art_border_radius=0.0, art_border_gap=0.0, ring_width=0.8, ring_gap=0.8, art_groups='off', art_tabs='off',
+                art_border_radius=0.0, art_border_gap=0.0, art_border_width=0.6, ring_width=0.8, ring_gap=0.8, art_groups='off', art_tabs='off',
                 art_title='', art_maker='', title_size=5.0, knob_size=13.0)
 SCREW_HEADS = ['Auto (twice the hole)', 'Off', '4 · M2 pan head', '5 · M2.5 pan head', '5.6 · M3 pan head',
                '5.7 · M3 button head', '7 · M3 with washer']
@@ -36,7 +36,7 @@ LINE_ENDS = {'Plain': 'none', 'Arrow at the end': 'end', 'Arrows at both ends': 
 MY_STYLE = 'My style'
 STYLE_VARS = ('labels_on', 'label_pos', 'label_gap', 'label_size', 'label_font', 'label_bold', 'label_caps', 'art_scale',
               'knob_size', 'art_rings', 'ring_width', 'ring_gap', 'art_outputs', 'art_tabs', 'art_border', 'border_gap',
-              'border_radius', 'title_size', 'title_dir', 'art_maker', 'line_w') + tuple('art_groups_' + k for k in GROUP_KINDS)
+              'border_radius', 'border_width', 'title_size', 'title_dir', 'art_maker', 'line_w') + tuple('art_groups_' + k for k in GROUP_KINDS)
 TITLE_DIRS = {'Across': 'off', 'Stacked': 'stacked', 'On its side': 'on', 'On its side, reading down': 'on-mirror'}
 SCALES = {'None': 'none', 'Ticks': 'ticks', 'Numbers 0-10': 'numbers', 'Centre zero (- 0 +)': 'bipolar'}
 KICAD_FONT = "KiCad's own font"
@@ -146,6 +146,7 @@ class App(tk.Tk):
         for k in GROUP_KINDS:
             v['art_groups_' + k] = tk.BooleanVar()
         v['art_tabs'] = tk.BooleanVar(); v['border_radius'] = tk.StringVar(value='0')
+        v['border_width'] = tk.StringVar(value='0.6')
         v['border_gap'] = tk.StringVar(value='0'); v['ring_width'] = tk.StringVar(value='0.8'); v['ring_gap'] = tk.StringVar(value='0.8')
         v['art_title'] = tk.StringVar(); v['art_maker'] = tk.StringVar(); v['title_mirror'] = tk.BooleanVar()
         v['line_w'] = tk.StringVar(value='0.5')
@@ -528,6 +529,8 @@ class App(tk.Tk):
         self.w_bgap = mm(c, 'border_gap', note='0 = automatic')
         c = field(f, 'Corner radius', '0 = the border follows the panel corners. Any other value rounds the border corners by that much.')
         self.w_bradius = mm(c, 'border_radius', note='0 = follows the panel')
+        c = field(f, 'Thickness', 'How thick the border line is. 0.6 mm is the default; silkscreen needs at least about 0.15 mm.')
+        self.w_bwidth = mm(c, 'border_width')
         for k in STYLE_VARS:                     # changing any of these by hand makes the style 'Custom'
             v[k].trace_add('write', lambda *_: self.style_custom())
 
@@ -851,7 +854,7 @@ class App(tk.Tk):
         self.show(self.case_detail, v['screws'].get() != 'none', fill='x')
         self.show(self.label_detail, v['labels_on'].get(), fill='x')
         self.show(self.art_detail, v['art_on'].get(), fill='x')
-        en(self.w_bradius, v['art_border'].get()); en(self.w_bgap, v['art_border'].get())
+        en(self.w_bradius, v['art_border'].get()); en(self.w_bwidth, v['art_border'].get()); en(self.w_bgap, v['art_border'].get())
         en(self.w_ringw, v['art_rings'].get()); en(self.w_ringg, v['art_rings'].get())
         self.art_state()
         en(self.w_margin, not v['per_side'].get())
@@ -1104,6 +1107,7 @@ class App(tk.Tk):
             v['art_groups_' + k].set(k in kinds)
         v['art_tabs'].set(s['art_tabs'] == 'on')
         v['border_radius'].set(f"{s['art_border_radius']:g}"); v['border_gap'].set(f"{s['art_border_gap']:g}")
+        v['border_width'].set(f"{s.get('art_border_width', 0.6):g}")
         v['ring_width'].set(f"{s['ring_width']:g}"); v['ring_gap'].set(f"{s['ring_gap']:g}")
         v['art_title'].set(s['art_title']); v['art_maker'].set(s['art_maker'])
         v['title_size'].set(f"{s['title_size']:g}"); v['knob_size'].set(f"{s['knob_size']:g}")
@@ -1271,6 +1275,7 @@ class App(tk.Tk):
                      '--art-outputs', 'on' if v['art_outputs'].get() else 'off',
                      '--art-border', 'on' if v['art_border'].get() else 'off',
                      '--art-border-radius', f"{self.number('border_radius', 'border corner radius'):g}" if v['art_border'].get() else '0',
+                     '--art-border-width', f"{max(0.15, self.number('border_width', 'border thickness')):g}" if v['art_border'].get() else '0.6',
                      '--art-border-gap', f"{self.number('border_gap', 'border gap from the edge'):g}" if v['art_border'].get() else '0',
                      '--ring-width', f"{max(0.15, self.number('ring_width', 'ring thickness')):g}",
                      '--ring-gap', f"{self.number('ring_gap', 'ring gap'):g}",
@@ -1558,6 +1563,7 @@ class App(tk.Tk):
         return None
 
     def press(self, e):
+        self.canvas.focus_set()        # keys (Delete, arrows, Ctrl+C) now act on the preview, not a box you typed in
         if self.measuring:
             self.drag = None
             return
@@ -2679,6 +2685,7 @@ class App(tk.Tk):
 
     # ------------------------------------------------------------------ moving the view, and the ruler
     def pan_press(self, e):
+        self.canvas.focus_set()
         self.pan = (e.x, e.y, False)
 
     def pan_motion(self, e):

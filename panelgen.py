@@ -2008,7 +2008,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             R = a.art_border_radius
             inner = inner.buffer(-R, join_style=2).buffer(R, quad_segs=16)
         if not inner.is_empty:
-            band = inner.difference(inner.buffer(-0.6, join_style=1))
+            band = inner.difference(inner.buffer(-max(0.1, a.art_border_width), join_style=1))
             band = band.difference(holes.buffer(0.8))
             for t in tab_areas:                                      # broken round the edge tabs
                 band = band.difference(t.buffer(0.8))
@@ -2021,7 +2021,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
     taken = unary_union([holes.buffer(0.8)] + [b.buffer(0.6) for f, b in label_box.items() if f not in knocked]
                         + [g.buffer(0.6) for g in shapes])
     x1, y1, x2, y2 = outline.bounds
-    border_in = border_inset(a) + 0.6
+    border_in = border_inset(a) + (a.art_border_width if a.art_border == 'on' else 0.6)
     edge = border_in + 1.2 if a.art_border == 'on' else 2.0
     region = outline.buffer(-edge + 0.01)
     a._art_items = []
@@ -2550,6 +2550,7 @@ def main(argv=None, preview=None):
     ap.add_argument('--art-outputs', choices=['on', 'off'], help="jacks whose label says OUT get a filled box, the label cut out of it")
     ap.add_argument('--art-border', choices=['on', 'off'], help='a line round the panel, inside the case screws')
     ap.add_argument('--art-border-radius', type=float, help='round the corners of the border, mm (0 = follow the panel)')
+    ap.add_argument('--art-border-width', type=float, help='thickness of the border line, mm (default 0.6)')
     ap.add_argument('--art-border-gap', type=float, help='panel edge to the border, mm (0 = automatic: 1.5, or just inside the case screws)')
     ap.add_argument('--ring-width', type=float, help='line thickness of the rings round buttons, mm (default 0.8)')
     ap.add_argument('--ring-gap', type=float, help='gap between a button hole and its ring, mm (default 0.8)')
@@ -2595,7 +2596,7 @@ def main(argv=None, preview=None):
                     min_web=1.0, svg=False, grow=0.0, panel_layer='User.1', check_uncut='on',
                     artwork='off', artwork_file='',
                     labels='off', label_size=2.0, label_gap=1.5, label_pos='above', label_font='', label_bold='off', label_caps='off',
-                    extras='on', auto_art='off', art_style='', art_scale='ticks', art_rings='on', art_outputs='off', art_border='off', art_border_radius=0.0, art_border_gap=0.0, ring_width=0.8, ring_gap=0.8,
+                    extras='on', auto_art='off', art_style='', art_scale='ticks', art_rings='on', art_outputs='off', art_border='off', art_border_radius=0.0, art_border_gap=0.0, art_border_width=0.6, ring_width=0.8, ring_gap=0.8,
                     art_groups='off', art_tabs='off', art_title='',
                     art_maker='', title_size=5.0, title_font='', title_bold='on', title_vertical='off', title_mirror='off', knob_size=13.0, pot_sweep=300.0, scale_text=1.4)
     for k, d in defaults.items():          # explicit option > saved (with --again) > built-in default
@@ -2887,7 +2888,7 @@ def main(argv=None, preview=None):
                                        label_font=a.label_font, label_bold=a.label_bold, label_caps=a.label_caps,
                                        artwork=a.artwork, artwork_file=a.artwork_file,
                                        **{k: getattr(a, k) for k in ('extras', 'auto_art', 'art_style', 'art_scale', 'art_rings', 'art_outputs', 'art_border',
-                                                                     'art_border_radius', 'art_border_gap', 'ring_width', 'ring_gap', 'art_groups', 'art_tabs',
+                                                                     'art_border_radius', 'art_border_gap', 'art_border_width', 'ring_width', 'ring_gap', 'art_groups', 'art_tabs',
                                                                      'art_title', 'art_maker', 'title_size', 'title_font', 'title_bold', 'title_vertical', 'title_mirror',
                                                                      'knob_size', 'pot_sweep', 'scale_text')})
 
