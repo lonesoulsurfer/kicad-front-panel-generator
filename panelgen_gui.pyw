@@ -568,6 +568,12 @@ class App(tk.Tk):
         self.chip = tk.Label(ph, text='', font=self.f_head, padx=8, pady=1); self.chip.pack(side='left', padx=10)
         rb = ttk.Button(ph, text='Refresh', command=self.update_preview); rb.pack(side='right')
         fb = ttk.Button(ph, text='Fit', command=self.fit_view, width=5); fb.pack(side='right', padx=(0, 6))
+        self.snap_on = tk.BooleanVar(value=bool(self.cfg.get('snap', True)))
+        sb = ttk.Checkbutton(ph, text='Snap', variable=self.snap_on, command=lambda: (self.cfg.__setitem__('snap', self.snap_on.get()), self.save_cfg()))
+        sb.pack(side='right', padx=(0, 10))
+        Tip(sb, 'When on, things you move or add line up with holes, the middle of parts and other labels as they come near. '
+                'Untick for free placement (or hold Alt while dragging). The arrow keys nudge what is selected: 0.1 mm a press, '
+                '1 mm with Shift - never snapped.')
         self.w_measure = ttk.Button(ph, text='Measure', command=self.toggle_measure, width=11)
         self.w_measure.pack(side='right', padx=(0, 6))
         Tip(self.w_measure, 'A ruler: click two points in the preview to see how far apart they are. It snaps to the middle '
@@ -604,6 +610,8 @@ class App(tk.Tk):
         self.pan = None
         typing = lambda: isinstance(self.focus_get(), (ttk.Entry, tk.Entry, ttk.Combobox))
         self.bind_all('<Delete>', lambda e: None if typing() else self.delete_selected())
+        for key, (ax, ay) in (('Left', (-1, 0)), ('Right', (1, 0)), ('Up', (0, -1)), ('Down', (0, 1))):
+            self.bind_all(f'<{key}>', lambda e, ax=ax, ay=ay: None if typing() else self.nudge(e, ax, ay))
         self.bind_all('<Control-d>', lambda e: None if typing() else self.shapes_duplicate())
         for k in ('c', 'C'):
             self.bind_all(f'<Control-{k}>', lambda e: None if typing() else self.copy_selected())
@@ -1965,8 +1973,10 @@ class App(tk.Tk):
         if not txt or not txt.strip():
             return
         import uuid
-        self.ui.setdefault('texts', []).append(dict(id=uuid.uuid4().hex[:8], text=txt.strip(), x=round(x, 2), y=round(y, 2)))
+        new = dict(id=uuid.uuid4().hex[:8], text=txt.strip(), x=round(x, 2), y=round(y, 2))
+        self.ui.setdefault('texts', []).append(new)
         self.vars['texts_on'].set(True)                 # something you just added should show
+        self.sel, self.shape_sel, self.multi = ('text', 'text:' + new['id']), [], []   # and is selected, ready to adjust
         self.persist_ui(); self.update_preview()
 
     def snap(self, t, dx, dy, free=False):
@@ -1974,10 +1984,12 @@ class App(tk.Tk):
         Returns the (snapped) move and the guide lines to draw. Hold Alt to place it freely."""
         b, kind, d = t
         cx, cy = (b[0] + b[2]) / 2 + dx, (b[1] + b[3]) / 2 + dy
-        if free or not self.pv:
+        if free or not self.pv or not self.snap_on.get():
             return dx, dy, None, None
-        thr = max(8 / self.cur_view[0], 0.8)          # 8 pixels, in mm (never less than 0.8 mm, however far you zoom in)
-        strong = max(8 / self.cur_view[0], 2.0)       # lining up with a row of labels or a part's middle reaches further
+        # how close counts is measured on screen, as in drawing programs: zoom in for fine moves and the pull gets smaller.
+        # Lining up with a row of labels or a part's middle reaches a little further.
+        thr = 6 / self.cur_view[0]
+        strong = 12 / self.cur_view[0]
         xs, ys, sxs, sys_ = [], [], [], []
         moving = {'add:' + i for i in self.shape_sel} if kind == 'shape' else set()
         holes = [sh for sh in self.pv.get('shapes', []) if sh.get('key') not in moving]
@@ -3328,6 +3340,26 @@ class App(tk.Tk):
         keys = set(self.multi)
         return [t for t in getattr(self, 'targets', []) if (t[1] in MULTI and self.sel_key(t) in keys)
                 or (t[1] == 'shape' and t[2]['id'] in self.shape_sel)]
+
+    def nudge(self, e, ax, ay):
+        """Arrow keys: move what's selected 0.1 mm (1 mm with Shift), with no snapping."""
+        if not self.pv or 'message' in self.pv:
+            return
+        step = 1.0 if getattr(e, 'state', 0) & 0x0001 else 0.1
+        dx, dy = round(ax * step, 3), round(ay * step, 3)
+        if self.group_size() > 1:
+            self.move_group(dx, dy)
+        elif self.shape_sel:
+            t = next((t for t in self.targets if t[1] == 'shape' and t[2]['id'] in self.shape_sel), None)
+            if t:
+                self.move_target(t, dx, dy)
+        else:
+            t = self.selected_target()
+            if not t or (t[1] == 'tab' and t[2].get('kind') == 'mark'):
+                return
+            self.move_target(t, dx, dy)
+        self.hover.config(text=f"Moved {step:g} mm  ·  arrow keys: 0.1 mm, with Shift 1 mm")
+        return 'break'
 
     def move_group(self, dx, dy):
         moved_shapes = False

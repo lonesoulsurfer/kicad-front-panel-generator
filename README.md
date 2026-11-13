@@ -51,7 +51,7 @@ Every change shows in the preview straight away. To give the preview more room, 
 **Extra holes** are for things that aren't on the PCB, such as a jack or switch wired to the board, or a window:
 
 - Pick a **hole size** from the list, or choose *Your own size…* and type one (sizes you type are kept in the list for next time). Then click **Hole**, and click the panel where it goes. **Rectangle** and **Slot** work the same way. You can also right-click the panel and add one there.
-- It snaps into line with the other holes; where there's nothing to line up with, it lands on a whole half millimetre. Hold **Alt** to place it freely.
+- It snaps into line with the other holes; where there's nothing to line up with, it lands on a whole half millimetre. Hold **Alt** to place it freely, or untick **Snap** above the preview. For small moves, click it and use the **arrow keys**: 0.1 mm a press, 1 mm with Shift.
 - Click it and its settings appear on the left: how far its middle is from the panel's **left edge** and **top edge**, and its size. For a round hole, pick a new **Hole size** from the list and it changes to that size. Type exact numbers there. Or drag one of its white corner squares to resize it; a rectangle shows its width and height as you drag.
 - **Several at once:** drag a box round holes you added (or Shift-click them) to select them, then drag them together, **line them up** in a row or column, or type their **spacing**, middle to middle.
 - **Copy** (Ctrl+D) repeats the selection with the same sizes and spacing. Two holes in a row become four, evenly spaced; drag the copy if it belongs somewhere else. **Delete** removes them.
