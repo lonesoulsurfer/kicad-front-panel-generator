@@ -1,8 +1,55 @@
 # Changelog
 
+## 0.27.0
+
+- **Clearer left side:** two tabs, *Panel* and *Artwork*, with your PCB always in view above them. Every setting has its name on the left and its box on the right, in one line, with small headings inside each section (Place, Text, Title, Pots, Buttons, Border...).
+- **Sections fold away** when you click their heading, and optional ones (Labels, Your text and pictures, Artwork made for you, Artwork from Inkscape) have an on/off switch in the heading instead of a tick box.
+- **The Artwork tab follows the order you work in:** Style, Title, Labels, Pots, Buttons, Jacks, Border, Pictures, Artwork from Inkscape. "Artwork made for you" is no longer one big section with a master switch: each part is switched on where it lives, and Style *None* turns the made parts off.
+- **Your own texts are under Labels** (Add → Text…, and the text you click shows there), with the size and font that both kinds share. Pictures have their own section. Each can be left off the panel separately.
+- **Box round a row of pots is under Pots** (and the same for Buttons and Jacks, each with its own tick box).
+- **Fewer tick boxes:** *Extra round the PCB* and *Corner radius* are just numbers now (0 = none).
+- **Border: gap from the edge.** 0 keeps it automatic (just inside the case holes).
+- **Rings round buttons:** set the ring thickness and its gap from the hole.
+- **Boxes round rows of controls can be resized:** click the box, then drag its top, bottom or a side. Pull a side and the other side follows, so the box stays centred. It stops at the biggest size that fits.
+- **Drag a corner to resize** the title, a picture or one of your texts: click it, then pull one of the white corner squares.
+- **What you click shows where it belongs:** a label (or the box round it) under Labels, your own text and pictures under theirs, the title, tabs and boxes under Artwork made for you.
+- **Fixed: lists changing by themselves.** Scrolling the left side with the mouse wheel over a list (font, title direction, pot scale) changed its value. The wheel now only scrolls.
+- **Fixed: the left side jumping to the top** when a setting changed.
+- **A bar round several labels stays put when you move one label inside it,** so you can centre a label in it. Drag the middle of the bar to move it with every label in it. The box round a row of controls no longer shifts when you nudge a label.
+- **Right-click any label, Change text:** also for labels that came from the PCB (the PCB itself isn't changed).
+- **Fixed: a filled bar stretched over labels that had their own box hid one of them.** The longest bar now takes in every label it covers.
+- **A box round text resizes evenly:** pull its top or bottom and the other follows; nudge an end of a bar that holds several labels (up to 6 mm) and the other end follows. Pull an end further, or past another label, and only that end moves, so you can still stretch a bar over more labels. Once a bar's ends sit unevenly (one lined up with a cutout, say), or an end snaps to an edge, only the end you pull moves. Shift always moves just the one edge.
+- **Copy and paste:** Ctrl+C on what's selected (holes you added, one of your texts, a picture, or a label), Ctrl+V to paste it at the pointer. Right-click the panel for *Paste here*.
+- **Lines:** draw a divider, a bracket or a signal-flow arrow (Artwork → Lines → Line, then two clicks). They snap to holes, other line ends and the ruler; Ctrl keeps them straight; they run right up to the edge of a hole. Click one and Thickness changes it; set its arrowheads or exact length under Selected; drag it to move it, drag an end to re-aim it.
+- **My style:** *Save this look as my style* remembers the label size and font, scales, rings, boxes, tabs, border, title size and direction, maker name and line thickness. Every new PCB starts with it, and it is in the Style list for any panel.
+- **Delete key** removes the selected line, text or picture, as well as holes you added.
+- **Fixed: no output boxes on jacks that aren't on the PCB.** A round hole you added under Extra holes, or a jack placed by hand in the panel file, now gets its filled box when a text next to it says OUT. If the option is ticked and nothing qualifies, the Result box says why.
+- **Drag a corner of a hole, rectangle or slot you added** to resize it. A rectangle's width and height change separately, with both shown as you drag.
+- **Copy the title** (Ctrl+C, Ctrl+V): the copy says what the title says, with its own place, size and direction. Tick **Mirror image** on the title or on a copy to flip its letters left to right, for a mirrored pair. New direction *On its side, reading down* turns it the other way.
+- **A bigger preview when you want one:** drag the bar between the settings and the preview, or the bar above the buttons and the Result box. The sizes are remembered.
+- **Reset** (next to Undo) starts the panel again from the PCB: the PCB's own size and holes, nothing added. That includes anything placed or changed in the panel file in KiCad (panel jacks, screws, drawn cutouts, edited holes); when you next generate, the old panel file is kept as `<board>_panel.before-reset.kicad_pcb`. It asks first, and Undo brings everything back.
+- **Shapes round any hole:** set the shape, filled or not, gap, line thickness and corners in the new **Shapes** section, then right-click any hole (from the PCB, the panel file or one you added) and choose *Add a shape round it*. Each new shape gets those settings. Click a shape and the same settings change it (the line above them says which shape you're changing). Click a shape to set its gap, line thickness and corners; drag its edges to resize it. Pull a filled box over a label and the label is cut out of it.
+- **Buttons and Jacks are now one Shapes section,** with the automatic rings, output boxes, edge tabs and row boxes under *Made for you*.
+- **Pick several things at once:** drag a box round them, or Shift-click. Labels, your texts, lines, pictures and holes you added can be picked together, then dragged together, copied (Ctrl+C / Ctrl+V keeps their spacing) or deleted.
+- **Delete key** works on whatever is selected. A label from the PCB is hidden rather than deleted (Edit labels or Undo brings it back).
+- **Parts under a window show in the preview:** keys under one big opening (or merged into one slot) are drawn as blue dotted outlines with a cross at their middle.
+- **Texts line up in rows by themselves:** a text you add or drag snaps over the middle of each of those keys (the nearest one to it), and level with the labels already there, from up to 2 mm away at any zoom.
+- **Settings save as you go.** The settings on the left are saved with the panel as soon as you change them, like your work in the preview, so closing the window without generating no longer loses them. (Generate panel is still what updates the panel file in KiCad.)
+- **Tactile switches get a hole:** 6×6 mm tact switches (KiCad's SW_PUSH_6mm, PTS645, B3S-1000 and similar) get a 4.0 mm hole for the button, 12×12 mm ones 7.5 mm, centred on the button rather than on pin 1. New panel part `Panel_Tact_4.0mm`, and *4 · 6x6 tactile switch* in the Hole size list.
+- **How to… at the bottom of each tab:** short answers for what the generator can't guess, such as changing one part's hole with a Panel field, a hole for an unknown part, stopping a hole, holes for things not on the PCB, labels, shapes, measuring. Click a question to open it.
+- **Part-size guides:** right-click a hole and choose *Show the part's size round it* (circle or rectangle, or on every hole that size). A dashed blue outline shows the part's real body, nut or knob. Drag its edge to size it; the size and the gap to the nearest part show as you drag. A rectangle's sides move one at a time (Shift keeps it even round the hole), so it can show a board that sits off to one side of its hole. Never cut or printed.
+- **Delete key works on boxes too:** click a box round a label or text and press Delete - the box goes, the text stays. A box the artwork made (round an output, an edge tab, a row of pots) can be deleted the same way, or with right-click → Delete box; right-click the panel → *Bring back deleted boxes* restores them. Delete on the title or maker clears it. Undo brings any of it back.
+- **Screw heads:** every screw hole (PCB mounting holes, case holes, screw holes of screens and the like) shows a dotted circle the size of the screw's head, and labels or artwork under it are flagged. Set the head size in the Panel tab (Auto = twice the hole, a screw from the list, your own size, or Off).
+- **Fine moves:** the arrow keys nudge whatever is selected 0.1 mm a press (1 mm with Shift), never snapped. A **Snap** tick box above the preview turns lining-up off altogether (Alt while dragging still does it for one move). The snap's reach is now measured on screen again, so zooming in makes it smaller. A text you add is selected straight away.
+- **Measure:** hold Ctrl (or Shift) to keep the ruler dead level or straight up and down.
+- **The ruler is also a guide.** After the first click, type a length (say 16) and press Enter to set the other end exactly that far away. The ruler then stays on the panel, and anything you drag, add or paste snaps to its ends and its middle. Type a new length to change it; *Clear ruler* removes it; M starts a new one.
+- **Openings section removed.** "Make every opening bigger" is no longer in the window (still on the command line as `--grow`), and parts that look like they need a cutout are always flagged.
+
 ## 0.26.0
 
 - **Extra holes:** add round holes (usual sizes in a list, or your own), rectangles and slots in the window, for things that aren't on the PCB. Click to place, or right-click the panel. They snap into line with the other holes.
+- **Click a hole you added and pick a Hole size** from the list (or type one): the hole changes to that size.
+- **Your own hole sizes:** choose *Your own size…* at the bottom of the Hole size list (or type straight into the box). Sizes you type are kept at the top of the list for next time.
 - **Exact place and size** on the left, measured from the panel's left and top edges to the middle of the hole.
 - **Select several** by dragging a box round them (or Shift-click), then move them together, line them up in a row or column, or type their spacing.
 - **Copy** (Ctrl+D) repeats the selection with the same sizes and spacing; **Delete** removes it.

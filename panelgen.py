@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.26.0"
+VERSION = "0.27.0"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -258,6 +258,11 @@ def find_centre(fp, method, log):
             log.append(f"CHECK {fp.ref}: no F.Fab circle in {fp.lib}, centred on its silkscreen circle instead")
             return (c[0], c[1])
         return None
+    if method == 'circle_or_box':         # the round button on F.Fab if it's drawn, else the middle of the part
+        c = fp.body_circle()
+        if c:
+            return (c[0], c[1])
+        method = 'fab_box'
     if method == 'fab_box':
         c = fp.fab_box_centre()
         if c is None:
@@ -489,10 +494,12 @@ def manual_cutouts(tree, names=None):
         parts = []
         for x, y, ang, w, h in fp.npth_all():
             wx, wy = fp.world(x, y)
-            parts.append(Point(wx, wy).buffer(w / 2, quad_segs=64) if h is None else slot_geom(wx, wy, ang, w, h))
-        parts += edge_shapes(node, 'fp_', fp.world)
-        for g in parts:
-            out.append({'id': fid, 'ref': fp.ref, 'rule': 'hand-placed', 'merge': False, 'geom': g, 'manual': True, 'fp': fp})
+            parts.append((Point(wx, wy).buffer(w / 2, quad_segs=64), (wx, wy, w / 2)) if h is None
+                         else (slot_geom(wx, wy, ang, w, h), None))
+        parts += [(g, None) for g in edge_shapes(node, 'fp_', fp.world)]
+        for g, circ in parts:
+            out.append({'id': fid, 'ref': fp.ref, 'rule': 'hand-placed', 'merge': False, 'geom': g, 'manual': True, 'fp': fp,
+                        'circle': circ})
     # shapes drawn straight onto the panel's Edge.Cuts (not part of the panelgen group)
     names = names or {}
     for n, (g, _, uid) in enumerate(edge_shapes(tree, 'gr_', detail=True)):
@@ -923,7 +930,50 @@ def check_rails(pcb, tpl, x1, y1, x2, y2, log, bad=None):
                 bad.append((fp.ref, b))
     return n
 
-def fill_preview(pv, groups, outline, panel_box, a, log, problems, eurorack, pcb_box, rail_bad, uncut=(), **extra):
+SCREW_RULES = ('Mounting hole', 'case screw', 'case slot', 'rail hole', 'rail slot')
+
+def screw_keepouts(groups, a):
+    """Where screw heads will sit on the front of the panel: [(group, keep-out shape, head size)]. A screw's head is
+    wider than its hole, so text or artwork right next to a mounting hole ends up under the head."""
+    mode = str(a.screw_head or 'auto').strip().lower()
+    if mode in ('off', 'none', '0', ''):
+        return []
+    try:
+        fixed = None if mode == 'auto' else float(mode)
+    except ValueError:
+        fixed = None
+    out = []
+    for g in groups:
+        keys = [str(k) for k in (g.get('member_keys') or [g.get('key')]) if k]
+        if not (g.get('rule') in SCREW_RULES or any(':mount' in k for k in keys)):
+            continue
+        b = g['geom'].bounds
+        hole = min(b[2] - b[0], b[3] - b[1])
+        head = fixed if fixed else 2 * hole
+        if head <= hole + 0.01:
+            continue
+        out.append((g, g['geom'].buffer((head - hole) / 2, quad_segs=32), head))
+    return out
+
+def check_keepouts(keeps, placed, art, log):
+    """WARN for labels and artwork under a screw head. Returns [(shape, covered?)] for the preview."""
+    res = []
+    for g, k, head in keeps:
+        ring = k.difference(g['geom'])
+        hit = []
+        for L in placed:
+            if box(L['x'] - L['w'] / 2, L['y'] - L['h'] / 2, L['x'] + L['w'] / 2, L['y'] + L['h'] / 2).intersection(ring).area > 0.01:
+                L['status'] = 'warn'
+                hit.append(f"'{L['text']}'")
+        if any(p.intersection(ring).area > 0.05 for p in art if hasattr(p, 'intersection')):
+            hit.append('artwork')
+        if hit:
+            log.append(f"WARN  screw head at {fmt_refs_plain(g)} ({head:g} mm) would cover {', '.join(hit)} - move it, "
+                       f"or set Screw heads in the Panel tab")
+        res.append((k, bool(hit)))
+    return res
+
+def fill_preview(pv, groups, outline, panel_box, a, log, problems, eurorack, pcb_box, rail_bad, uncut=(), cutouts=(), fps=None, **extra):
     """Geometry for the window's live preview, each cutout marked ok / warn / error."""
     status = ['ok'] * len(groups)
     def mark(i, st):
@@ -947,8 +997,9 @@ def fill_preview(pv, groups, outline, panel_box, a, log, problems, eurorack, pcb
     pv.update(outline=outline, panel_box=panel_box, pcb_box=pcb_box, eurorack=eurorack, rail=ER_RAIL,
               rail_bad=rail_bad, uncut=list(uncut), log=list(log), problems=problems, label_font=a.label_font,
               label_bold=a.label_bold == 'on', **extra,
-              shapes=[dict(geom=g['geom'], label=fmt_refs_plain(g), rule=g.get('rule') or 'slot', key=g.get('key'),
-                           manual=g.get('manual', False), status=st) for g, st in zip(groups, status)])
+              shapes=[dict(geom=g['geom'], label=fmt_refs_plain(g), rule=g.get('rule') or 'slot', key=g.get('key'), anchor=an,
+                           manual=g.get('manual', False), status=st, points=part_points(g, cutouts, fps))
+                      for g, st, an in zip(groups, status, group_anchors(groups))])
 
 # footprint names that usually mean "this pokes through the panel"
 PANEL_HINTS = re.compile(r'jack|audio|potentiometer|(^|[_\W])pot|encoder|switch|(^|[_\W])sw[_\W]|button|toggle|tact|'
@@ -1649,8 +1700,14 @@ def auto_label_clearance(cutouts, fps, a):
         if kind in ('pot', 'encoder'):
             out[c['id']] = auto_scale_radius(a, c['id']) + 0.4
         elif kind == 'button' and a.art_rings == 'on':
-            out[c['id']] = c['circle'][2] + 1.6 + 0.3
+            out[c['id']] = c['circle'][2] + a.ring_gap + a.ring_width + 0.3
     return out
+
+def border_inset(a):
+    """How far the border sits in from the panel edge: what you set, or just inside the case screws."""
+    if a.art_border_gap > 0:
+        return a.art_border_gap
+    return max(1.5, a.screw_inset + a.screw_dia / 2 + 1.0) if a.screws != 'none' else 1.5
 
 def auto_scale_radius(a, fid=None):
     """Outer radius of a pot's knob plus its scale."""
@@ -1728,7 +1785,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             if not c or part_kind(c, fps.get(fid)) != 'button':
                 continue
             cx, cy, r = c['circle']
-            ring = Point(cx, cy).buffer(r + 1.6, quad_segs=32).difference(Point(cx, cy).buffer(r + 0.8, quad_segs=32))
+            ring = Point(cx, cy).buffer(r + a.ring_gap + a.ring_width, quad_segs=48).difference(Point(cx, cy).buffer(r + a.ring_gap, quad_segs=48))
             clash = holes.difference(c['geom'].buffer(0.01)).buffer(0.4)
             ring = ring.difference(clash).intersection(inside)
             if not ring.is_empty:
@@ -1740,6 +1797,10 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
         tabs = []
         jacks = {fid: next(x for x in cs if x.get('circle'))['circle'] for fid, cs in parts.items()
                  if any(x.get('circle') for x in cs) and part_kind(next(x for x in cs if x.get('circle')), fps.get(fid)) == 'jack'}
+        # a round hole you added in the window is a jack too, as far as outputs go (a wired jack isn't on the PCB)
+        added = {c['id']: [c] for c in cutouts if str(c.get('key', '')).startswith('add:') and c.get('circle')}
+        jacks.update({fid: cs[0]['circle'] for fid, cs in added.items()})
+        ref_of = lambda fid: fps[fid].ref if fid in fps else added[fid][0]['ref']
         own_out = {}                              # text you added saying OUT, next to a jack: that jack's label
         for T in placed:
             if not T.get('own') or not re.search(r'\bOUT\b', T['text'], re.I) or not jacks:
@@ -1748,16 +1809,16 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             d_ = math.hypot(jx - T['x'], jy - T['y'])
             if d_ <= jr + 10 and (jf not in own_out or d_ < own_out[jf][0]):
                 own_out[jf] = (d_, T)
-        for fid, cs in parts.items():
+        for fid, cs in list(parts.items()) + list(added.items()):
             c = next((x for x in cs if x.get('circle')), None)
-            if not c or part_kind(c, fps.get(fid)) != 'jack':
+            if not c or (fid not in added and part_kind(c, fps.get(fid)) != 'jack'):
                 continue
             L = next((x for x in placed if x['fid'] == fid), None)
             io = edits.get(fid, {}).get('io')
             if io != 'in' and fid in own_out and (L is None or not re.search(r'\bOUT', L['text'], re.I)):
                 L = own_out[fid][1]
             out = io == 'out' or (io != 'in' and L is not None and re.search(r'\bOUT', L['text'], re.I))
-            if not out:
+            if not out or edits.get('tab:' + fid, {}).get('off'):     # deleted in the window
                 continue
             own = unary_union([x['geom'] for x in cs])
             bx = list(own.buffer(1.2).bounds)
@@ -1775,12 +1836,17 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
                 a._knock_boxes[L['fid']] = dict(box=unary_union(txt).bounds, ref=L['ref'], text=L['text'], h=L['h'])
             others = holes.difference(own.buffer(0.01)).buffer(0.5)
             if tab.intersection(others).area > 0.05:
-                log.append(f"NOTE  the output box for {fps[fid].ref} runs into a nearby hole - it's trimmed there. "
+                log.append(f"NOTE  the output box for {ref_of(fid)} runs into a nearby hole - it's trimmed there. "
                            "Move the label or the part if it looks odd")
             tabs.append(tab.difference(own.buffer(0.3)).difference(others))
-            a._tab_boxes.append(dict(key=tkey, kind='output', edges='ltrb', box=tab.bounds, ref=fps[fid].ref))
+            a._tab_boxes.append(dict(key=tkey, kind='output', edges='ltrb', box=tab.bounds, ref=ref_of(fid)))
         if tabs:
             shapes.append(unary_union(tabs).intersection(inside))
+        else:
+            log.append("NOTE  outputs in filled boxes: none found. A jack counts as an output when its label says OUT, when a "
+                       "text you added next to it says OUT, or when you set it to Output in Edit labels"
+                       + ('' if jacks else ". No jacks were found on this panel either: a hole only counts as a jack if its part "
+                                           "is one, or if you added the hole under Extra holes"))
 
     tab_areas = []
     # 4. tabs for jacks on the panel edge (no hole, the plug goes in from the side): a filled tab hanging from the edge
@@ -1806,6 +1872,8 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
                 else:
                     runs.append([p])
             for run in runs:
+                if edits.get('tab:' + run[0][2]['fid'], {}).get('off'):  # deleted in the window
+                    continue
                 h = run[0][2]['h']
                 sgn = 1 if side == 'top' else -1
                 edge_y = py1 if side == 'top' else py2
@@ -1858,12 +1926,13 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
                 shapes.append(tab.difference(keep_out))
 
     # 5. boxes round rows (or columns) of the same kind of control
-    if a.art_groups == 'on':
+    group_kinds = {'pot', 'button', 'jack'} if a.art_groups == 'on' else set(str(a.art_groups).split(',')) - {'off', ''}
+    if group_kinds:
         items = []
         for fid, cs in parts.items():
             c = next((x for x in cs if x.get('circle')), None)
             k = part_kind(c, fps.get(fid)) if c else None
-            if k in ('pot', 'encoder', 'button', 'toggle', 'jack'):
+            if k in ('pot', 'encoder', 'button', 'toggle', 'jack') and {'encoder': 'pot', 'toggle': 'button'}.get(k, k) in group_kinds:
                 items.append(dict(fid=fid, kind='pot' if k == 'encoder' else k, c=c['circle'], geom=unary_union([x['geom'] for x in cs])))
         def runs_of(axis):
             out = []
@@ -1889,31 +1958,52 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
         boxes_done = []
         for run in sorted(runs_of(0) + runs_of(1), key=len, reverse=True):
             ids = {i['fid'] for i in run}
-            if any(ids & d for d in boxes_done):
+            if any(ids & d for d in boxes_done) or edits.get('group:' + min(ids), {}).get('off'):
                 continue
             parts_geo = []
             for i in run:
                 cx, cy, r = i['c']
-                rr = auto_scale_radius(a, i['fid']) if i['kind'] == 'pot' else r + (1.6 if i['kind'] == 'button' and a.art_rings == 'on' else 0.6)
+                rr = auto_scale_radius(a, i['fid']) if i['kind'] == 'pot' else r + (a.ring_gap + a.ring_width if i['kind'] == 'button' and a.art_rings == 'on' else 0.6)
                 parts_geo.append(Point(cx, cy).buffer(rr))
-                if i['fid'] in label_box:
-                    parts_geo.append(label_box[i['fid']])
+                if i['fid'] in label_box:               # where the label would be by itself: nudging it doesn't shift the frame
+                    e_ = edits.get(i['fid'], {})
+                    parts_geo.append(shapely_translate(label_box[i['fid']], -e_.get('dx', 0.0), -e_.get('dy', 0.0)))
             bb = unary_union(parts_geo).bounds
-            frame = rounded_box(bb[0] - 1.5, bb[1] - 1.5, bb[2] + 1.5, bb[3] + 1.5, 2.0)
-            line = frame.difference(frame.buffer(-0.6, join_style=1))
+            room = box(bb[0] - 0.6, bb[1] - 0.6, bb[2] + 0.6, bb[3] + 0.6)
+            far = [label_box[i['fid']] for i in run if i['fid'] in label_box and not room.contains(label_box[i['fid']])]
+            if far:                                     # ...unless it's been moved right out of the frame
+                bb = unary_union(parts_geo + far).bounds
             others = holes.difference(unary_union([i['geom'] for i in run]).buffer(0.01))
             other_labels = [b for f, b in label_box.items() if f not in ids and f not in knocked]
-            if line.intersects(others.buffer(0.5)) or any(line.intersects(b) for b in other_labels) or not inside.contains(line):
-                log.append(f"NOTE  no box round {', '.join(fps[i['fid']].ref for i in run)}: it would run into another part, "
-                           "a label or the edge")
+            names = ', '.join(fps[i['fid']].ref for i in run)
+            gkey = 'group:' + min(ids)
+            g_ = edits.get(gkey, {})                                      # made bigger (or a little smaller) in the window
+            def framed(g):
+                fb = (bb[0] - 1.5 - g.get('l', 0.0), bb[1] - 1.5 - g.get('t', 0.0), bb[2] + 1.5 + g.get('r', 0.0), bb[3] + 1.5 + g.get('b', 0.0))
+                frame = rounded_box(*fb, 2.0)
+                line = frame.difference(frame.buffer(-0.6, join_style=1))
+                bad = line.intersects(others.buffer(0.5)) or any(line.intersects(b) for b in other_labels) or not inside.contains(line)
+                return fb, line, bad
+            fb, line, bad = framed(g_)
+            if bad and g_:                                               # too big: as big as fits
+                for f in (0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0):
+                    g_ = {k: (round(v * f, 2) if v > 0 else v) for k, v in edits.get(gkey, {}).items()}
+                    fb, line, bad = framed(g_)
+                    if not bad:
+                        log.append(f"NOTE  the box round {names} can't be that big: it would run into another part, a label or "
+                                   "the edge. It's shown as big as fits")
+                        break
+            if bad:
+                log.append(f"NOTE  no box round {names}: it would run into another part, a label or the edge")
                 continue
             boxes_done.append(ids)
             shapes.append(line)
+            a._tab_boxes.append(dict(key=gkey, kind='group', edges='lrtb', box=fb, ref=names, grow=dict(g_),
+                                     of={'toggle': 'button'}.get(run[0]['kind'], run[0]['kind'])))
 
     # 6. border
     if a.art_border == 'on':
-        inner = outline.buffer(-(border_in_ := (max(1.5, a.screw_inset + a.screw_dia / 2 + 1.0) if a.screws != 'none' else 1.5)),
-                               join_style=1)
+        inner = outline.buffer(-border_inset(a), join_style=1)
         if a.art_border_radius > 0 and not inner.is_empty:       # its own rounded corners
             R = a.art_border_radius
             inner = inner.buffer(-R, join_style=2).buffer(R, quad_segs=16)
@@ -1931,15 +2021,17 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
     taken = unary_union([holes.buffer(0.8)] + [b.buffer(0.6) for f, b in label_box.items() if f not in knocked]
                         + [g.buffer(0.6) for g in shapes])
     x1, y1, x2, y2 = outline.bounds
-    border_in = (max(1.5, a.screw_inset + a.screw_dia / 2 + 1.0) if a.screws != 'none' else 1.5) + 0.6
+    border_in = border_inset(a) + 0.6
     edge = border_in + 1.2 if a.art_border == 'on' else 2.0
     region = outline.buffer(-edge + 0.01)
     a._art_items = []
-    def place(text, h, spots, what, key):
+    def place(text, h, spots, what, key, vert=None, mirror=None):
         if not text.strip():
             return
+        vert = vert or a.title_vertical
+        mirror = (a.title_mirror == 'on' and what == 'title') if mirror is None else mirror
         tf, tbold = a.title_font or font, a.title_bold == 'on' if what == 'title' else sbold
-        if what == 'title' and a.title_vertical == 'stacked':  # letters one under another, each the right way up
+        if what == 'title' and vert == 'stacked':  # letters one under another, each the right way up
             pitch = h * 1.35
             n = len(text)
             sh = []
@@ -1950,15 +2042,17 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             sh = text_shapes(text, 0, 0, h, tf, tbold)
         if not sh:
             return
-        if what == 'title' and a.title_vertical == 'on':       # turned on its side, read from the bottom
-            sh = [affinity.rotate(p, -90, origin=(0, 0)) for p in sh]
+        if mirror:                                             # the letters flipped left to right, as in a mirror
+            sh = [affinity.scale(p, xfact=-1, yfact=1, origin=(0, 0)) for p in sh]
+        if what == 'title' and vert in ('on', 'on-mirror'):    # turned on its side: read from the bottom, or from the top
+            sh = [affinity.rotate(p, -90 if vert == 'on' else 90, origin=(0, 0)) for p in sh]
         u = unary_union(sh); bx = u.bounds; w = bx[2] - bx[0]; hh = bx[3] - bx[1]
         pin = (a._art_pos or {}).get(key)
         def put(sx, sy):
             moved = [shapely_translate(p, sx, sy) for p in sh]
             shapes.extend(moved)
             a._art_items.append(dict(key=key, what=what, text=text, at=[round(sx, 3), round(sy, 3)], pinned=bool(pin),
-                                     box=unary_union(moved).bounds))
+                                     box=unary_union(moved).bounds, h=h, vert=vert, mirror=bool(mirror)))
             return unary_union(moved)
         if pin:                                   # where you dragged it
             mu = put(*pin)
@@ -1972,13 +2066,17 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
         log.append(f"WARN  no free space for the {what} '{text}' - drag it in the preview, make the text smaller, or turn it off")
     m = edge + 0.4
     th = a.title_size
-    if a.title_vertical in ('on', 'stacked'):
+    if a.title_vertical in ('on', 'on-mirror', 'stacked'):
         title_spots = lambda w, hh: [(x1 + m + w / 2, (y1 + y2) / 2), (x2 - m - w / 2, (y1 + y2) / 2),
                                      (x1 + m + w / 2, y1 + m + hh / 2), (x2 - m - w / 2, y1 + m + hh / 2)]
     else:
         title_spots = lambda w, hh: [((x1 + x2) / 2, y1 + m + hh / 2), (x1 + m + w / 2, y1 + m + hh / 2),
                                      (x2 - m - w / 2, y1 + m + hh / 2), ((x1 + x2) / 2, y2 - m - hh / 2)]
     place(a.art_title, th, title_spots, 'title', 'title')
+    for t in getattr(a, '_titles', []):           # copies of the title: the same words, each with its own place, size and direction
+        if ('title:' + t['id']) in (a._art_pos or {}):
+            place(a.art_title, float(t.get('size') or th), lambda w, hh: [], 'title', 'title:' + t['id'], vert=t.get('dir'),
+                  mirror=bool(t.get('mirror')))
     ms = max(1.5, a.label_size * 0.8)
     place(a.art_maker, ms, lambda w, hh: [(x2 - m - w / 2, y2 - m - ms / 2), (x1 + m + w / 2, y2 - m - ms / 2),
                                       ((x1 + x2) / 2, y2 - m - ms / 2)], 'maker name', 'maker')
@@ -2083,7 +2181,10 @@ def text_boxes(placed, texts, edits, a, groups, outline, log):
     spec_of = lambda L: own.get(L['fid'], {}).get('box') if L['fid'] in own else edits.get(L['fid'], {}).get('box')
     owners = {L['fid'] for L in placed if spec_of(L) in ('outline', 'filled')}
     taken = set()                                # texts already inside another bar
-    for L in placed:
+    def reach(L):                                # the longest bar goes first, so it takes in the shorter ones it covers
+        g = edits.get('box:' + L['fid'], {})
+        return -(L['w'] + g.get('l', 0.0) + g.get('r', 0.0)) * (L['h'] + g.get('t', 0.0) + g.get('b', 0.0))
+    for L in sorted(placed, key=reach):
         spec = spec_of(L)
         if spec not in ('outline', 'filled') or L['fid'] in taken:
             continue
@@ -2092,11 +2193,23 @@ def text_boxes(placed, texts, edits, a, groups, outline, log):
         pad_x, pad_y = max(0.8, L['h'] * 0.35), max(0.45, L['h'] * 0.25)
         txt = text_shapes(L['text'], L['x'], L['y'], L['h'], font, sbold)
         tb = unary_union(txt).bounds if txt else (L['x'] - L['w'] / 2, L['y'] - L['h'] / 2, L['x'] + L['w'] / 2, L['y'] + L['h'] / 2)
-        bx = (tb[0] - pad_x - g.get('l', 0.0), tb[1] - pad_y - g.get('t', 0.0), tb[2] + pad_x + g.get('r', 0.0), tb[3] + pad_y + g.get('b', 0.0))
+        def around(tb, ox=0.0, oy=0.0):
+            return (tb[0] - pad_x - g.get('l', 0.0) + ox, tb[1] - pad_y - g.get('t', 0.0) + oy,
+                    tb[2] + pad_x + g.get('r', 0.0) + ox, tb[3] + pad_y + g.get('b', 0.0) + oy)
         # other texts the box now reaches over (one long bar under a row of keys): they go in it, where they are
-        inner = [M for M in placed if M is not L and M['fid'] not in knocked and M['fid'] not in taken
-                 and (M['fid'] not in owners or spec_of(M) == spec)
-                 and bx[0] <= M['x'] <= bx[2] and bx[1] <= M['y'] <= bx[3]]
+        def inside_of(bx):
+            return [M for M in placed if M is not L and M['fid'] not in knocked and M['fid'] not in taken
+                    and bx[0] <= M['x'] <= bx[2] and bx[1] <= M['y'] <= bx[3]]
+        bx, anchor = around(tb), 'text'
+        inner = inside_of(bx)
+        if L['fid'] not in own:
+            # a bar shared by several labels sits where the label would be by itself (plus wherever you dragged the bar),
+            # so moving one label inside it - to centre it, say - doesn't drag the bar along
+            e = edits.get(L['fid'], {})
+            mx, my = e.get('dx', 0.0), e.get('dy', 0.0)
+            fixed = around((tb[0] - mx, tb[1] - my, tb[2] - mx, tb[3] - my), g.get('ox', 0.0), g.get('oy', 0.0))
+            if inside_of(fixed):
+                bx, inner, anchor = fixed, inside_of(fixed), 'auto'
         if not inner:                            # just this text: keep it in the middle of a stretched box
             sx, sy = (g.get('r', 0.0) - g.get('l', 0.0)) / 2, (g.get('b', 0.0) - g.get('t', 0.0)) / 2
             if sx or sy:
@@ -2114,7 +2227,8 @@ def text_boxes(placed, texts, edits, a, groups, outline, log):
         else:
             shape = shape.difference(shape.buffer(-0.3, join_style=1))
         taken |= {M['fid'] for M in inner}
-        a._tab_boxes.append(dict(key=key, kind='textbox', edges='lrtb', box=bx, ref=f"'{L['text']}'"))
+        a._tab_boxes.append(dict(key=key, kind='textbox', edges='lrtb', box=bx, ref=f"'{L['text']}'", anchor=anchor,
+                                 members=[L['fid']] + [M['fid'] for M in inner]))
         if holes is not None and shape.intersects(holes):
             log.append(f"NOTE  the box round '{L['text']}' runs over a hole - that part is left off")
             shape = shape.difference(holes)
@@ -2122,6 +2236,145 @@ def text_boxes(placed, texts, edits, a, groups, outline, log):
         for p in (shape.geoms if hasattr(shape, 'geoms') else [shape]):
             if p.geom_type == 'Polygon' and p.area > 1e-4:
                 polys += fracture(p)
+    return polys, knocked
+
+def line_shapes(lines, groups, outline, log):
+    """Lines you drew in the window (a divider, a signal-flow arrow, a bracket): silkscreen polygons, broken round holes.
+    Each also gets '_box', its bounding box, for the window."""
+    from shapely.geometry import LineString
+    holes = unary_union([g['geom'] for g in groups]) if groups else None      # a line runs right up to the hole's edge
+    inside = outline.buffer(-0.3)
+    polys = []
+    for ln in lines:
+        try:
+            ax, ay, bx, by = (float(ln[k]) for k in ('x1', 'y1', 'x2', 'y2'))
+            w = max(0.15, float(ln.get('w', 0.5)))
+        except (KeyError, TypeError, ValueError):
+            continue
+        ln['_box'] = (min(ax, bx), min(ay, by), max(ax, bx), max(ay, by))
+        d = math.hypot(bx - ax, by - ay)
+        if d < 0.05:
+            continue
+        ux, uy = (bx - ax) / d, (by - ay) / d
+        head = min(max(3.2 * w, 1.6), d / 2)               # arrowhead: as long as it is wide, never more than half the line
+        ends = ln.get('arrow', 'none')
+        sx, sy = (ax + ux * head * 0.8, ay + uy * head * 0.8) if ends == 'both' else (ax, ay)
+        ex, ey = (bx - ux * head * 0.8, by - uy * head * 0.8) if ends in ('end', 'both') else (bx, by)
+        parts = [LineString([(sx, sy), (ex, ey)]).buffer(w / 2, cap_style=2 if ends != 'none' else 1)]
+        def tip(px, py, dx, dy):
+            return Polygon([(px, py), (px - dx * head - dy * head / 2, py - dy * head + dx * head / 2),
+                            (px - dx * head + dy * head / 2, py - dy * head - dx * head / 2)])
+        if ends in ('end', 'both'):
+            parts.append(tip(bx, by, ux, uy))
+        if ends == 'both':
+            parts.append(tip(ax, ay, -ux, -uy))
+        shape = unary_union(parts)
+        if holes is not None and shape.intersects(holes):
+            shape = shape.difference(holes)
+        if not inside.contains(shape):
+            log.append(f"NOTE  a line you drew runs off the panel - that part is left off")
+            shape = shape.intersection(inside)
+        for p in (shape.geoms if hasattr(shape, 'geoms') else [shape]):
+            if p.geom_type == 'Polygon' and p.area > 1e-4:
+                polys += fracture(p)
+    return polys
+
+MARK_KINDS = ('circle', 'box', 'triangle', 'hexagon', 'diamond')
+
+def part_points(g, cutouts, fps=None):
+    """The parts you can see through a cutout, so a label can be put over each: the keys merged into one slot, and any part
+    sitting under a window (Cherry switches under one big opening, say). Returns [(ref, (x, y), box)]."""
+    out = {}
+    if len(g.get('ids', ())) > 1:
+        for c in cutouts:
+            if c['id'] in g['ids']:
+                b = c['geom'].bounds
+                out[c['id']] = (c['ref'], ((b[0] + b[2]) / 2, (b[1] + b[3]) / 2), b)
+    geom = g['geom']
+    for uid, fp in (fps or {}).items():
+        if uid in g['ids'] or uid in out or not str(fp.layer).startswith('F.'):
+            continue
+        box = courtyard_box(fp)
+        # the middle of the part's outline - not its origin, which is often on pin 1 (Cherry MX switches, say)
+        mid = ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2) if box else (fp.world(*fp.fab_box_centre()) if fp.fab_box_centre() else (fp.x, fp.y))
+        if geom.contains(Point(*mid)):
+            out[uid] = (fp.ref, mid, box or (mid[0] - 2.5, mid[1] - 2.5, mid[0] + 2.5, mid[1] + 2.5))
+    return sorted(((r, (round(p[0], 3), round(p[1], 3)), tuple(round(v, 3) for v in b)) for r, p, b in out.values()),
+                  key=lambda t: (t[1][1], t[1][0]))
+
+def group_anchors(groups):
+    """A name for each cutout that stays the same while the part moves: what a shape you put round a hole is attached to."""
+    seen, out = {}, []
+    for g in groups:
+        if g.get('key'):
+            out.append(g['key'])
+        else:
+            base = sorted(str(i) for i in g['ids'])[0]
+            seen[base] = seen.get(base, -1) + 1
+            out.append(f'{base}#{seen[base]}')
+    return out
+
+def mark_shapes(marks, groups, anchors, placed, a, edits, outline, log):
+    """Shapes you put round a hole (a ring, a box, a triangle, a hexagon, a diamond), as an outline or filled. A filled one
+    has any label inside it cut out of it. Returns (polygons, labels cut out)."""
+    font, bold = a.label_font, a.label_bold == 'on'
+    sbold = bold or not font
+    by_anchor = dict(zip(anchors, groups))
+    inside = outline.buffer(-0.6)
+    polys, knocked = [], set()
+    for m in marks:
+        g = by_anchor.get(m.get('on'))
+        if g is None:
+            log.append(f"NOTE  a shape you added was round a hole that isn't on the panel any more - it's left off")
+            continue
+        kind = m.get('kind', 'circle') if m.get('kind') in MARK_KINDS else 'circle'
+        gap, w = float(m.get('gap', 1.0)), max(0.15, float(m.get('w', 0.6)))
+        e = edits.get('mark:' + m['id'], {})
+        b = g['geom'].bounds
+        if g.get('circle'):
+            cx, cy, r0 = g['circle']
+        else:
+            cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
+            r0 = math.hypot(b[2] - b[0], b[3] - b[1]) / 2
+        if kind == 'box':
+            fb = (b[0] - gap - e.get('l', 0.0), b[1] - gap - e.get('t', 0.0), b[2] + gap + e.get('r', 0.0), b[3] + gap + e.get('b', 0.0))
+            if fb[2] - fb[0] < 0.5 or fb[3] - fb[1] < 0.5:
+                continue
+            shape = rounded_box(*fb, max(0.0, float(m.get('r', 0.0) or 0.0)))
+        else:
+            R = r0 + gap + max([e.get(k, 0.0) for k in 'lrtb'] or [0.0])
+            if R < 0.3:
+                continue
+            if kind == 'circle':
+                shape = Point(cx, cy).buffer(R, quad_segs=48)
+            else:
+                n, rot = {'triangle': (3, -90), 'hexagon': (6, 0), 'diamond': (4, -90)}[kind]
+                Rc = R / math.cos(math.pi / n)         # the hole fits inside: R is how far the flat sides are from the middle
+                shape = Polygon([(cx + Rc * math.cos(math.radians(rot + 360 * k / n)),
+                                  cy + Rc * math.sin(math.radians(rot + 360 * k / n))) for k in range(n)])
+        other = unary_union([x['geom'] for x in groups if x is not g])
+        if m.get('fill'):
+            ink = shape.difference(g['geom'].buffer(0.3))
+            for L in placed:                           # labels inside a filled shape are cut out of it
+                if L['fid'] in knocked or not shape.contains(Point(L['x'], L['y'])):
+                    continue
+                txt = text_shapes(L['text'], L['x'], L['y'], L['h'], font, sbold)
+                if txt:
+                    ink = ink.difference(unary_union(txt))
+                    knocked.add(L['fid'])
+                    a._knock_boxes[L['fid']] = dict(box=unary_union(txt).bounds, ref=L['ref'], text=L['text'], h=L['h'])
+        else:
+            ink = shape.difference(shape.buffer(-w, join_style=2))
+        if not other.is_empty:
+            ink = ink.difference(other.buffer(0.4))
+        if not inside.contains(ink):
+            log.append(f"NOTE  the shape round {fmt_refs_plain(g)} runs off the panel - that part is left off")
+            ink = ink.intersection(inside)
+        for p in (ink.geoms if hasattr(ink, 'geoms') else [ink]):
+            if p.geom_type == 'Polygon' and p.area > 1e-4:
+                polys += fracture(p)
+        a._tab_boxes.append(dict(key='mark:' + m['id'], kind='mark', edges='lrtb', box=shape.bounds, ref=fmt_refs_plain(g),
+                                 shape=kind, hole=list(b), id=m['id']))
     return polys, knocked
 
 def shapely_translate(g, dx, dy):
@@ -2267,6 +2520,8 @@ def main(argv=None, preview=None):
     ap.add_argument('--screw-dia', type=float, help='case screw hole diameter (default 2.2)')
     ap.add_argument('--screw-slot', type=float, help='make case holes slots this long, end to end, running along the edge (0 = round, default). --screw-inset is measured to the centre of the slot end nearest each edge')
     ap.add_argument('--rail-slot', type=float, help='Eurorack: make the rail holes horizontal slots this long, end to end (0 = round, default)')
+    ap.add_argument('--screw-head', help="keep-out round screw holes for the screw's head: 'auto' (twice the hole, the default), "
+                    "'off', or the head's size in mm. Labels and artwork inside it are warned about")
     ap.add_argument('--screw-inset', type=float, help='case screw centre distance from panel edges (default 3.5)')
     ap.add_argument('--screws', choices=['none', 'corners', 'corners+mid'], help='case screw holes around the panel edge (default none)')
     ap.add_argument('--min-web', type=float, help='warn when material between cutouts is thinner (default 1.0 mm)')
@@ -2286,7 +2541,8 @@ def main(argv=None, preview=None):
     ap.add_argument('--label-font', help='a font installed on your computer, e.g. Arial ("" = KiCad\'s own font, default)')
     ap.add_argument('--label-bold', choices=['on', 'off'])
     ap.add_argument('--label-caps', choices=['on', 'off'], help='ALL CAPS labels')
-    ap.add_argument('--extras', choices=['on', 'off'], help='put your own text and pictures on the panel (default on)')
+    ap.add_argument('--extras', choices=['on', 'off', 'texts', 'pictures'],
+                    help='put your own text and pictures on the panel: on (default), off, or just texts or just pictures')
     ap.add_argument('--auto-art', choices=['on', 'off'], help='make artwork for you: pot scales, rings, output boxes, border, title')
     ap.add_argument('--art-style', help=argparse.SUPPRESS)   # the window's style name, kept with the settings
     ap.add_argument('--art-scale', choices=['none', 'ticks', 'numbers', 'bipolar'], help='pot scales (default ticks)')
@@ -2294,14 +2550,18 @@ def main(argv=None, preview=None):
     ap.add_argument('--art-outputs', choices=['on', 'off'], help="jacks whose label says OUT get a filled box, the label cut out of it")
     ap.add_argument('--art-border', choices=['on', 'off'], help='a line round the panel, inside the case screws')
     ap.add_argument('--art-border-radius', type=float, help='round the corners of the border, mm (0 = follow the panel)')
-    ap.add_argument('--art-groups', choices=['on', 'off'], help='a box round rows or columns of 3+ of the same control')
+    ap.add_argument('--art-border-gap', type=float, help='panel edge to the border, mm (0 = automatic: 1.5, or just inside the case screws)')
+    ap.add_argument('--ring-width', type=float, help='line thickness of the rings round buttons, mm (default 0.8)')
+    ap.add_argument('--ring-gap', type=float, help='gap between a button hole and its ring, mm (default 0.8)')
+    ap.add_argument('--art-groups', help="a box round rows or columns of 3+ of the same control: on, off, or which kinds, e.g. pot,button,jack")
     ap.add_argument('--art-tabs', choices=['on', 'off'], help='a filled tab, labels cut out, for jacks on the panel edge')
     ap.add_argument('--art-title', help='title along the top of the panel')
     ap.add_argument('--art-maker', help='your name or brand, small, along the bottom')
     ap.add_argument('--title-size', type=float, help='title height, mm (default 5)')
     ap.add_argument('--title-font', help='font for the title ("" = the label font)')
     ap.add_argument('--title-bold', choices=['on', 'off'])
-    ap.add_argument('--title-vertical', choices=['off', 'stacked', 'on'],
+    ap.add_argument('--title-mirror', choices=['on', 'off'], help='the title as a mirror image (letters flipped left to right)')
+    ap.add_argument('--title-vertical', choices=['off', 'stacked', 'on', 'on-mirror'],
                     help='title down a side: stacked = letters one under another; on = turned on its side, read from the bottom')
     ap.add_argument('--knob-size', type=float, help='knob diameter, mm: the pot scale starts outside it (default 13)')
     ap.add_argument('--pot-sweep', type=float, help='how far the pots turn, degrees (default 300)')
@@ -2331,13 +2591,13 @@ def main(argv=None, preview=None):
         move_old_panel(a.pcb, out_path, early)
     mem_path = re.sub(r'\.kicad_pcb$', '', out_path) + '.panelgen.json'
     saved = load_memory(mem_path).get('settings', {}) if a.again else {}
-    defaults = dict(margin=0.0, corner_radius=0.0, screw_dia=2.2, screw_inset=3.5, screw_slot=0.0, rail_slot=0.0, screws='none',
+    defaults = dict(margin=0.0, corner_radius=0.0, screw_dia=2.2, screw_inset=3.5, screw_slot=0.0, rail_slot=0.0, screws='none', screw_head='auto',
                     min_web=1.0, svg=False, grow=0.0, panel_layer='User.1', check_uncut='on',
                     artwork='off', artwork_file='',
                     labels='off', label_size=2.0, label_gap=1.5, label_pos='above', label_font='', label_bold='off', label_caps='off',
-                    extras='on', auto_art='off', art_style='', art_scale='ticks', art_rings='on', art_outputs='off', art_border='off', art_border_radius=0.0,
+                    extras='on', auto_art='off', art_style='', art_scale='ticks', art_rings='on', art_outputs='off', art_border='off', art_border_radius=0.0, art_border_gap=0.0, ring_width=0.8, ring_gap=0.8,
                     art_groups='off', art_tabs='off', art_title='',
-                    art_maker='', title_size=5.0, title_font='', title_bold='on', title_vertical='off', knob_size=13.0, pot_sweep=300.0, scale_text=1.4)
+                    art_maker='', title_size=5.0, title_font='', title_bold='on', title_vertical='off', title_mirror='off', knob_size=13.0, pot_sweep=300.0, scale_text=1.4)
     for k, d in defaults.items():          # explicit option > saved (with --again) > built-in default
         if getattr(a, k) is None:
             setattr(a, k, saved.get(k, d))
@@ -2354,6 +2614,9 @@ def main(argv=None, preview=None):
     label_edits = ui.get('label_edits', mem0.get('label_edits', {}))
     texts = [dict(t) for t in ui.get('texts', mem0.get('texts', []))]
     images = [dict(i) for i in ui.get('images', mem0.get('images', []))]
+    lines = [dict(i) for i in ui.get('lines', mem0.get('lines', []))]
+    marks = [dict(i) for i in ui.get('marks', mem0.get('marks', []))]
+    a._titles = [dict(i) for i in ui.get('titles', mem0.get('titles', []))]
     a._art_pos = dict(ui.get('art_pos', mem0.get('art_pos', {})))
     added = [dict(s) for s in ui.get('shapes', mem0.get('shapes', []))]
     cfg = json.load(open(a.rules))
@@ -2454,8 +2717,11 @@ def main(argv=None, preview=None):
 
     # memory of what panelgen made last time, and what you deleted
     memory = load_memory(mem_path)
-    suppressed = dict(memory.get('suppressed', {}))
-    kept = dict(memory.get('kept', {}))
+    # started again (Reset in the window): the panel file in KiCad is left out - its hand-placed parts, drawn cutouts and
+    # edited holes - and the next panel file is made from the PCB alone. The old one is kept as a backup when it's replaced.
+    fresh = bool(ui.get('fresh', mem0.get('fresh', False)))
+    suppressed = {} if fresh else dict(memory.get('suppressed', {}))
+    kept = {} if fresh else dict(memory.get('kept', {}))
     restored_ids = []
     def wanted(v):
         return any(w.lower() == 'all' or v['ref'].lower() == w.lower() or w.lower() in (r.lower() for r in v.get('refs', []))
@@ -2476,7 +2742,10 @@ def main(argv=None, preview=None):
                        + (f" (yours: {', '.join(names)})" if names else ""))
 
     existing_text, removed, manual = None, 0, []
-    if os.path.exists(out_path):
+    if fresh and os.path.exists(out_path):
+        log.append("NOTE  started again from the PCB: parts and cutouts placed in the panel file in KiCad are left out"
+                   + (" - the old panel file is kept as a backup when you generate" if preview is not None else ""))
+    if os.path.exists(out_path) and not fresh:
         t, tree = read_board(out_path)
         live = [c for c in cutouts if c['key'] not in {k for v in suppressed.values() for k in v['member_keys']}]
         trial, _ = merge_and_check(live, outline, a.min_web, [])
@@ -2535,8 +2804,8 @@ def main(argv=None, preview=None):
     part_fps = {fp.uuid: fp for fp in map(Footprint, kids(pcb, 'footprint')) if fp.uuid}
     part_fps.update({c['id']: c['fp'] for c in cutouts + manual if c.get('fp')})
     # your own text and pictures can be left off the panel without losing them
-    shown_texts = texts if a.extras == 'on' else []
-    shown_images = images if a.extras == 'on' else []
+    shown_texts = texts if a.extras in ('on', 'texts') else []
+    shown_images = images if a.extras in ('on', 'pictures') else []
     if a.labels == 'on' or shown_texts:
         n0 = len(log)
         placed, label_rows = make_labels(pcb, cutouts + manual, groups, outline, a, label_edits, log,
@@ -2554,8 +2823,13 @@ def main(argv=None, preview=None):
         problems += sum(1 for l in log[n0:] if l.startswith('WARN'))
         log.append(f"auto  {len(a._auto)} shapes of artwork made for you"
                    + (f" ({len(knocked)} label{'s' if len(knocked) > 1 else ''} cut out of output boxes)" if knocked else ''))
+    anchors = group_anchors(groups)
+    mk_polys, mk_knocked = mark_shapes(marks, groups, anchors, [L for L in placed if L['fid'] not in knocked], a, label_edits, outline, log)
+    a._auto += mk_polys
+    knocked |= mk_knocked
     tb_polys, tb_knocked = text_boxes([L for L in placed if L['fid'] not in knocked], shown_texts, label_edits, a, groups, outline, log)
     a._auto += tb_polys
+    a._auto += line_shapes(lines, groups, outline, log)
     knocked |= tb_knocked
     placed = [L for L in placed if L['fid'] not in knocked]     # those are in the artwork now, cut out of their box
     a._markers = part_markers(pcb, set(cfg.get('_none_ids', set())) | set(ignore_uncut), outline)
@@ -2594,6 +2868,8 @@ def main(argv=None, preview=None):
     art = art + a._auto
     if shown_images:
         art = art + image_items(shown_images, os.path.dirname(out_path), outline, groups, log)
+    keep_res = check_keepouts(screw_keepouts(groups, a), placed, art, log)
+    problems += sum(1 for _, bad in keep_res if bad)
     if preview is not None and a.make_artwork_file:      # the window's 'Create artwork file' button: no panel written
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         svg_path = re.sub(r'\.kicad_pcb$', '', out_path) + '_template.svg'
@@ -2601,8 +2877,23 @@ def main(argv=None, preview=None):
         if not os.path.exists(artwork_path_for(out_path)):
             import shutil
             shutil.copyfile(svg_path, artwork_path_for(out_path))
+    def settings_now():
+        """Every setting, as saved in the panel's memory file (and given to the window with each preview)."""
+        return dict(margin=a.margin, **{f'margin_{k}': v for k, v in m.items()},
+                                       screws=a.screws, screw_dia=a.screw_dia, screw_inset=a.screw_inset, screw_head=a.screw_head, screw_slot=a.screw_slot, rail_slot=a.rail_slot,
+                                       corner_radius=a.corner_radius, grow=a.grow, min_web=a.min_web,
+                                       panel_layer=a.panel_layer, svg=bool(a.svg), check_uncut=a.check_uncut,
+                                       labels=a.labels, label_size=a.label_size, label_gap=a.label_gap, label_pos=a.label_pos,
+                                       label_font=a.label_font, label_bold=a.label_bold, label_caps=a.label_caps,
+                                       artwork=a.artwork, artwork_file=a.artwork_file,
+                                       **{k: getattr(a, k) for k in ('extras', 'auto_art', 'art_style', 'art_scale', 'art_rings', 'art_outputs', 'art_border',
+                                                                     'art_border_radius', 'art_border_gap', 'ring_width', 'ring_gap', 'art_groups', 'art_tabs',
+                                                                     'art_title', 'art_maker', 'title_size', 'title_font', 'title_bold', 'title_vertical', 'title_mirror',
+                                                                     'knob_size', 'pot_sweep', 'scale_text')})
+
     if preview is not None:
-        fill_preview(preview, groups, outline, (x1, y1, x2, y2), a, log, problems,
+        preview['settings'] = settings_now()
+        fill_preview(preview, groups, outline, (x1, y1, x2, y2), a, log, problems, cutouts=cutouts + manual, fps=part_fps,
                      eurorack=hp if tpl else None,
                      pcb_box=((x1 + ER_PCB_INSET, y1 + ER_RAIL, x2 - ER_PCB_INSET, y2 - ER_RAIL) if tpl else (bx1, by1, bx2, by2)),
                      rail_bad=rail_bad, uncut=uncut, labels=placed, label_rows=label_rows,
@@ -2610,7 +2901,9 @@ def main(argv=None, preview=None):
                      art_items=a._art_items, texts=texts, art_pos=a._art_pos,
                      added=[dict(s, box=list(c['geom'].bounds), ref=c['ref']) for s in added
                             for c in cutouts if c['key'] == f"add:{s['id']}"],
+                     keepouts=[dict(geom=k, bad=bad) for k, bad in keep_res],
                      knocked=[dict(fid=f, **v) for f, v in a._knock_boxes.items()], tab_boxes=a._tab_boxes,
+                     lines=[dict(i, box=i['_box']) for i in lines if '_box' in i],
                      images=[dict(id=i['id'], box=i['_box'], w=i['w'], invert=i.get('invert', False), rot=i.get('rot', 0))
                              for i in shown_images if '_box' in i])
         return 1 if any(l.startswith('ERROR') for l in log) else 0
@@ -2633,6 +2926,11 @@ def main(argv=None, preview=None):
     else:
         text = header_from(pcb_text, pcb) + '\n'.join(items) + '\n' + group + '\n)\n'
         log.append(f"new   {out_path}")
+    if fresh and os.path.exists(out_path):
+        backup = re.sub(r'\.kicad_pcb$', '', out_path) + '.before-reset.kicad_pcb'
+        import shutil
+        shutil.copyfile(out_path, backup)
+        log.append(f"saved your old panel file as {os.path.basename(backup)} (it had the parts placed by hand in KiCad)")
     open(out_path, 'w', encoding='utf-8').write(text)
     json.dump({'panelgen': VERSION, 'note': 'panelgen memory: what it generated last run, and what you deleted or edited. Keep next to the panel.',
                'outline': outline_ids, 'outline_box': [round(v, 4) for v in (x1, y1, x2, y2)],
@@ -2643,17 +2941,9 @@ def main(argv=None, preview=None):
                                                     ref=L['ref']) for L in placed if not L.get('own')},
                'label_edits': label_edits, 'ignore_uncut': ignore_uncut, 'texts': texts, 'art_pos': a._art_pos,
                'images': [{k: v for k, v in i.items() if not k.startswith('_')} for i in images], 'shapes': added,
-               'settings': dict(margin=a.margin, **{f'margin_{k}': v for k, v in m.items()},
-                                screws=a.screws, screw_dia=a.screw_dia, screw_inset=a.screw_inset, screw_slot=a.screw_slot, rail_slot=a.rail_slot,
-                                corner_radius=a.corner_radius, grow=a.grow, min_web=a.min_web,
-                                panel_layer=a.panel_layer, svg=bool(a.svg), check_uncut=a.check_uncut,
-                                labels=a.labels, label_size=a.label_size, label_gap=a.label_gap, label_pos=a.label_pos,
-                                label_font=a.label_font, label_bold=a.label_bold, label_caps=a.label_caps,
-                                artwork=a.artwork, artwork_file=a.artwork_file,
-                                **{k: getattr(a, k) for k in ('extras', 'auto_art', 'art_style', 'art_scale', 'art_rings', 'art_outputs', 'art_border',
-                                                              'art_border_radius', 'art_groups', 'art_tabs',
-                                                              'art_title', 'art_maker', 'title_size', 'title_font', 'title_bold', 'title_vertical',
-                                                              'knob_size', 'pot_sweep', 'scale_text')})},
+               'lines': [{k: v for k, v in i.items() if not k.startswith('_')} for i in lines], 'titles': a._titles, 'marks': marks,
+               'bodies': ui.get('bodies', mem0.get('bodies', [])),   # part-size guides drawn in the window (never cut or printed)
+               'settings': settings_now()},
               open(mem_path, 'w', encoding='utf-8'), indent=1)
 
 
