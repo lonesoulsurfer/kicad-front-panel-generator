@@ -335,8 +335,14 @@ class App(tk.Tk):
         f = self.form(s)
         c = field(f, 'Head size', 'Across the head, in mm. Auto is twice the hole: about right for pan-head screws. '
                                   'Covers the PCB mounting holes, the case holes and the screw holes of parts such as screens.')
-        hb = ttk.Combobox(c, textvariable=v['screw_head'], values=SCREW_HEADS, width=24); hb.pack(side='left')
+        hb = self.w_head = ttk.Combobox(c, textvariable=v['screw_head'], width=28); hb.pack(side='left')
         ttk.Label(c, text='mm').pack(side='left', padx=(4, 0))
+        hb.bind('<<ComboboxSelected>>', lambda e: self.head_size_picked())
+        hb.bind('<Return>', lambda e: self.keep_head_size()); hb.bind('<FocusOut>', lambda e: self.keep_head_size())
+        self.head_list()
+        ttk.Label(f, text='Pick a size, or choose "Your own size…" (or just type one in the box) - e.g. 4.5. Sizes you '
+                          'type are added to the list.', style='Dim.TLabel', wraplength=420, justify='left'
+                  ).grid(row=f._rows, column=0, columnspan=2, sticky='w'); f._rows += 1
         # (the preview follows the box by itself, a moment after it changes - nothing bound here, so the list opens at once)
         ttk.Label(f, text='Or drag the edge of any dotted circle in the preview: every screw head changes to that size.',
                   style='Dim.TLabel', wraplength=420, justify='left').grid(row=f._rows, column=0, columnspan=2, sticky='w'); f._rows += 1
@@ -1067,13 +1073,46 @@ class App(tk.Tk):
             self.board.set(rec[i]); self.board_changed()
 
     def screw_head(self):
+        """The head size for the engine. While you're picking "Your own size…" or half-way through typing, the last good one."""
         t = self.vars['screw_head'].get().strip().split(' ')[0].lower()
         if t in ('auto', 'off'):
+            self._head_ok = t
             return t
         try:
-            return f'{max(0.0, float(t.replace(",", "."))):g}'
+            d = float(t.replace(',', '.'))
+            if not 0.5 <= d <= 50:
+                raise ValueError
+            self._head_ok = f'{d:g}'
         except ValueError:
-            raise ValueError('Screw head size: pick one from the list, or type a size in mm')
+            pass
+        return getattr(self, '_head_ok', 'auto')
+
+    def head_list(self):
+        """Like Hole size: your own sizes first, then the usual screws, then "Your own size…"."""
+        mine = [f"{d:g}  ·  your size" for d in self.cfg.get('head_sizes', [])]
+        self.w_head['values'] = mine + list(SCREW_HEADS) + [self.OWN_SIZE]
+
+    def head_size_picked(self):
+        if self.vars['screw_head'].get() == self.OWN_SIZE:
+            self.vars['screw_head'].set('')
+            self.w_head.focus_set(); self.w_head.icursor('end')
+            self.hover.config(text='Type the screw head size in mm (e.g. 5.5) and press Enter.')
+
+    def keep_head_size(self, d=None):
+        """A head size you typed (or dragged) that isn't in the list goes into it, so it's there next time."""
+        if d is None:
+            t = self.vars['screw_head'].get().strip().split(' ')[0]
+            try:
+                d = float(t.replace(',', '.'))
+            except ValueError:
+                return
+        d = round(d, 2)
+        if not 0.5 <= d <= 50 or any(abs(float(h.split()[0]) - d) < 1e-6 for h in SCREW_HEADS if h[0].isdigit()):
+            return
+        mine = [x for x in self.cfg.get('head_sizes', []) if abs(x - d) > 1e-6]
+        self.cfg['head_sizes'] = ([d] + mine)[:6]
+        self.save_cfg()
+        self.head_list()
 
     def set_vars(self, s):
         """Every setting on the left, from a panel's saved settings (or the bare defaults)."""
@@ -1569,6 +1608,7 @@ class App(tk.Tk):
             return
         k = None if self.adding else self.head_at(e)
         if k is not None:                              # the edge of a screw head: drag it to set every head's size
+            self.canvas.delete('headhi'); self.head_mark(k)     # stays lit while you hold it
             self.drag = ('head', e.x, e.y, k, False, None)
             return
         hit = None if self.adding else self.body_at(e)
@@ -1767,6 +1807,28 @@ class App(tk.Tk):
                 return k
         return None
 
+    def head_hover(self, e):
+        """Over the edge of a screw head: it lights up and the pointer changes, so you know a drag will size it."""
+        c = self.canvas
+        k = None if (self.drag or self.adding or self.measuring) else self.head_at(e)
+        if getattr(self, '_head_hi', None) is k and (k is None or c.find_withtag('headhi')):
+            return
+        c.delete('headhi')
+        self._head_hi = k
+        if k is None:
+            c.config(cursor='')
+            return
+        self.head_mark(k)
+        c.config(cursor='fleur')
+        d = k['geom'].bounds[2] - k['geom'].bounds[0]
+        self.hover.config(text=f'Screw head, {d:.1f} mm across - drag its edge to change every screw head')
+
+    def head_mark(self, k):
+        sc, ox, oy = self.cur_view
+        b = k['geom'].bounds
+        self.canvas.create_oval(ox + b[0] * sc, oy + b[1] * sc, ox + b[2] * sc, oy + b[3] * sc, outline='#ffd28a', width=3,
+                                tags='headhi')
+
     def head_drag(self, e):
         _, x0, y0, k, moved, _ = self.drag
         if not moved and abs(e.x - x0) + abs(e.y - y0) < 3:
@@ -1898,9 +1960,10 @@ class App(tk.Tk):
         if self.drag and self.drag[0] == 'head':
             _, _, _, _, moved, d = self.drag
             self.drag = None
-            self.canvas.delete('dragbox')
+            self.canvas.delete('dragbox'); self.canvas.delete('headhi'); self._head_hi = None
             if moved and d:
                 self.vars['screw_head'].set(f'{round(d, 2):g}')   # the preview redraws from the setting
+                self.keep_head_size(d)
             return
         if self.drag and self.drag[0] == 'body':
             _, _, _, (b, _), moved, new, _ = self.drag
@@ -2856,6 +2919,7 @@ class App(tk.Tk):
 
     def measure_motion(self, e):
         self.mouse = (e.x, e.y)
+        self.head_hover(e)
         if self.adding == 'line' and self.line_from is not None and getattr(self, 'cur_view', None):
             return self.rubber(self.line_from, self.line_point(e, self.line_from))
         if not self.measuring or len(self.measure) != 1 or not getattr(self, 'cur_view', None) or not self.pv or 'message' in self.pv:
