@@ -64,6 +64,7 @@ makes the panel 10 mm bigger all round and adds a case screw in each corner. Add
 | `--screws` | none | Case screw holes round the panel edge: `none`, `corners`, `corners+mid` |
 | `--screw-dia` / `--screw-inset` | 2.2 / 3.5 | Case screw size, and distance from the panel edge to the hole **centre**. The window shows how much panel is left between hole and edge as you type |
 | `--rail-slot` | 0 | Eurorack only: rail holes as horizontal slots this long |
+| `--screw-head` | auto | Keep-out for screw heads: a WARN for any label or artwork under the head of a screw in a mounting hole (rule *Mounting hole*), a case or rail hole, or a part's screw hole (`:mount`). `auto` = twice the hole, `off`, or the head size in mm |
 | `--screw-slot` | 0 | Make the case holes slots this long, end to end (e.g. `--screw-slot 4` with a 2.5 mm hole). 0 = round |
 | `--corner-radius` | 0 | Rounded panel corners |
 | `--min-web` | 1.0 | Warn when material between two parts' cutouts is thinner |
@@ -95,6 +96,8 @@ Panels made by older versions (sitting next to the PCB) are **moved into the fol
 | 2.8" TFT, smaller module (`TFT_Displays:ILI9341_TFT`) | 56 × 41 window + mounting holes at 2.2 mm | centre of the F.Fab outline |
 | 2.4" ST7789V TFT | 49 × 37 + 0.5 clearance = 49.5 × 37.5 window + mounting holes | centre of the F.Fab outline |
 | Alps SKRC 9 mm switch | 6.6 mm | footprint origin (the stem) |
+| Tactile switch 6×6 mm (SW_PUSH_6mm, PTS645, B3S-1000…) | 4.0 mm | the button circle on F.Fab, else the middle of the part |
+| Tactile switch 12×12 mm (SW_PUSH_12mm, PTS125…) | 7.5 mm | the button circle on F.Fab, else the middle of the part |
 | 3.5" ST7796S TFT | 85.8 × 56.5 window (landscape; glass is 85.00 × 55.26) + mounting holes at 2.2 mm | middle of the module's mounting holes |
 | PJ-320D jacks (horizontal), 3×6 tactile switch | no cutout, and no "no cutout" warning | - |
 | Mounting holes | 2.2 mm | footprint origin |
@@ -102,6 +105,21 @@ Panels made by older versions (sitting next to the PCB) are **moved into the fol
 "Body circle" is the largest circle on F.Fab. EasyEDA footprints have no F.Fab, so the largest silkscreen circle is used instead and the run prints a CHECK line, because EasyEDA silkscreen isn't always exactly on the shaft.
 
 Edit `panel_rules.json` to add parts. Rules match on the footprint library ID (a single glob or a list). `clearance` adds wiggle room to each dimension. `"shape": "none"` marks a part that never goes through the panel (no cutout, and no warning about it). `"centre": "npth_centre"` centres a cutout on the middle of the footprint's mounting holes, which suits screen modules.
+
+### Changing one part's hole: the Panel field
+
+Add a field named **`Panel`** to a footprint on the PCB (or to its symbol in the schematic, then Update PCB from Schematic) to set that part's cutout yourself. It's centred where the part's rule would centre it (or on the middle of its F.Fab outline if there's no rule), and moves with the part.
+
+| Value | Cutout |
+|---|---|
+| `circle:6.5` | round hole, 6.5 mm across |
+| `square:7` | square, 7 mm across |
+| `rect:8x6` | rectangle, 8 mm wide by 6 mm high (as the part sits at 0 degrees) |
+| `skip` | no cutout, and no "no cutout?" warning |
+
+After the shape you can add `holes` (also cut the part's mounting holes, at 2.2 mm), `holes=3.2` (at that size), or `offset=X,Y` (move the cutout X, Y mm from its usual centre). For example `rect:56x40 holes offset=0,1.5`.
+
+Typical use: a tactile switch with a cap on it, `circle:` the cap's size plus 0.5 mm.
 
 ### Drawing a cutout on the PCB (User.1)
 
@@ -166,9 +184,9 @@ Tick **Make artwork for me** (or `--auto-art on`). The artwork is drawn from the
 | Item | Window | Command line | Notes |
 |---|---|---|---|
 | Pot scales | Pot scale | `--art-scale none/ticks/numbers/bipolar` | 11 marks over `--pot-sweep 300` degrees, starting `--knob-size 13` / 2 + 0.6 mm from the centre. Numbers are `--scale-text 1.4` mm. Pots are found by rule or footprint name (pot, potentiometer, R_Pot); encoders get none |
-| Rings | Rings round buttons | `--art-rings on` | 0.8 mm wide, 0.8 mm out from the hole, on round push buttons (Alps SKRC, switch/button footprints) |
+| Rings | Rings, ring thickness, gap from the hole | `--art-rings on`, `--ring-width 0.8`, `--ring-gap 0.8` | A ring on round push buttons (Alps SKRC, switch/button footprints); set how thick it is and how far out from the hole |
 | Output boxes | Outputs in filled boxes | `--art-outputs on` | Jacks whose label contains OUT (or set to output in Edit labels), or that have a text you added saying OUT within 10 mm of the hole (the nearest jack to that text). The label is cut out of the box, using the label font (a bold sans when the labels use KiCad's own font, which has no font file) |
-| Border | Border, corner radius | `--art-border on`, `--art-border-radius 0` | 0.6 mm line inside the case screws, broken round any hole and edge tab. Radius 0 follows the panel corners |
+| Border | Border, gap from the edge, corner radius, thickness | `--art-border on`, `--art-border-gap 0`, `--art-border-radius 0`, `--art-border-width 0.6` | A 0.6 mm line by default, broken round any hole and edge tab. Gap 0 is automatic: 1.5 mm from the edge, or just inside the case screws. Radius 0 follows the panel corners |
 | Boxes | Boxes round rows of controls | `--art-groups on` | 3+ of the same kind (pots/encoders, buttons, toggles, jacks) centred on one line (within 1 mm) and no more than 32 mm apart. 0.6 mm line, 1.5 mm outside their scales, rings and labels, 2 mm corners. Left out with a NOTE if it would touch another part, a label or the edge |
 | Edge tabs | Tabs for edge jacks | `--art-tabs on` | Parts with no hole whose courtyard crosses the top or bottom edge. Neighbours under 10 mm apart share a tab. Labels with the same first word (MIDI IN / MIDI OUT) become IN / OUT over each jack with MIDI underneath |
 | Title / maker | Title, Maker, Across / Stacked / On its side | `--art-title`, `--art-maker`, `--title-size 5`, `--title-font`, `--title-bold`, `--title-vertical off/stacked/on` | Top centre, then top left, top right, bottom centre: the first spot clear of holes, labels and other artwork |
@@ -234,7 +252,7 @@ For a part with several holes that must not drift apart (a USB-C charge port and
 
 Add `PanelParts.pretty` as a footprint library. Place its parts in the **panel** file and position them exactly using KiCad's properties (X/Y), Align and Distribute.
 
-- `Panel_Jack_6.2mm`, `Panel_Jack_7.2mm`, `Panel_Toggle_5.2mm`, `Panel_LED_3.2mm`, `Panel_LED_5.2mm`
+- `Panel_Jack_6.2mm`, `Panel_Jack_7.2mm`, `Panel_Toggle_5.2mm`, `Panel_Tact_4.0mm`, `Panel_LED_3.2mm`, `Panel_LED_5.2mm`
 - `Panel_USB-C_Charge_12x4.3mm`: slot and both screw holes in one footprint, so they can't drift
 - `Panel_Screw_2.2mm`, `Panel_Screw_3.2mm`
 

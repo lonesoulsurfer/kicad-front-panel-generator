@@ -1,5 +1,5 @@
 {
-  "_comment": "Cutout rules. First rule whose 'match' glob matches the footprint lib id wins. Sizes in mm, in the footprint's own frame (as it looks at 0 degrees). 'clearance' is added to each dimension (wiggle room). centre: body_circle = largest circle on F.Fab, else on F.SilkS; origin = footprint origin; npth:<drill> = NPTH pad with that drill. merge: true lets touching cutouts join into one slot. A 'match' may be a list of globs. shape 'none' = a known part that never goes through the panel (no cutout, and no 'no cutout' warning). centre npth_centre = middle of the footprint's mounting holes.",
+  "_comment": "Cutout rules. First rule whose 'match' glob matches the footprint lib id wins. Sizes in mm, in the footprint's own frame (as it looks at 0 degrees). 'clearance' is added to each dimension (wiggle room). centre: body_circle = largest circle on F.Fab, else on F.SilkS; circle_or_box = the F.Fab circle if there is one, else the middle of the F.Fab outline; origin = footprint origin; npth:<drill> = NPTH pad with that drill. merge: true lets touching cutouts join into one slot. A 'match' may be a list of globs. shape 'none' = a known part that never goes through the panel (no cutout, and no 'no cutout' warning). centre npth_centre = middle of the footprint's mounting holes.",
   "panel_hole_for_npth": 2.2,
   "rules": [
     {"name": "MX switch", "match": "*Cherry_MX*", "centre": "npth:4", "shape": "square", "size": 19.05, "clearance": 0.5, "merge": true},
@@ -16,6 +16,8 @@
     {"name": "Alps SKRC switch", "match": "*SW_Alps_SKRC*", "centre": "origin", "shape": "circle", "size": 6.6},
     {"name": "TFT 3.5in ST7796S", "match": "*TFT_3.5*ST7796*", "centre": "npth_centre", "shape": "rect", "size": [56.5, 85.8], "npth_holes": true},
     {"name": "Jack PJ-320D (horizontal, no cutout)", "match": "*PJ-320D*", "centre": "origin", "shape": "none"},
+    {"name": "Tactile switch 6x6", "match": ["*SW_PUSH_6mm*", "*SW_SPST_PTS645*", "*SW_SPST_B3S-1000*", "*SW_Push_1P1T*6x6*", "*TS-1187*", "*TACT*6x6*", "*L6.0-W6.0*"], "centre": "circle_or_box", "shape": "circle", "size": 4.0},
+    {"name": "Tactile switch 12x12", "match": ["*SW_PUSH_12mm*", "*SW_SPST_PTS125*", "*L12.0-W12.0*"], "centre": "circle_or_box", "shape": "circle", "size": 7.5},
     {"name": "Tactile switch 3x6 (behind panel)", "match": "*SW_Tactile_3x6*", "centre": "origin", "shape": "none"},
     {"name": "Mounting hole", "match": "*:MountingHole*", "centre": "origin", "shape": "circle", "size": 2.2}
   ]

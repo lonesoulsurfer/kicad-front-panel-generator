@@ -35,7 +35,7 @@ def mouse(button, a, b=None):
 def run():
     v = app.vars
     check('demo board loads into the preview', bool(app.pv) and 'message' not in app.pv and len(app.pv['shapes']) > 3)
-    v['expand'].set(True); v['margin'].set('12'); v['labels_on'].set(True); v['auto_on'].set(True); app.refresh_states()
+    v['margin'].set('12'); v['labels_on'].set(True); v['art_style'].set('Classic synth'); app.apply_style()
     app.update_preview(); app.update()
     x1, y1, x2, y2 = app.pv['panel_box']
     check('labels and made artwork', len(app.pv['labels']) > 3 and len(app.pv['artwork']) > 3)
@@ -58,6 +58,14 @@ def run():
     app.end_measure()
     n = len(app.ui['shapes']); app.undo(); app.update()
     check('undo takes the copy back', len(app.ui['shapes']) == n - 2)
+    app.show_tab('art'); app.fold('labels'); app.fold('labels'); app.show_tab('panel'); app.update()
+    check('tabs and folding sections', app.tab == 'panel' and app.sections['size'][0].winfo_manager() and not app.sections['labels'][0].winfo_manager())
+    v['art_border'].set(True); v['border_gap'].set('4'); v['ring_width'].set('0.4'); app.refresh_states(); app.update_preview(); app.update()
+    check('border gap and ring thickness accepted', 'message' not in app.pv)
+    app.start_line(); mouse(1, px(x1 + 20, y2 - 4)); mouse(1, px(x1 + 60, y2 - 4)); app.update()
+    check('a line drawn with two clicks', len(app.ui['lines']) == 1 and len(app.pv.get('lines', [])) == 1)
+    sh = app.pv['shapes'][1]; app.add_mark(sh, 'box', True); app.update()
+    check('a filled box round a hole', any(t['kind'] == 'mark' for t in app.pv['tab_boxes']))
     app.generate(open_after=False); app.update()
     panel = gui.panel_paths(board)[0]
     check('panel file written', os.path.exists(panel) and open(panel, encoding='utf-8').read().count('gr_circle') >= 8)

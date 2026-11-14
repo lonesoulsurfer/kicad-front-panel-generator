@@ -7,7 +7,7 @@ name: Build Windows app
 on:
   push:
     branches: [main]
-    paths: ['panelgen.py', 'panelgen_gui.pyw', 'panel_rules.json', 'requirements.txt', 'tools/**', '.github/workflows/build.yml']
+    paths: ['panelgen.py', 'panelgen_gui.pyw', 'panel_rules.json', 'requirements.txt', 'tools/**', 'pcm/**', 'LICENSE', '.github/workflows/build.yml']
   workflow_dispatch:
 
 permissions:
@@ -58,11 +58,19 @@ jobs:
       - name: Build PanelGenerator.exe
         run: pyinstaller --noconfirm --clean --windowed --name PanelGenerator --collect-data sv_ttk --hidden-import panelgen panelgen_gui.pyw
 
+      - name: Check the packaged app starts with its proper look
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist/PanelGenerator/PanelGenerator.exe" -ArgumentList "--selftest" -Wait -PassThru
+          if (Test-Path selftest.txt) { Get-Content selftest.txt }
+          if ($p.ExitCode -ne 0) { throw "the packaged app failed its start-up check (exit $($p.ExitCode))" }
+
       - name: Put the release folder together
         shell: pwsh
         run: |
           $out = "dist/PanelGenerator"
-          Copy-Item panel_rules.json, README.md, LICENSE $out
+          Copy-Item panel_rules.json, README.md, LICENSE, LICENSING.md $out
+          Copy-Item (Get-ChildItem pcm/*_pcm.zip | Select-Object -First 1).FullName "$out/KiCad-button-plugin.zip"
           Copy-Item -Recurse PanelParts.pretty, Eurorack.pretty, examples $out
           $ver = if ($env:PUBLISH -eq 'yes') { "v$($env:VER)" } else { "test-$($env:GITHUB_SHA.Substring(0,7))" }
           Compress-Archive -Path $out -DestinationPath "PanelGenerator-$ver-windows.zip"
