@@ -7,6 +7,10 @@ Panel Generator makes a front panel PCB from your KiCad PCB.
 **[⬇ Download Panel Generator for Windows](https://github.com/lonesoulsurfer/kicad-front-panel-generator/releases/latest)**: on that page, under **Assets**, click **`PanelGenerator-v…-windows.zip`**.
 ⚠️ **Do not use the green *Code → Download ZIP* button.** That zip has only the source code. It does not have the app (`PanelGenerator.exe`).
 
+[![Sponsor lonesoulsurfer](https://img.shields.io/badge/%E2%99%A5%20Sponsor-lonesoulsurfer-db61a2?style=for-the-badge)](https://github.com/sponsors/lonesoulsurfer)
+
+Panel Generator is free. If it saves you time, you can [sponsor its work](https://github.com/sponsors/lonesoulsurfer).
+
 Panel Generator finds each pot, jack, switch, LED and screen on your board. It cuts a hole of the correct size in the correct position for each part. You can add labels, shapes, pictures and artwork. A live preview shows the panel while you work. When the panel is correct, Panel Generator makes the gerbers for the PCB manufacturer. It also makes standard Eurorack panels (2HP to 42HP).
 
 You do not have to copy the parts onto a User layer. You do not have to export to Fusion 360 or Inkscape and back. You do not have to draw the panel again by hand.
@@ -297,6 +301,14 @@ The **[technical guide](docs/TECHNICAL.md)** gives all the other information:
 - parts for the panel only, and part markers.
 - how to remove a hole or change its size.
 - all the checks.
+
+## Support the project
+
+Panel Generator is free for non-commercial use. I make it in my free time. If it helps you, you can support its work:
+
+- **[Sponsor me on GitHub](https://github.com/sponsors/lonesoulsurfer).** You can give one time or each month. GitHub takes no fee.
+- **Tell other people.** Show your panels, and put a link to this page in your project.
+- **Report problems.** Open an issue, and attach the PCB file if possible.
 
 ## Licence
 
