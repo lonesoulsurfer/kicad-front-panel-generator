@@ -1,22 +1,22 @@
 {
-    "$schema": "https://go.kicad.org/pcm/schemas/v1",
+    "$schema": "https://go.kicad.org/pcm/schemas/v1#/definitions/Repository",
     "name": "Panel Generator (lonesoulsurfer)",
     "maintainer": {
         "name": "Marcus (lonesoulsurfer)",
         "contact": {
-            "github": "https://github.com/lonesoulsurfer"
+            "web": "https://github.com/lonesoulsurfer/kicad-front-panel-generator"
         }
     },
     "packages": {
         "url": "https://raw.githubusercontent.com/lonesoulsurfer/kicad-front-panel-generator/main/pcm/packages.json",
-        "sha256": "6b78a17b4e20a39e29ff17df00f7f00829085591ac01138e3083b414a958a2ed",
-        "update_timestamp": 1794616811,
-        "update_time_utc": "2026-11-14 00:40:11"
+        "sha256": "d7662e56ab89dfddb282309a256288708c12eb08654454a046df18f6dee825e9",
+        "update_timestamp": 1794618109,
+        "update_time_utc": "2026-11-14 01:01:49"
     },
     "resources": {
         "url": "https://raw.githubusercontent.com/lonesoulsurfer/kicad-front-panel-generator/main/pcm/resources.zip",
         "sha256": "9b9df9bece468355187428358919d0b1d7b665cd312015c8a7fd4563eabb835e",
-        "update_timestamp": 1794616811,
-        "update_time_utc": "2026-11-14 00:40:11"
+        "update_timestamp": 1794618109,
+        "update_time_utc": "2026-11-14 01:01:49"
     }
 }

@@ -9,7 +9,7 @@
             "author": {
                 "name": "Marcus (lonesoulsurfer)",
                 "contact": {
-                    "github": "https://github.com/lonesoulsurfer"
+                    "web": "https://github.com/lonesoulsurfer/kicad-front-panel-generator"
                 }
             },
             "license": "MIT",
@@ -36,9 +36,9 @@
                         "linux"
                     ],
                     "download_url": "https://raw.githubusercontent.com/lonesoulsurfer/kicad-front-panel-generator/main/pcm/panel-generator-button_v1.0.0_pcm.zip",
-                    "download_sha256": "d186dce479e7e6ad2fc07934c73f177197f27e8432ef1d9b775ace6478441595",
-                    "download_size": 8209,
-                    "install_size": 12202
+                    "download_sha256": "6d0e1f09ad6610bf18c66f052876ec55f5bb2ccd9970ae2e076a549a0699d108",
+                    "download_size": 8206,
+                    "install_size": 12227
                 }
             ]
         }

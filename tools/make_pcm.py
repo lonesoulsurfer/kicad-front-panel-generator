@@ -64,8 +64,8 @@ def main():
     res = os.path.join(OUT, 'resources.zip')
     with zipfile.ZipFile(res, 'w') as z:
         add(z, os.path.join(SRC, 'resources', 'icon.png'), meta['identifier'] + '/icon.png')
-    repo = {'$schema': 'https://go.kicad.org/pcm/schemas/v1', 'name': 'Panel Generator (lonesoulsurfer)',
-            'maintainer': {'name': 'Marcus (lonesoulsurfer)', 'contact': {'github': 'https://github.com/lonesoulsurfer'}},
+    repo = {'$schema': 'https://go.kicad.org/pcm/schemas/v1#/definitions/Repository', 'name': 'Panel Generator (lonesoulsurfer)',
+            'maintainer': {'name': 'Marcus (lonesoulsurfer)', 'contact': {'web': 'https://github.com/lonesoulsurfer/kicad-front-panel-generator'}},
             'packages': resource(packages), 'resources': resource(res)}
     with open(os.path.join(OUT, 'repository.json'), 'w', encoding='utf-8') as f:
         json.dump(repo, f, indent=4)
