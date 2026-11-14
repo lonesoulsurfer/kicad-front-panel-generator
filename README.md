@@ -2,6 +2,11 @@
 
 Turn your KiCad PCB into a matching front panel in one click.
 
+[![Download Panel Generator for Windows](https://img.shields.io/github/v/release/lonesoulsurfer/kicad-front-panel-generator?label=%E2%AC%87%20Download%20Panel%20Generator&style=for-the-badge&color=2563eb)](https://github.com/lonesoulsurfer/kicad-front-panel-generator/releases/latest)
+
+**[⬇ Download Panel Generator for Windows](https://github.com/lonesoulsurfer/kicad-front-panel-generator/releases/latest)**: on that page, under **Assets**, click **`PanelGenerator-v…-windows.zip`**.
+⚠️ **Don't use the green *Code → Download ZIP* button.** That's only the source code, without the app (`PanelGenerator.exe`).
+
 Every pot, jack, switch, LED and screen on the board gets a hole in the right place and the right size. Add labels or your own Inkscape artwork, check it all in a live preview, and get gerbers ready to send to the fab. It does standard Eurorack panels (2-42HP) too.
 
 You don't need to trace parts onto a User layer, export to Fusion or Inkscape and back, or redraw the panel by hand.
@@ -22,7 +27,7 @@ You don't need to trace parts onto a User layer, export to Fusion or Inkscape an
 
 ## Install
 
-1. Download **`PanelGenerator-…-windows.zip`** from [Releases](../../releases) and unzip it anywhere.
+1. **[Download Panel Generator](https://github.com/lonesoulsurfer/kicad-front-panel-generator/releases/latest)**: under **Assets**, click **`PanelGenerator-v…-windows.zip`** (not *Source code*, and not the green *Code → Download ZIP* button). Unzip it anywhere.
 2. Run **`PanelGenerator.exe`**. The first time, Windows may show *"Windows protected your PC"*. That's because the app isn't signed with a paid certificate. Click **More info → Run anyway**.
 3. *(Optional)* Add the **Open Panel Generator** button to KiCad's PCB editor: one click in Panel Generator - see [below](#open-it-from-kicad).
 4. *(Optional)* In KiCad, add the two footprint libraries from the unzipped folder: **Preferences → Manage Footprint Libraries → Global Libraries → folder icon**. Add `PanelParts.pretty` (extra panel holes such as jacks and screws) and `Eurorack.pretty` (Eurorack templates).
