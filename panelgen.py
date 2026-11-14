@@ -32,6 +32,8 @@ class Sym(str):
 
 _TOK = re.compile(r'\s*(?:(\()|(\))|"((?:[^"\\]|\\.)*)"|([^\s()"]+))', re.S)
 
+_NUM = re.compile(r'-?\d+(\.\d+)?(e-?\d+)?')
+
 def parse(text):
     stack, cur = [], []
     pos = 0
@@ -48,10 +50,7 @@ def parse(text):
         elif s is not None:
             cur.append(s.replace('\\"', '"').replace('\\\\', '\\'))
         else:
-            try:
-                cur.append(float(a) if re.fullmatch(r'-?\d+(\.\d+)?(e-?\d+)?', a) else Sym(a))
-            except ValueError:
-                cur.append(Sym(a))
+            cur.append(float(a) if _NUM.fullmatch(a) else Sym(a))
     return cur[0]
 
 def kids(node, name):
@@ -95,6 +94,17 @@ def new_uuid():
     return str(uuid.uuid4())
 
 # ---------------------------------------------------------------- reading the PCB
+_footprints = {}
+
+def footprint(node):
+    """The Footprint for a footprint in the PCB, made once per read of the file (the board is kept while it's unchanged)."""
+    hit = _footprints.get(id(node))
+    if hit and hit[0] is node:
+        return hit[1]
+    fp = Footprint(node)
+    _footprints[id(node)] = (node, fp)
+    return fp
+
 class Footprint:
     def __init__(self, node):
         self.node = node
@@ -159,9 +169,43 @@ class Footprint:
                     best = (cx, cy, r)
         return best
 
+_board_cache = {}
+_dup_refs = {}
+
+def unique_footprint_ids(tree):
+    """Two footprints with the same ID (a PCB file edited by hand or by a script) would share labels, shapes and memory.
+    The second gets an ID made from the first and its reference - the same every time, so what's saved still matches.
+    Returns the references changed. Only the copy read here changes, never the file."""
+    seen, changed = set(), []
+    for node in kids(tree, 'footprint'):
+        u = kid(node, 'uuid')
+        if not u or len(u) < 2:
+            continue
+        if u[1] in seen:
+            ref = next((p[2] for p in kids(node, 'property') if len(p) > 2 and p[1] == 'Reference'), '?')
+            u[1] = str(uuid.uuid5(uuid.NAMESPACE_URL, f'{u[1]}/{ref}'))
+            changed.append(ref)
+        seen.add(u[1])
+    return changed
+
 def read_board(path):
+    """(text, tree) of a .kicad_pcb. Kept while the file is unchanged: the preview reads the same PCB every time a setting
+    changes, and reading it is most of the time a preview takes. Nothing changes the tree it returns."""
+    try:
+        st = os.stat(path)
+        key = (os.path.abspath(path), st.st_mtime_ns, st.st_size)
+    except OSError:
+        key = None
+    hit = _board_cache.get(os.path.abspath(path))
+    if key and hit and hit[0] == key:
+        return hit[1], hit[2]
     text = open(path, encoding='utf-8').read()
-    return text, parse(text)
+    tree = parse(text)
+    _dup_refs[os.path.abspath(path)] = unique_footprint_ids(tree)
+    if key:
+        _board_cache[key[0]] = (key, text, tree)
+        _courtyards.clear(); _footprints.clear()
+    return text, tree
 
 def board_outline(tree):
     """Bounding box of everything on Edge.Cuts (board-level graphics)."""
@@ -320,7 +364,7 @@ def drawn_cutouts(tree, layer, log):
         out.append({'id': key, 'key': key, 'ref': f'{layer} drawing', 'rule': f'drawn on {layer}',
                     'merge': False, 'geom': g, 'circle': circ, 'drawn': True})
     for idx, node in enumerate(kids(tree, 'footprint')):
-        fp = Footprint(node)
+        fp = footprint(node)
         fid = fp.uuid or f'fp{idx}'
         if fp.props.get('Panel', '').strip().lower() == 'skip':
             continue
@@ -369,7 +413,7 @@ def collect_cutouts(tree, cfg, log):
     """Returns list of dicts: ref, rule, geom, merge."""
     out = []
     for idx, node in enumerate(kids(tree, 'footprint')):
-        fp = Footprint(node)
+        fp = footprint(node)
         fid = fp.uuid or f'fp{idx}'
         override = parse_override(fp.props['Panel']) if 'Panel' in fp.props else None
         if 'Panel' in fp.props and override is None:
@@ -489,7 +533,7 @@ def manual_cutouts(tree, names=None):
     """Cutouts you added in the panel file: PanelParts footprints and anything drawn on Edge.Cuts."""
     out = []
     for idx, node in enumerate(kids(tree, 'footprint')):
-        fp = Footprint(node)
+        fp = footprint(node)
         fid = 'manual:' + (fp.uuid or f'fp{idx}')
         parts = []
         for x, y, ang, w, h in fp.npth_all():
@@ -548,6 +592,8 @@ def merge_and_check(cutouts, outline, min_web, log, merge_tol=None):
         slivers = []
         for i, c1 in enumerate(mergeable):
             for c2 in mergeable[i + 1:]:
+                if far_apart(c1['geom'], c2['geom'], merge_tol):
+                    continue
                 d = c1['geom'].distance(c2['geom'])
                 if 0.001 < d < 0.1:
                     log.append(f"NOTE  {c1['ref']} and {c2['ref']} miss touching by {d:.3f} mm - "
@@ -585,6 +631,8 @@ def merge_and_check(cutouts, outline, min_web, log, merge_tol=None):
         for b in groups[i + 1:]:
             if a['ids'] & b['ids']:
                 continue  # same footprint: spacing is by design
+            if far_apart(a['geom'], b['geom'], min_web):
+                continue
             d = a['geom'].distance(b['geom'])
             if d == 0 and (a.get('drawn') or b.get('drawn')):
                 dr, other = (a, b) if a.get('drawn') else (b, a)
@@ -602,6 +650,11 @@ def merge_and_check(cutouts, outline, min_web, log, merge_tol=None):
                    f"Old markup? move it off the panel layer. Meant as the cutout? add Panel=skip to the parts it replaces")
         problems += 1
     return groups, problems
+
+def far_apart(g1, g2, d):
+    """True when two shapes' boxes are more than d apart, so they can't be closer than d. A quick test before the slow one."""
+    a, b = g1.bounds, g2.bounds
+    return a[0] - b[2] > d or b[0] - a[2] > d or a[1] - b[3] > d or b[1] - a[3] > d
 
 def natkey(s):
     return [int(t) if t.isdigit() else t for t in re.split(r'(\d+)', s)]
@@ -877,8 +930,18 @@ def write_svg(path, x1, y1, x2, y2, shapes, labels=(), a=None):
 def artwork_path_for(out_path):
     return re.sub(r'\.kicad_pcb$', '', out_path) + '_artwork.svg'
 
+_courtyards = {}
+
 def courtyard_box(fp):
     """World bounding box of a footprint's courtyard, or None."""
+    hit = _courtyards.get(id(fp.node))
+    if hit and hit[0] is fp.node:
+        return hit[1]
+    res = _courtyard_box(fp)
+    _courtyards[id(fp.node)] = (fp.node, res)
+    return res
+
+def _courtyard_box(fp):
     pts = []
     for g in fp.node:
         if not (isinstance(g, list) and g and str(g[0]).startswith('fp_')):
@@ -990,6 +1053,8 @@ def fill_preview(pv, groups, outline, panel_box, a, log, problems, eurorack, pcb
     for i in range(len(groups)):
         for j in range(i + 1, len(groups)):
             gi, gj = groups[i]['geom'], groups[j]['geom']
+            if far_apart(gi, gj, a.min_web):
+                continue
             if gi.intersects(gj):
                 mark(i, 'error'); mark(j, 'error')
             elif gi.distance(gj) < a.min_web - 1e-6:
@@ -1236,7 +1301,6 @@ def make_labels(pcb, cutouts, groups, outline, a, edits, log, no_hole=(), clear=
 
 def label_items(placed, a, uuids):
     font = f'(face "{a.label_font}") ' if a.label_font else ''
-    t = a.label_size * (0.2 if a.label_bold == 'on' else 0.15)
     bold = ' (bold yes)' if a.label_bold == 'on' else ''
     out = []
     for L in placed:
@@ -1645,9 +1709,21 @@ def part_kind(c, fp=None):
         return 'button'
     return 'other'
 
+_text_cache = {}
+
 def text_shapes(text, cx, cy, h, font='', bold=False):
     """Text as silkscreen polygons, its capital letters h mm tall and centred on (cx, cy). Uses the font's own shapes,
-    so it can be cut out of a filled shape (KiCad's text can't)."""
+    so it can be cut out of a filled shape (KiCad's text can't). The same words at the same size are drawn once and kept:
+    the preview asks for them every time anything changes."""
+    key = (text, round(h, 4), font, bool(bold))
+    if key not in _text_cache:
+        if len(_text_cache) > 400:
+            _text_cache.clear()
+        _text_cache[key] = _text_shapes(text, 0.0, 0.0, h, font, bold)
+    polys = _text_cache[key]
+    return [shapely_translate(p, cx, cy) for p in polys] if (cx or cy) else list(polys)
+
+def _text_shapes(text, cx, cy, h, font='', bold=False):
     from PIL import Image, ImageDraw, ImageFont
     import tempfile
     path = font_file(font, bold) if font else None
@@ -2063,7 +2139,11 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             mu = unary_union([shapely_translate(p, sx, sy) for p in sh])
             if region.contains(mu) and not mu.intersects(taken):
                 put(sx, sy); return
-        log.append(f"WARN  no free space for the {what} '{text}' - drag it in the preview, make the text smaller, or turn it off")
+        first = next(iter(spots(w, hh)), None)
+        if first is not None:                     # shown anyway, so you can drag it somewhere clear
+            put(*first)
+        log.append(f"WARN  no free space for the {what} '{text}' - it's put where it overlaps something: drag it in the "
+                   f"preview, make the text smaller, or turn it off")
     m = edge + 0.4
     th = a.title_size
     if a.title_vertical in ('on', 'on-mirror', 'stacked'):
@@ -2179,7 +2259,6 @@ def text_boxes(placed, texts, edits, a, groups, outline, log):
     inside = outline.buffer(-0.6)
     polys, knocked = [], set()
     spec_of = lambda L: own.get(L['fid'], {}).get('box') if L['fid'] in own else edits.get(L['fid'], {}).get('box')
-    owners = {L['fid'] for L in placed if spec_of(L) in ('outline', 'filled')}
     taken = set()                                # texts already inside another bar
     def reach(L):                                # the longest bar goes first, so it takes in the shorter ones it covers
         g = edits.get('box:' + L['fid'], {})
@@ -2627,7 +2706,9 @@ def main(argv=None, preview=None):
     cfg['grow'] = a.grow
     pcb_text, pcb = read_board(a.pcb)
     log = early
-
+    if _dup_refs.get(os.path.abspath(a.pcb)):
+        log.append(f"NOTE  {', '.join(_dup_refs[os.path.abspath(a.pcb)])} had the same ID in the PCB file as another part (a copied "
+                   f"footprint?) - each is given its own here. Updating the footprints in KiCad fixes it in the file")
     m = {s: getattr(a, f'margin_{s}') if getattr(a, f'margin_{s}') is not None else a.margin
          for s in ('top', 'right', 'bottom', 'left')}
     tpl, hp = eurorack_template(pcb)

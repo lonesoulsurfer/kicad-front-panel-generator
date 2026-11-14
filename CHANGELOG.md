@@ -2,6 +2,10 @@
 
 ## 0.27.0
 
+- **Faster preview:** a change on the left, a move, or adding or deleting something now takes about a fifth of the time it did (on the Sampler board, about 0.5 s down to 0.1 s). The PCB is read once and kept until you save it again, text and footprints are worked out once, and the checks for holes too close together skip pairs that are far apart. The preview also starts sooner after you stop typing. What it makes is the same: the panel files are byte-for-byte as before.
+- **A title or maker name with no free space is still shown** (where it overlaps something, with a warning) so you can drag it somewhere clear. Before, it vanished, and the warning told you to drag something you couldn't see.
+- **Delete on the maker name works** (it did nothing before).
+- **Two parts with the same ID in the PCB file** (a footprint copied by hand or by a script) no longer share their labels, shapes and saved changes: each gets its own, and Result says which.
 - **Clearer left side:** two tabs, *Panel* and *Artwork*, with your PCB always in view above them. Every setting has its name on the left and its box on the right, in one line, with small headings inside each section (Place, Text, Title, Pots, Buttons, Border...).
 - **Sections fold away** when you click their heading, and optional ones (Labels, Your text and pictures, Artwork made for you, Artwork from Inkscape) have an on/off switch in the heading instead of a tick box.
 - **The Artwork tab follows the order you work in:** Style, Title, Labels, Pots, Buttons, Jacks, Border, Pictures, Artwork from Inkscape. "Artwork made for you" is no longer one big section with a master switch: each part is switched on where it lives, and Style *None* turns the made parts off.

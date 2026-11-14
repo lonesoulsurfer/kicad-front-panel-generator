@@ -1035,7 +1035,7 @@ class App(tk.Tk):
         self.result_is_preview = True
         if self.after_id:
             self.after_cancel(self.after_id)
-        self.after_id = self.after(350, self.update_preview)
+        self.after_id = self.after(200, self.update_preview)   # soon after you stop typing
 
     # ------------------------------------------------------------------ board + saved settings
     def browse(self):
@@ -1203,7 +1203,6 @@ class App(tk.Tk):
         _, mem_path = panel_paths(board)
         mem = load_json(mem_path)
         s = dict(DEFAULTS, **mem.get('settings', {}))
-        v = self.vars
         self.loading = True
         try:
             self.set_vars(s)
@@ -2301,7 +2300,6 @@ class App(tk.Tk):
         home = None
         if t:
             _, kind, d = t
-            own_box = kind == 'tab' and d['kind'] == 'textbox' and str(d['key']).startswith('box:text:')
             home = ('lines' if kind == 'line' else 'extras' if kind == 'image' else
                     'labels' if kind in ('label', 'text') or (kind == 'tab' and d['kind'] == 'textbox') else
                     'title' if kind == 'art' else
@@ -2556,7 +2554,7 @@ class App(tk.Tk):
             return                                     # half-typed
         if o is not None and abs(d - o['d']) > 1e-6:
             o['d'] = d
-            self.persist_ui(); self.update_preview()
+            self.persist_ui(); self.settings_changed()     # a moment after the typing stops, not on every key
 
     def start_add(self, kind):
         if not self.pv or 'message' in self.pv:
@@ -3323,10 +3321,10 @@ class App(tk.Tk):
             self.sel = None
             self.persist_ui(); self.update_preview()
             self.hover.config(text='Box deleted - Undo, or right-click the panel and choose Bring back deleted boxes.')
-        elif kind == 'art' and d.get('what') in ('title', 'maker'):
-            self.vars['art_title' if d['what'] == 'title' else 'art_maker'].set('')
+        elif kind == 'art' and d.get('key') in ('title', 'maker'):       # (the maker's item is called 'maker name')
+            self.vars['art_title' if d['key'] == 'title' else 'art_maker'].set('')
             self.sel = None
-            self.hover.config(text=f"{'Title' if d['what'] == 'title' else 'Maker'} deleted - Undo brings it back.")
+            self.hover.config(text=f"{'Title' if d['key'] == 'title' else 'Maker name'} deleted - Undo brings it back.")
 
     def textbox_delete(self, d):
         """A box you put round a label or text: the box goes, the text stays (and so do others it reached over)."""
