@@ -2329,6 +2329,9 @@ def mark_shapes(marks, groups, anchors, placed, a, edits, outline, log):
             continue
         kind = m.get('kind', 'circle') if m.get('kind') in MARK_KINDS else 'circle'
         gap, w = float(m.get('gap', 1.0)), max(0.15, float(m.get('w', 0.6)))
+        # an outline: the gap is from the hole to the line's inside edge, and a thicker line grows outwards
+        if not m.get('fill'):
+            gap += w
         e = edits.get('mark:' + m['id'], {})
         b = g['geom'].bounds
         if g.get('circle'):

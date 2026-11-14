@@ -497,7 +497,8 @@ class App(tk.Tk):
         ttk.Combobox(c, textvariable=v['mark_kind'], values=list(MARKS), width=14, state='readonly').pack(side='left')
         ttk.Checkbutton(c, text='Filled', variable=v['mark_fill']).pack(side='left', padx=(12, 0))
         mm(field(f, 'Gap from the hole', 'From the edge of the hole to the inside of the shape.'), 'mark_gap')
-        mm(field(f, 'Line thickness', 'For an outline. A filled shape has no line.'), 'mark_w')
+        mm(field(f, 'Line thickness', 'For an outline: the line starts at the gap and grows outwards. A filled shape has no line - '
+                                         'its gap is from the hole to its outside edge.'), 'mark_w')
         mm(field(f, 'Box corners', 'Corner radius of a box. 0 = square corners.'), 'mark_r', note='0 = square')
         bt = ttk.Button(field(f, 'Add'), text='Shape round a hole…', command=self.start_mark); bt.pack(side='left')
         Tip(bt, 'Click this, then click a hole - any hole, from the PCB, the panel file or one you added. Or right-click a hole and '
