@@ -2,6 +2,8 @@
 
 ## 0.27.0
 
+- **New licence:** from this version Panel Generator is free for non-commercial use under the PolyForm Noncommercial License 1.0.0, with an extra permission: you may sell the panels you make with it (for your own synths, kits and modules, even as a business). Selling the tool, or charging to use it on other people's designs, needs a commercial licence. See LICENSING.md. Versions up to 0.26.0 stay MIT.
+- **Open Panel Generator from KiCad:** a small plugin adds a button to the PCB editor that opens Panel Generator with the board you're working on. Install it from this project's own list in KiCad's Plugin and Content Manager (the address is in the README), or from `KiCad-button-plugin.zip` in the download. Panel Generator notes where it is each time it starts, so the button finds it.
 - **Faster preview:** a change on the left, a move, or adding or deleting something now takes about a fifth of the time it did (on the Sampler board, about 0.5 s down to 0.1 s). The PCB is read once and kept until you save it again, text and footprints are worked out once, and the checks for holes too close together skip pairs that are far apart. The preview also starts sooner after you stop typing. What it makes is the same: the panel files are byte-for-byte as before.
 - **A title or maker name with no free space is still shown** (where it overlaps something, with a warning) so you can drag it somewhere clear. Before, it vanished, and the warning told you to drag something you couldn't see.
 - **Delete on the maker name works** (it did nothing before).

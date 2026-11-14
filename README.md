@@ -24,7 +24,23 @@ You don't need to trace parts onto a User layer, export to Fusion or Inkscape an
 
 1. Download **`PanelGenerator-…-windows.zip`** from [Releases](../../releases) and unzip it anywhere.
 2. Run **`PanelGenerator.exe`**. The first time, Windows may show *"Windows protected your PC"*. That's because the app isn't signed with a paid certificate. Click **More info → Run anyway**.
-3. *(Optional)* In KiCad, add the two footprint libraries from the unzipped folder: **Preferences → Manage Footprint Libraries → Global Libraries → folder icon**. Add `PanelParts.pretty` (extra panel holes such as jacks and screws) and `Eurorack.pretty` (Eurorack templates).
+3. *(Optional)* Add the **Open Panel Generator** button to KiCad's PCB editor - see [below](#open-it-from-kicad).
+4. *(Optional)* In KiCad, add the two footprint libraries from the unzipped folder: **Preferences → Manage Footprint Libraries → Global Libraries → folder icon**. Add `PanelParts.pretty` (extra panel holes such as jacks and screws) and `Eurorack.pretty` (Eurorack templates).
+
+### Open it from KiCad
+
+A small KiCad plugin adds an **Open Panel Generator** button to the PCB editor's toolbar. Click it and Panel Generator opens with the board you're working on. It works in KiCad 7, 8, 9 and 10.
+
+1. In KiCad's main window, open **Plugin and Content Manager**.
+2. Click **Manage…** (bottom left), then **+**, and paste this address:
+   `https://raw.githubusercontent.com/lonesoulsurfer/kicad-front-panel-generator/main/pcm/repository.json`
+   Click **Save**.
+3. Pick **Panel Generator (lonesoulsurfer)** from the list at the top, select **Panel Generator button**, click **Install**, then **Apply Pending Changes**.
+4. Open **PanelGenerator.exe** once by itself, so the button knows where it is. (If it can't find it, the button asks you to point to it, once.)
+
+No internet in KiCad? Use **Install from File…** in the Plugin and Content Manager and pick `KiCad-button-plugin.zip` from the Panel Generator folder.
+
+The button opens the PCB as it's **saved** - save in KiCad first, and Panel Generator updates by itself each time you save.
 
 ## How to use it
 
@@ -169,4 +185,6 @@ The **[technical guide](docs/TECHNICAL.md)** covers everything else: the command
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+**Free for non-commercial use**, under the [PolyForm Noncommercial License 1.0.0](LICENSE), and **you may sell the panels you make** with it - for your own synths, kits and modules, even as a business. Selling the tool itself, or charging to use it on other people's designs, needs a commercial licence: open an issue titled *Commercial licence*. Plain-words details: [LICENSING.md](LICENSING.md).
+
+Versions 0.26.0 and earlier were MIT. The KiCad button plugin (`kicad-plugin/`) is MIT.

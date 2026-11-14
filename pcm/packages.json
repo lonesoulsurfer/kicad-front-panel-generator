@@ -1,0 +1,46 @@
+{
+    "packages": [
+        {
+            "name": "Panel Generator button",
+            "description": "Opens Panel Generator with the PCB you have open, to make its front panel.",
+            "description_full": "Adds an 'Open Panel Generator' button to the PCB editor. Click it and Panel Generator opens with this board, ready to make a matching front panel PCB: cutouts for every pot, jack, switch and LED, labels and artwork.\n\nThis package is only the button. Panel Generator itself is a separate free app (Windows) - download it from the releases page and open it once, and the button finds it. Panel Generator is free for non-commercial use (PolyForm Noncommercial 1.0.0, and you may sell the panels you make); this button is MIT.",
+            "identifier": "com.github.lonesoulsurfer.panel-generator-button",
+            "type": "plugin",
+            "author": {
+                "name": "Marcus (lonesoulsurfer)",
+                "contact": {
+                    "github": "https://github.com/lonesoulsurfer"
+                }
+            },
+            "license": "MIT",
+            "resources": {
+                "homepage": "https://github.com/lonesoulsurfer/kicad-front-panel-generator",
+                "download app": "https://github.com/lonesoulsurfer/kicad-front-panel-generator/releases"
+            },
+            "tags": [
+                "front-panel",
+                "synth",
+                "eurorack",
+                "panel"
+            ],
+            "versions": [
+                {
+                    "version": "1.0.0",
+                    "status": "stable",
+                    "runtime": "swig",
+                    "kicad_version": "7.0",
+                    "kicad_version_max": "10.99",
+                    "platforms": [
+                        "windows",
+                        "macos",
+                        "linux"
+                    ],
+                    "download_url": "https://raw.githubusercontent.com/lonesoulsurfer/kicad-front-panel-generator/main/pcm/panel-generator-button_v1.0.0_pcm.zip",
+                    "download_sha256": "d186dce479e7e6ad2fc07934c73f177197f27e8432ef1d9b775ace6478441595",
+                    "download_size": 8209,
+                    "install_size": 12202
+                }
+            ]
+        }
+    ]
+}

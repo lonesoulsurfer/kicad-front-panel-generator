@@ -4161,6 +4161,28 @@ class LabelEditor(tk.Toplevel):
             self.app.persist_ui(); self.app.update_preview()
 
 
+def note_where_i_am():
+    """Write how to start this app into <APPDATA>/panelgen/app.json, so the 'Open Panel Generator' button in KiCad can
+    open it with the board you're working on, wherever you unzipped it."""
+    if getattr(sys, 'frozen', False):
+        cmd = [sys.executable]
+    else:
+        py = sys.executable
+        w = os.path.join(os.path.dirname(py), 'pythonw.exe')
+        cmd = [w if os.path.exists(w) else py, os.path.abspath(__file__)]
+    try:
+        import panelgen
+        ver = panelgen.VERSION
+    except Exception:
+        ver = ''
+    try:
+        os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
+        with open(os.path.join(os.path.dirname(CONFIG), 'app.json'), 'w', encoding='utf-8') as f:
+            json.dump({'cmd': cmd, 'version': ver}, f, indent=1)
+    except OSError:
+        pass
+
+
 if __name__ == '__main__':
     if '--selftest' in sys.argv:         # used by the build: does the packaged app start, with its proper look?
         os.environ['APPDATA'] = os.path.abspath('selftest_appdata')
@@ -4173,4 +4195,5 @@ if __name__ == '__main__':
             ok, why = False, traceback.format_exc()
         open('selftest.txt', 'w', encoding='utf-8').write(('ok' if ok else 'FAIL') + '\n' + why)
         sys.exit(0 if ok else 3)
+    note_where_i_am()
     App(sys.argv[1] if len(sys.argv) > 1 else None).mainloop()
