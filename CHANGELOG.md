@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.27.1
+
+- **One click to add the KiCad button:** click *＋ Add an "Open Panel Generator" button to KiCad* (top left, under your PCB) and the button is put into every KiCad version on the computer (7 to 10). Close and reopen the PCB editor, and it's there. The Plugin and Content Manager ways still work, and if both are used only one button shows.
+- **A clearer button icon:** a panel with a knob, a jack and an orange LED, with a lighter version for KiCad's dark theme.
+
 ## 0.27.0
 
 - **New licence:** from this version Panel Generator is free for non-commercial use under the PolyForm Noncommercial License 1.0.0, with an extra permission: you may sell the panels you make with it (for your own synths, kits and modules, even as a business). Selling the tool, or charging to use it on other people's designs, needs a commercial licence. See LICENSING.md. Versions up to 0.26.0 stay MIT.

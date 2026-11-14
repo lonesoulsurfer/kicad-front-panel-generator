@@ -24,23 +24,25 @@ You don't need to trace parts onto a User layer, export to Fusion or Inkscape an
 
 1. Download **`PanelGenerator-…-windows.zip`** from [Releases](../../releases) and unzip it anywhere.
 2. Run **`PanelGenerator.exe`**. The first time, Windows may show *"Windows protected your PC"*. That's because the app isn't signed with a paid certificate. Click **More info → Run anyway**.
-3. *(Optional)* Add the **Open Panel Generator** button to KiCad's PCB editor - see [below](#open-it-from-kicad).
+3. *(Optional)* Add the **Open Panel Generator** button to KiCad's PCB editor: one click in Panel Generator - see [below](#open-it-from-kicad).
 4. *(Optional)* In KiCad, add the two footprint libraries from the unzipped folder: **Preferences → Manage Footprint Libraries → Global Libraries → folder icon**. Add `PanelParts.pretty` (extra panel holes such as jacks and screws) and `Eurorack.pretty` (Eurorack templates).
 
 ### Open it from KiCad
 
-A small KiCad plugin adds an **Open Panel Generator** button to the PCB editor's toolbar. Click it and Panel Generator opens with the board you're working on. It works in KiCad 7, 8, 9 and 10.
+Panel Generator can add an **Open Panel Generator** button to KiCad's PCB editor. Click it and Panel Generator opens with the board you're working on. It works in KiCad 7, 8, 9 and 10.
 
-1. In KiCad's main window, open **Plugin and Content Manager**.
-2. Click **Manage…** (bottom left), then **+**, and paste this address:
-   `https://raw.githubusercontent.com/lonesoulsurfer/kicad-front-panel-generator/main/pcm/repository.json`
-   Click **Save**.
-3. Pick **Panel Generator (lonesoulsurfer)** from the list at the top, select **Panel Generator button**, click **Install**, then **Apply Pending Changes**.
-4. Open **PanelGenerator.exe** once by itself, so the button knows where it is. (If it can't find it, the button asks you to point to it, once.)
+1. In Panel Generator, click **＋ Add an "Open Panel Generator" button to KiCad** (under your PCB's name, at the top left).
+2. Close KiCad's PCB editor and open it again. The button is at the right-hand end of the top toolbar: a dark panel with a knob, a jack and an orange LED.
 
-No internet in KiCad? Use **Install from File…** in the Plugin and Content Manager and pick `KiCad-button-plugin.zip` from the Panel Generator folder.
+The button opens the PCB as it's **saved** - save in KiCad first, and Panel Generator updates by itself each time you save. If you move the Panel Generator folder, run `PanelGenerator.exe` once from its new place.
 
-The button opens the PCB as it's **saved** - save in KiCad first, and Panel Generator updates by itself each time you save.
+<details><summary>Other ways to install the button (KiCad's Plugin and Content Manager)</summary>
+
+- **From a file:** in KiCad's **Plugin and Content Manager**, click **Install from File…**, pick `KiCad-button-plugin.zip` from the Panel Generator folder (select it, don't open it), then **Apply Pending Changes**.
+- **From this project's list:** in the Plugin and Content Manager click **Manage…**, then **+**, paste `https://raw.githubusercontent.com/lonesoulsurfer/kicad-front-panel-generator/main/pcm/repository.json`, **Save**, pick *Panel Generator (lonesoulsurfer)* at the top, install **Panel Generator button**, and **Apply Pending Changes**. Updates to the button then show in KiCad by themselves.
+
+Installed both ways? Only one button shows.
+</details>
 
 ## How to use it
 

@@ -79,7 +79,7 @@ class PanelGeneratorAction(pcbnew.ActionPlugin):
         self.description = 'Open this PCB in Panel Generator to make its front panel'
         self.show_toolbar_button = True
         self.icon_file_name = os.path.join(HERE, 'icon.png')
-        self.dark_icon_file_name = os.path.join(HERE, 'icon.png')
+        self.dark_icon_file_name = os.path.join(HERE, 'icon_dark.png')
 
     def Run(self):
         parent = wx.GetActiveWindow()

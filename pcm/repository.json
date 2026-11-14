@@ -9,14 +9,14 @@
     },
     "packages": {
         "url": "https://raw.githubusercontent.com/lonesoulsurfer/kicad-front-panel-generator/main/pcm/packages.json",
-        "sha256": "d7662e56ab89dfddb282309a256288708c12eb08654454a046df18f6dee825e9",
-        "update_timestamp": 1794618109,
-        "update_time_utc": "2026-11-14 01:01:49"
+        "sha256": "5f3083896c7c4f5b41e617255ef7bf46f84d8ba58c452ab4a07fde622a8aa77b",
+        "update_timestamp": 1794618902,
+        "update_time_utc": "2026-11-14 01:15:02"
     },
     "resources": {
         "url": "https://raw.githubusercontent.com/lonesoulsurfer/kicad-front-panel-generator/main/pcm/resources.zip",
-        "sha256": "9b9df9bece468355187428358919d0b1d7b665cd312015c8a7fd4563eabb835e",
-        "update_timestamp": 1794618109,
-        "update_time_utc": "2026-11-14 01:01:49"
+        "sha256": "f5c53af47aaa10cc24aa9b01b70a89a43fef9615518d2be45213b05a14edbd11",
+        "update_timestamp": 1794618902,
+        "update_time_utc": "2026-11-14 01:15:02"
     }
 }

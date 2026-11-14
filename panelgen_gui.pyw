@@ -237,6 +237,12 @@ class App(tk.Tk):
                            'any other PCB gets a panel fitted to its outline.')
         self.mode_hint = ttk.Label(s, text='', style='Dim.TLabel', wraplength=440, justify='left')
         self.mode_hint.pack(anchor='w')
+        self.kicad_link = ttk.Label(s, text='＋ Add an "Open Panel Generator" button to KiCad', cursor='hand2',
+                                    foreground='#2563eb')
+        self.kicad_link.bind('<Button-1>', lambda e: self.kicad_button())
+        Tip(self.kicad_link, "A button in KiCad's PCB editor that opens Panel Generator with the board you're working on.")
+        if button_source() and any(not button_installed(v, p) for v, p in kicad_versions()):
+            self.kicad_link.pack(anchor='w', pady=(2, 0))
         tabs = ttk.Frame(top); tabs.pack(fill='x', pady=(4, 8))
         tabs.columnconfigure(0, weight=1, uniform='t'); tabs.columnconfigure(1, weight=1, uniform='t')
         self.tab_btn = {}
@@ -4025,6 +4031,25 @@ class App(tk.Tk):
         else:
             self.status.config(text='● Changed - generate again', fg=C_WARN_TXT)
 
+    def kicad_button(self):
+        """Put the 'Open Panel Generator' button into KiCad."""
+        if not kicad_versions():
+            messagebox.showinfo('Panel Generator', "KiCad 7 or later isn't set up on this computer yet - open KiCad once, "
+                                                   "then try again.")
+            return
+        done, errors = add_button_to_kicad()
+        if done:
+            self.kicad_link.pack_forget()
+            messagebox.showinfo('Panel Generator',
+                                f"The button is added to KiCad {', '.join(done)}.\n\n"
+                                "Close KiCad's PCB editor and open it again. The button is at the right-hand end of the top "
+                                "toolbar: a dark panel with a knob, a jack and an orange LED. Click it with your board open "
+                                "and Panel Generator opens with that board.\n\n"
+                                "(Save the board in KiCad first - Panel Generator reads the saved file.)"
+                                + (('\n\nNot done: ' + '; '.join(errors)) if errors else ''))
+        else:
+            messagebox.showerror('Panel Generator', "The button couldn't be added:\n" + '\n'.join(errors))
+
     def save_cfg(self):
         try:
             os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
@@ -4159,6 +4184,85 @@ class LabelEditor(tk.Toplevel):
         if messagebox.askyesno('Edit labels', 'Undo every label change - text, hidden, position, gap, artwork and moves - for this board?', parent=self):
             self.app.ui['label_edits'] = {}
             self.app.persist_ui(); self.app.update_preview()
+
+
+# ---------------------------------------------------------------- the 'Open Panel Generator' button in KiCad
+BUTTON_DIR = 'panel_generator_button'                           # its folder in KiCad's own scripting/plugins
+PCM_DIR = 'com_github_lonesoulsurfer_panel-generator-button'    # its folder when installed by the Plugin and Content Manager
+
+
+def button_source():
+    """The plugin's files that came with this app (the kicad-plugin folder next to it), or None."""
+    base = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+    for p in (os.path.join(base, 'kicad-plugin', 'plugins'), os.path.join(base, '_internal', 'kicad-plugin', 'plugins')):
+        if os.path.isfile(os.path.join(p, '__init__.py')):
+            return p
+    return None
+
+
+def kicad_versions():
+    """KiCad 7 and later on this computer, from its settings folders: [(version, settings folder)], newest first."""
+    if sys.platform == 'win32':
+        root = os.path.join(os.environ.get('APPDATA') or os.path.expanduser('~'), 'kicad')
+    elif sys.platform == 'darwin':
+        root = os.path.expanduser('~/Library/Preferences/kicad')
+    else:
+        root = os.path.join(os.environ.get('XDG_CONFIG_HOME') or os.path.expanduser('~/.config'), 'kicad')
+    out = []
+    try:
+        for n in os.listdir(root):
+            m = re.fullmatch(r'(\d+)\.(\d+)', n)
+            if m and int(m.group(1)) >= 7 and os.path.isdir(os.path.join(root, n)):
+                out.append(((int(m.group(1)), int(m.group(2))), n, os.path.join(root, n)))
+    except OSError:
+        pass
+    return [(n, p) for _, n, p in sorted(out, reverse=True)]
+
+
+def documents_folder():
+    """Windows' own Documents folder (it may be moved into OneDrive), or ~/Documents."""
+    if sys.platform == 'win32':
+        try:
+            import ctypes
+            from ctypes import wintypes
+            class GUID(ctypes.Structure):
+                _fields_ = [('a', wintypes.DWORD), ('b', wintypes.WORD), ('c', wintypes.WORD), ('d', ctypes.c_ubyte * 8)]
+            fid = GUID(0xFDD39AD0, 0x238F, 0x46AF, (ctypes.c_ubyte * 8)(0xAD, 0xB4, 0x6C, 0x85, 0x48, 0x03, 0x69, 0xC7))
+            p = ctypes.c_wchar_p()
+            if ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(fid), 0, None, ctypes.byref(p)) == 0:
+                path = p.value
+                ctypes.windll.ole32.CoTaskMemFree(p)
+                return path
+        except Exception:
+            pass
+    return os.path.join(os.path.expanduser('~'), 'Documents')
+
+
+def button_installed(ver, settings):
+    """Is the button in this KiCad version - added by this app, or from the Plugin and Content Manager?"""
+    docs = os.environ.get('KICAD_DOCUMENTS_HOME') or documents_folder()
+    kicad = 'KiCad' if sys.platform in ('win32', 'darwin') else 'kicad'
+    return (os.path.isfile(os.path.join(settings, 'scripting', 'plugins', BUTTON_DIR, '__init__.py')) or
+            os.path.isdir(os.path.join(docs, kicad, ver, '3rdparty', 'plugins', PCM_DIR)))
+
+
+def add_button_to_kicad():
+    """Copy the button into every KiCad version's own plugins folder. Returns (versions done, errors)."""
+    import shutil
+    src = button_source()
+    if not src:
+        return [], ["the button's files aren't with this copy of Panel Generator"]
+    done, errors = [], []
+    for ver, settings in kicad_versions():
+        dest = os.path.join(settings, 'scripting', 'plugins', BUTTON_DIR)
+        try:
+            if os.path.isdir(dest):
+                shutil.rmtree(dest)
+            shutil.copytree(src, dest, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+            done.append(ver)
+        except OSError as e:
+            errors.append(f'KiCad {ver}: {e}')
+    return done, errors
 
 
 def note_where_i_am():

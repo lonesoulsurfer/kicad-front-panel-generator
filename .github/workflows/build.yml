@@ -7,7 +7,7 @@ name: Build Windows app
 on:
   push:
     branches: [main]
-    paths: ['panelgen.py', 'panelgen_gui.pyw', 'panel_rules.json', 'requirements.txt', 'tools/**', 'pcm/**', 'LICENSE', '.github/workflows/build.yml']
+    paths: ['panelgen.py', 'panelgen_gui.pyw', 'panel_rules.json', 'requirements.txt', 'tools/**', 'pcm/**', 'kicad-plugin/**', 'LICENSE', '.github/workflows/build.yml']
   workflow_dispatch:
 
 permissions:
@@ -71,7 +71,7 @@ jobs:
           $out = "dist/PanelGenerator"
           Copy-Item panel_rules.json, README.md, LICENSE, LICENSING.md $out
           Copy-Item (Get-ChildItem pcm/*_pcm.zip | Select-Object -First 1).FullName "$out/KiCad-button-plugin.zip"
-          Copy-Item -Recurse PanelParts.pretty, Eurorack.pretty, examples $out
+          Copy-Item -Recurse PanelParts.pretty, Eurorack.pretty, examples, kicad-plugin $out
           $ver = if ($env:PUBLISH -eq 'yes') { "v$($env:VER)" } else { "test-$($env:GITHUB_SHA.Substring(0,7))" }
           Compress-Archive -Path $out -DestinationPath "PanelGenerator-$ver-windows.zip"
           "ZIP=PanelGenerator-$ver-windows.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
