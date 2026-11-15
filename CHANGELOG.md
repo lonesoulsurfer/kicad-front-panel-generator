@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.27.2
+
+- **Guides in the panel file:** Generate now puts the part markers (parts with no hole, such as an edge jack), your User.2 drawings (for example a module that isn't on the PCB) and the part-size guides into the panel `.kicad_pcb`, as dashed outlines with their names on the User.2 layer. You can see where everything sits when you open the panel in KiCad. They are not cut, not printed, and not in the gerbers.
+
 ## 0.27.1
 
 - **One click to add the KiCad button:** click *＋ Add an "Open Panel Generator" button to KiCad* (top left, under your PCB) and the button is put into every KiCad version on the computer (7 to 10). Close and reopen the PCB editor, and it's there. The Plugin and Content Manager ways still work, and if both are used only one button shows.

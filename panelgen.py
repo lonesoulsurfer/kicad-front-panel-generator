@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.27.1"
+VERSION = "0.27.2"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -717,6 +717,55 @@ def outline_items(x1, y1, x2, y2, radius, uuids):
     line((x2 - r, y2), (x1 + r, y2)); arc((x1 + r, y2), (x1 + k, y2 - k), (x1, y2 - r))
     line((x1, y2 - r), (x1, y1 + r)); arc((x1, y1 + r), (x1 + k, y1 + k), (x1 + r, y1))
     return items
+
+def guide_layer(file_text):
+    """The layer for guides in the panel file: User.2 if the file has it, otherwise Dwgs.User (every board has it).
+    Neither is sent to the manufacturer: Make gerbers plots only GERBER_LAYERS."""
+    m = re.search(r'\(layers\b(.*?)\n\t\)', file_text, re.S)
+    return 'User.2' if m and '"User.2"' in m.group(1) else 'Dwgs.User'
+
+def body_guides(bodies, groups, anchors):
+    """The part-size guides drawn in the window (a jack's nut, a knob, a board), as (shape, name)."""
+    at = {an: g for an, g in zip(anchors, groups)}
+    out = []
+    for o in bodies or []:
+        g = at.get(o.get('on'))
+        if not g:
+            continue
+        b = g['geom'].bounds
+        cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
+        try:
+            if o.get('kind') == 'circle':
+                d = float(o.get('d', 7.5))
+                geom, size = Point(cx, cy).buffer(d / 2, quad_segs=48), f'{d:g} mm'
+            else:
+                w, h = float(o['w']), float(o['h'])
+                mx, my = cx + float(o.get('ox', 0)), cy + float(o.get('oy', 0))
+                geom, size = box(mx - w / 2, my - h / 2, mx + w / 2, my + h / 2), f'{w:g} x {h:g} mm'
+        except (KeyError, TypeError, ValueError):
+            continue
+        out.append((geom, f"{fmt_refs_plain(g).split(' @')[0]} part size {size}"))
+    return out
+
+def guide_items(guides, layer, uuids):
+    """Part markers and part-size guides as dashed outlines with their names, on a layer that is never made into gerbers:
+    where an edge jack, a module with no hole, or a jack's nut sits, when you open the panel in KiCad."""
+    out, seq = [], iter(range(100000))
+    for geom, name in guides:
+        polys = geom.geoms if hasattr(geom, 'geoms') else [geom]
+        for p in polys:
+            if p.is_empty or not hasattr(p, 'exterior'):
+                continue
+            u = stable_uuid('guide', next(seq)); uuids.append(u)
+            xy = ' '.join(f'(xy {fmt(x)} {fmt(y)})' for x, y in list(p.exterior.coords)[:-1])
+            out.append(f'\t(gr_poly (pts {xy}) (stroke (width 0.1) (type dash)) (fill no) (layer "{layer}") (uuid "{u}"))')
+        if name:
+            b = geom.bounds
+            u = stable_uuid('guide', next(seq)); uuids.append(u)
+            txt = str(name).replace('\\', '\\\\').replace('"', '\\"')
+            out.append(f'\t(gr_text "{txt}" (at {fmt(b[0])} {fmt(b[1] - 0.4)} 0) (layer "{layer}") (uuid "{u}") '
+                       f'(effects (font (size 1 1) (thickness 0.15)) (justify left bottom)))')
+    return out
 
 def header_from(pcb_text, pcb_tree):
     """New board header: copy layers and setup from the source PCB so the stack-up matches."""
@@ -3002,6 +3051,13 @@ def main(argv=None, preview=None):
         generated[g['key']] = dict(describe(g), uuids=uuids[start:])
     items += label_items(placed, a, uuids)
     items += artwork_items(art, uuids)
+    # guides only, never manufactured: parts with no hole (an edge jack, a module), User.2 drawings, part sizes
+    guides = [(m['geom'], m.get('text') or '') for m in getattr(a, '_markers', [])]
+    guides += body_guides(ui.get('bodies', mem0.get('bodies', [])), groups, anchors)
+    if guides:
+        layer = guide_layer(existing_text or header_from(pcb_text, pcb))
+        items += guide_items(guides, layer, uuids)
+        log.append(f"guide {len(guides)} marker{'s' if len(guides) > 1 else ''} on {layer} (dashed outlines: not cut, not printed)")
     group = (f'\t(group "{GROUP_NAME}" (uuid "{stable_uuid("group")}") (members '
              + ' '.join(f'"{u}"' for u in uuids) + '))')
 

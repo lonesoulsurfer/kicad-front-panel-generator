@@ -135,6 +135,12 @@ Each change shows in the preview immediately.
    - Drag a corner to move two sides.
    - Hold **Shift** to keep the rectangle equal on all sides of the hole.
    - Panel Generator does not cut or print these guides.
+- **Markers for parts that are not on the PCB** (for example a module with a horizontal jack):
+   1. In KiCad, select the **User.2** layer in your PCB.
+   2. Draw the outline of the part where it sits.
+   3. Save the PCB.
+
+   The preview shows the outline as a blue dashed line. The generated panel file shows it too, on its User.2 layer. Panel Generator does not cut or print it. Parts on the PCB that do not get a hole (for example a jack at the edge) get a marker automatically. **Do not use User.1 for markers.** Each shape on User.1 becomes a real cutout.
 - **Measure** (above the preview) is a ruler. Click two points to see the distance between them. The ruler snaps to the centres and edges of holes and to the panel edges. Hold **Ctrl** to keep it horizontal or vertical.
 - **The ruler is also a guide.** After the first click, type a length (for example `16`) and push Enter. The second end goes exactly that distance away. The ruler stays on the panel until you click **Clear ruler**. All that you drag, add or paste snaps to its ends and its centre.
 
@@ -263,6 +269,8 @@ Panel Generator does not print the red holes. It draws them again from the PCB e
 When the preview is correct, click **Generate panel**. Panel Generator makes the panel file (`<your board>_panel.kicad_pcb`) in a `Front Panel` folder next to your PCB. Then it opens the file in KiCad, so you can check it, also in the 3D viewer.
 
 Panel Generator saves your settings and all your work in the preview while you work. You can close the window at any time. Later, you can change the PCB, the settings or the artwork. The status line next to the buttons then tells you that the panel is out of date. Click **Generate panel** again to update it.
+
+The panel file also contains guides on its User.2 layer: the markers and the part-size guides, as dashed outlines with their names. They help you check the panel in KiCad. The gerbers do not include them.
 
 Close the panel file in KiCad before you generate again. If the file is open, Panel Generator cannot replace it.
 
