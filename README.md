@@ -140,6 +140,8 @@ Each change shows in the preview immediately.
    2. Draw the outline of the part where it sits.
    3. Save the PCB.
 
+   You can also draw the outline on User.2 **in the footprint** of a part. The marker then moves with the part. After you change a footprint in the library, update it on the board: in the PCB editor, click **Tools → Update Footprints from Library**.
+
    The preview shows the outline as a blue dashed line. The generated panel file shows it too, on its User.2 layer. Panel Generator does not cut or print it. Parts on the PCB that do not get a hole (for example a jack at the edge) get a marker automatically. **Do not use User.1 for markers.** Each shape on User.1 becomes a real cutout.
 - **Measure** (above the preview) is a ruler. Click two points to see the distance between them. The ruler snaps to the centres and edges of holes and to the panel edges. Hold **Ctrl** to keep it horizontal or vertical.
 - **The ruler is also a guide.** After the first click, type a length (for example `16`) and push Enter. The second end goes exactly that distance away. The ruler stays on the panel until you click **Clear ruler**. All that you drag, add or paste snaps to its ends and its centre.

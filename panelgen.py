@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.27.2"
+VERSION = "0.27.3"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -905,6 +905,11 @@ def part_markers(pcb, ids, outline):
         out.append(dict(geom=box(*b), text=fp.ref + (f' {name}' if name else ''), at=(fp.x, fp.y)))
     for g in edge_shapes(pcb, 'gr_', layer=MARKER_LAYER):
         out.append(dict(geom=g, text='', at=None))
+    for node in kids(pcb, 'footprint'):                 # User.2 inside a footprint: a module's outline that moves with it
+        fp = footprint(node)
+        for g in edge_shapes(node, 'fp_', fp.world, layer=MARKER_LAYER):
+            name = guess_label(fp)[0]
+            out.append(dict(geom=g, text=fp.ref + (f' {name}' if name else ''), at=(fp.x, fp.y)))
     return [m for m in out if m['geom'].intersects(outline.buffer(5))]
 
 def write_svg(path, x1, y1, x2, y2, shapes, labels=(), a=None):

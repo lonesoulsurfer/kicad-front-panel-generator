@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.27.3
+
+- **User.2 markers inside footprints:** an outline drawn on User.2 in a footprint (for example a jack module's body) is now a marker too. It moves with the part and carries its name, in the preview, the artwork file and the panel file.
+
 ## 0.27.2
 
 - **Guides in the panel file:** Generate now puts the part markers (parts with no hole, such as an edge jack), your User.2 drawings (for example a module that isn't on the PCB) and the part-size guides into the panel `.kicad_pcb`, as dashed outlines with their names on the User.2 layer. You can see where everything sits when you open the panel in KiCad. They are not cut, not printed, and not in the gerbers.
