@@ -653,9 +653,12 @@ class App(tk.Tk):
         self.bind_all('<Escape>', self.escape)
         self.bind_all('<Key>', self.ruler_key, add='+')
         self.adding = False
-        self.hover = ttk.Label(right, text='Hover over a cutout to see what it is.', style='Dim.TLabel')
-        self.hover.grid(row=2, column=0, sticky='w', pady=(3, 0))
-        self.legend(right).grid(row=2, column=0, sticky='e', pady=(3, 0))
+        bar = ttk.Frame(right)                         # hover text and legend side by side: each in its own cell, so a
+        bar.grid(row=2, column=0, sticky='ew', pady=(3, 0))   # shorter hover text clears the old one completely
+        bar.columnconfigure(0, weight=1)
+        self.hover = ttk.Label(bar, text='Hover over a cutout to see what it is.', style='Dim.TLabel', anchor='w')
+        self.hover.grid(row=0, column=0, sticky='ew')
+        self.legend(bar).grid(row=0, column=1, sticky='e', padx=(8, 0))
 
         self.sash(right, 'h').grid(row=3, column=0, sticky='ew', pady=(4, 0))
         go = ttk.Frame(right); go.grid(row=4, column=0, sticky='ew', pady=(6, 0))
@@ -1474,7 +1477,7 @@ class App(tk.Tk):
                 if len(pts) >= 6:
                     i = c.create_polygon(pts, fill='', outline='#58a6ff', dash=(3, 2))
                     c.tag_bind(i, '<Enter>', lambda e, t=mk['text']: self.hover.config(
-                        text=f"{t or 'User.2 marker'}  ·  marker only - not cut or printed, it's a guide in the artwork file"))
+                        text=f"{t or 'User.2 marker'}  ·  marker - not cut or printed; in the panel file and the artwork file as a guide"))
                     c.tag_bind(i, '<Leave>', lambda e: self.hover.config(text='Hover over a cutout to see what it is.'))
             if mk['text'] and mk['text'].split(' ')[0] not in {L['ref'] for L in pv.get('labels', [])}:
                 b = mk['geom'].bounds
