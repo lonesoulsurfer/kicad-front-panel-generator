@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.28.1
+
+- **Output boxes stay the same size:** when you change the size of one output box (a jack with OUT), all the output boxes change in the same way. A new output box, for example a jack and its OUT text that you copy, gets the same size at once. Clear *Keep all outputs the same size* to change one box only.
+- **New boxes round controls get the same size too:** the size is now saved once for each kind of box (pots, buttons, jacks, outputs), and every box of that kind uses it, also boxes that you add later. Before, only boxes that were already there followed.
+
 ## 0.28.0
 
 - **Move a label to an exact distance with the ruler:** the ruler now snaps to the edges and centres of labels, texts and pictures. Click the figure on a ruler and type a length: the label (or text, picture, line, title or extra hole) at the far end moves along the ruler to that distance. If only the first end is on something that can move, that moves instead. Typing a length and pushing Enter on a ruler does the same.

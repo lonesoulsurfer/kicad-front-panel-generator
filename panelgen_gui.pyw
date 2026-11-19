@@ -1725,25 +1725,45 @@ class App(tk.Tk):
                 self.multi, self.shape_sel = [], []    # something else: the group is let go
         self.drag = ('item', e.x, e.y, t, False) if t else ('band', e.x, e.y, False)
 
+    SIDES = ('l', 'r', 't', 'b')
+
+    def box_family(self, key):
+        """The shared key for a made box (its size is shared by every box of its kind), and the boxes of that kind."""
+        src = next((tb for tb in (self.pv or {}).get('tab_boxes', []) if tb.get('key') == key), None)
+        if not src or src.get('kind') not in ('group', 'output'):
+            return None, []
+        if src['kind'] == 'output':
+            return 'tab:*output', [tb for tb in self.pv['tab_boxes'] if tb.get('kind') == 'output']
+        return 'group:*' + str(src.get('of')), [tb for tb in self.pv['tab_boxes']
+                                                if tb.get('kind') == 'group' and tb.get('of') == src.get('of')]
+
+    def box_sides_now(self, key):
+        """A made box's sides as they are used: its own, or else the size all boxes of its kind share."""
+        own = {k: v for k, v in self.ui['label_edits'].get(key, {}).items() if k in self.SIDES}
+        if own:
+            return own
+        shared, _ = self.box_family(key)
+        return {k: v for k, v in self.ui['label_edits'].get(shared, {}).items() if k in self.SIDES} if shared else {}
+
     def sync_boxes(self, key):
-        """A box round a row of controls changed size: every other box round the same kind of control (pots, buttons,
-        jacks) gets the same sides, so the gaps round the controls and labels are the same in all of them. Untick 'Keep
-        boxes the same' to change one on its own."""
-        if not self.cfg.get('link_boxes', True) or not self.pv:
+        """A box round a row of controls, or round an output, changed size. With 'Keep all ... the same' on, that size is
+        saved once for the whole kind (pots, buttons, jacks, outputs) and every box of that kind uses it, also boxes
+        that are new or copied later. Off: the change stays on this box only."""
+        shared, family = self.box_family(key)
+        if not shared or not self.cfg.get('link_boxes', True):
             return
-        src = next((tb for tb in self.pv.get('tab_boxes', []) if tb.get('key') == key and tb.get('kind') == 'group'), None)
-        if not src:
-            return
-        sides = {k: v for k, v in self.ui['label_edits'].get(key, {}).items() if k in ('l', 'r', 't', 'b')}
-        for tb in self.pv.get('tab_boxes', []):
-            if tb.get('kind') != 'group' or tb.get('of') != src.get('of') or tb['key'] == key:
-                continue
-            g = {k: v for k, v in self.ui['label_edits'].get(tb['key'], {}).items() if k not in ('l', 'r', 't', 'b')}
-            g.update(sides)
+        E = self.ui['label_edits']
+        sides = {k: v for k, v in E.get(key, {}).items() if k in self.SIDES}
+        if sides:
+            E[shared] = sides
+        else:
+            E.pop(shared, None)
+        for tb in family:                              # they all follow the shared size now
+            g = {k: v for k, v in E.get(tb['key'], {}).items() if k not in self.SIDES}   # keeps 'off'
             if g:
-                self.ui['label_edits'][tb['key']] = g
+                E[tb['key']] = g
             else:
-                self.ui['label_edits'].pop(tb['key'], None)
+                E.pop(tb['key'], None)
 
     def mirrored(self, d, edge, e):
         """Pulling this edge also moves the opposite one: the sides of a box round controls, the top and bottom of a box
@@ -2065,6 +2085,8 @@ class App(tk.Tk):
             if moved and t[1] == 'tab' and edge:
                 g = self.ui['label_edits'].setdefault(t[2]['key'], {})
                 group = t[2]['kind'] == 'group'
+                if t[2]['kind'] == 'output' and not any(k in g for k in self.SIDES):
+                    g.update(self.box_sides_now(t[2]['key']))     # it uses the size shared by all outputs: start there
                 if group:                                          # start from the size it's shown at (it may have been held back)
                     g.clear(); g.update({k: v for k, v in t[2].get('grow', {}).items() if abs(v) > 0.01})
                 grow = g.get(edge, 0.0) + (dx if edge in 'rb' else -dx)
@@ -2097,8 +2119,7 @@ class App(tk.Tk):
                             g.pop(k, None)
                 if not g:
                     self.ui['label_edits'].pop(t[2]['key'], None)
-                if group:
-                    self.sync_boxes(t[2]['key'])
+                self.sync_boxes(t[2]['key'])
                 self.select(t); self.persist_ui(); self.update_preview()
                 return
             if moved:
@@ -2538,7 +2559,7 @@ class App(tk.Tk):
         elif kind == 'tab':
             head.config(text={'edge': 'Horizontal jack tab: ', 'output': 'Vertical output box: ', 'textbox': 'Box round ',
                               'group': 'Box round '}.get(d['kind'], '') + d.get('ref', ''))
-            g = self.ui['label_edits'].get(d['key'], {})
+            g = self.box_sides_now(d['key']) if d['kind'] in ('group', 'output') else self.ui['label_edits'].get(d['key'], {})
             group = d['kind'] == 'group'
             for edge in ('ltb' if group else d['edges']):
                 row = fld('Bigger on ' + ('both sides' if group and edge == 'l' else
@@ -2548,6 +2569,8 @@ class App(tk.Tk):
                     if x is None:
                         return
                     gg = self.ui['label_edits'].setdefault(d['key'], {})
+                    if d['kind'] in ('group', 'output') and not any(k in gg for k in self.SIDES):
+                        gg.update(self.box_sides_now(d['key']))
                     if abs(x - gg.get(edge, 0.0)) > 1e-6:
                         for k in ('lr' if group and edge == 'l' else edge):
                             if x != 0:
@@ -2556,8 +2579,7 @@ class App(tk.Tk):
                                 gg.pop(k, None)
                         if not gg:
                             self.ui['label_edits'].pop(d['key'], None)
-                        if group:
-                            self.sync_boxes(d['key'])
+                        self.sync_boxes(d['key'])
                         self.persist_ui(); self.update_preview()
                 entry(row, f"{g.get(edge, 0.0):g}", setg); ttk.Label(row, text='mm').pack(side='left')
             ttk.Label(box, text='Or drag an edge of it in the preview: it snaps to the edges of the other tabs and boxes'
@@ -2567,23 +2589,26 @@ class App(tk.Tk):
                                   'another label, and only that end moves. Shift always moves just one edge.' if d['kind'] == 'textbox' else
                                   '. Pull a side and the other side follows, so the box stays centred on the controls.' if group else '.'),
                       style='Dim.TLabel', wraplength=390, justify='left').pack(anchor='w', pady=(4, 0))
-            if group:
-                same = [tb for tb in self.pv.get('tab_boxes', []) if tb.get('kind') == 'group' and tb.get('of') == d.get('of')]
-                if len(same) > 1:
-                    lv = tk.BooleanVar(value=bool(self.cfg.get('link_boxes', True)))
-                    def link(lv=lv):
-                        self.cfg['link_boxes'] = lv.get(); self.save_cfg()
-                        if lv.get():                   # ticked again: the others follow this one
-                            self.sync_boxes(d['key']); self.persist_ui(); self.update_preview()
-                    kind_ = {'pot': 'pots', 'button': 'buttons', 'jack': 'jacks'}.get(d.get('of'), 'controls')
-                    cb = ttk.Checkbutton(box, text=f'Keep all boxes round {kind_} the same', variable=lv, command=link)
-                    cb.pack(anchor='w', pady=(6, 0))
-                    Tip(cb, 'When on, a change to one box (here or by dragging an edge) changes the others the same way, '
-                            'so the gaps round the controls and their labels are the same in every box.')
+            if d['kind'] in ('group', 'output'):
+                lv = tk.BooleanVar(value=bool(self.cfg.get('link_boxes', True)))
+                def link(lv=lv):
+                    self.cfg['link_boxes'] = lv.get(); self.save_cfg()
+                    if lv.get():                       # ticked again: all the others take this one's size
+                        E = self.ui['label_edits']
+                        E.setdefault(d['key'], {}).update(self.box_sides_now(d['key']))
+                        if not E[d['key']]:
+                            E.pop(d['key'])
+                        self.sync_boxes(d['key']); self.persist_ui(); self.update_preview()
+                kind_ = 'outputs' if d['kind'] == 'output' else \
+                    'boxes round ' + {'pot': 'pots', 'button': 'buttons', 'jack': 'jacks'}.get(d.get('of'), 'controls')
+                cb = ttk.Checkbutton(box, text=f'Keep all {kind_} the same size', variable=lv, command=link)
+                cb.pack(anchor='w', pady=(6, 0))
+                Tip(cb, 'When on, a change to one box (here or by dragging an edge) changes all boxes of this kind the same '
+                        'way, also boxes you add or copy later, so the gaps round the controls and their labels are the same '
+                        'in every box. Off: a change is for this box only.')
             def own_size():
                 self.ui['label_edits'].pop(d['key'], None)
-                if group:
-                    self.sync_boxes(d['key'])
+                self.sync_boxes(d['key'])
                 self.persist_ui(); self.update_preview()
             ttk.Button(box, text='Back to its own size', command=own_size).pack(anchor='w', pady=(6, 0))
 

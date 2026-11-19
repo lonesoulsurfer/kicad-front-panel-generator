@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.28.0"
+VERSION = "0.28.1"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -1813,6 +1813,13 @@ def _text_shapes(text, cx, cy, h, font='', bold=False):
         os.remove(png)
     return polys
 
+def box_sides(edits, key, shared):
+    """How much bigger a made box is on each side: its own sides if it has any, else the size shared by every box of
+    its kind (so a box that's new, or copied, gets the same size as the others)."""
+    own = {k: v for k, v in edits.get(key, {}).items() if k in ('l', 'r', 't', 'b')}
+    return own if own else {k: v for k, v in edits.get(shared, {}).items() if k in ('l', 'r', 't', 'b')}
+
+
 def rounded_box(x1, y1, x2, y2, r):
     r = max(0.0, min(r, (x2 - x1) / 2 - 1e-3, (y2 - y1) / 2 - 1e-3))
     b = box(x1, y1, x2, y2)
@@ -1957,7 +1964,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
                 lb = unary_union(txt).buffer(0.8, join_style=2).bounds     # the real text, not the estimate
                 bx = [min(bx[0], lb[0]), min(bx[1], lb[1]), max(bx[2], lb[2]), max(bx[3], lb[3])]
             tkey = 'tab:' + fid
-            g_ = edits.get(tkey, {})                                      # made bigger in the window
+            g_ = box_sides(edits, tkey, 'tab:*output')                    # made bigger in the window (this one, or all)
             bx = [bx[0] - g_.get('l', 0.0), bx[1] - g_.get('t', 0.0), bx[2] + g_.get('r', 0.0), bx[3] + g_.get('b', 0.0)]
             tab = rounded_box(*bx, 1.0)
             if txt:
@@ -2107,7 +2114,9 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             other_labels = [b for f, b in label_box.items() if f not in ids and f not in knocked]
             names = ', '.join(fps[i['fid']].ref for i in run)
             gkey = 'group:' + min(ids)
-            g_ = edits.get(gkey, {})                                      # made bigger (or a little smaller) in the window
+            of_ = {'toggle': 'button'}.get(run[0]['kind'], run[0]['kind'])
+            g0 = box_sides(edits, gkey, 'group:*' + of_)                  # made bigger (or a little smaller) in the window
+            g_ = dict(g0)
             def framed(g):
                 fb = (bb[0] - 1.5 - g.get('l', 0.0), bb[1] - 1.5 - g.get('t', 0.0), bb[2] + 1.5 + g.get('r', 0.0), bb[3] + 1.5 + g.get('b', 0.0))
                 frame = rounded_box(*fb, 2.0)
@@ -2117,7 +2126,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             fb, line, bad = framed(g_)
             if bad and g_:                                               # too big: as big as fits
                 for f in (0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0):
-                    g_ = {k: (round(v * f, 2) if v > 0 else v) for k, v in edits.get(gkey, {}).items()}
+                    g_ = {k: (round(v * f, 2) if v > 0 else v) for k, v in g0.items()}
                     fb, line, bad = framed(g_)
                     if not bad:
                         log.append(f"NOTE  the box round {names} can't be that big: it would run into another part, a label or "
@@ -2128,8 +2137,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
                 continue
             boxes_done.append(ids)
             shapes.append(line)
-            a._tab_boxes.append(dict(key=gkey, kind='group', edges='lrtb', box=fb, ref=names, grow=dict(g_),
-                                     of={'toggle': 'button'}.get(run[0]['kind'], run[0]['kind'])))
+            a._tab_boxes.append(dict(key=gkey, kind='group', edges='lrtb', box=fb, ref=names, grow=dict(g_), of=of_))
 
     # 6. border
     if a.art_border == 'on':
