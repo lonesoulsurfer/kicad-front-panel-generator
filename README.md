@@ -15,9 +15,9 @@ Panel Generator finds each pot, jack, switch, LED and screen on your board. It c
 
 You do not have to copy the parts onto a User layer. You do not have to export to Fusion 360 or Inkscape and back. You do not have to draw the panel again by hand.
 
-**▶ Watch the video: [Front Panel Design - Made Easy!](https://youtu.be/l9CzSfH8hN0)**
+**▶ Watch the video: [Front Panel Design - Made Easy!](https://youtu.be/RBMhfjR1O0A)**
 
-[![Front Panel Design - Made Easy! on YouTube](https://img.youtube.com/vi/l9CzSfH8hN0/hqdefault.jpg)](https://youtu.be/l9CzSfH8hN0)
+[![Front Panel Design - Made Easy! on YouTube](https://img.youtube.com/vi/RBMhfjR1O0A/hqdefault.jpg)](https://youtu.be/RBMhfjR1O0A)
 
 ![A finished panel in KiCad's 3D viewer](docs/images/finished_3d.png)
 
