@@ -54,6 +54,8 @@ Panel Generator reads the PCB file that is saved on the disk. Save the board in 
 
 If you move the Panel Generator folder, run `PanelGenerator.exe` one time from the new folder. The button then finds the app again.
 
+**To remove the button:** in Panel Generator, click **Remove the KiCad button** (in the same place, below the name of your PCB). Then close the KiCad PCB editor and open it again. If you installed the button with the Plugin and Content Manager, remove it there: click the **Installed** tab, click **Uninstall** on *Panel Generator button*, then click **Apply Pending Changes**.
+
 <details><summary>Other ways to install the button (KiCad Plugin and Content Manager)</summary>
 
 **From a file:**
@@ -143,8 +145,16 @@ Each change shows in the preview immediately.
    You can also draw the outline on User.2 **in the footprint** of a part. The marker then moves with the part. After you change a footprint in the library, update it on the board: in the PCB editor, click **Tools → Update Footprints from Library**.
 
    The preview shows the outline as a blue dashed line. The generated panel file shows it too, on its User.2 layer. Panel Generator does not cut or print it. Parts on the PCB that do not get a hole (for example a jack at the edge) get a marker automatically. **Do not use User.1 for markers.** Each shape on User.1 becomes a real cutout.
-- **Measure** (above the preview) is a ruler. Click two points to see the distance between them. The ruler snaps to the centres and edges of holes and to the panel edges. Hold **Ctrl** to keep it horizontal or vertical.
-- **The ruler is also a guide.** After the first click, type a length (for example `16`) and push Enter. The second end goes exactly that distance away. The ruler stays on the panel until you click **Clear ruler**. All that you drag, add or paste snaps to its ends and its centre.
+- **Measure** (above the preview) is a ruler. Click two points to see the distance between them. The ruler snaps to the centres and edges of holes, to the panel edges, and to the edges and centres of labels, texts and pictures. Hold **Ctrl** to keep it horizontal or vertical.
+- **Move a label to an exact distance:** the ruler can move what it measures to.
+   1. Click **Measure**.
+   2. Click the edge of the hole.
+   3. Hold **Ctrl** and click the edge of the label.
+   4. Click the figure on the ruler (for example *1.94 mm*). A box opens.
+   5. Type the distance (for example `2`) and push **Enter**.
+
+   The label moves along the ruler to that distance. This also works for your texts, pictures, lines, the title and extra holes. If only the first end of the ruler is on something that can move, that item moves. Use this to put the labels above and below a row of keys at the same distance from the holes.
+- **The ruler is also a guide.** After the first click, type a length (for example `16`) and push Enter. The second end goes exactly that distance away. On a ruler that is set, you can also type a length and push Enter, without clicking the figure. The ruler stays on the panel until you click **Clear ruler**. All that you drag, add or paste snaps to its ends and its centre.
 
    *Example:* you need two holes 16 mm apart, with a slot between them.
    1. Add the first hole.
@@ -190,7 +200,9 @@ The **Artwork** tab can draw the artwork for your panel. You do not have to use 
 - **Vertical outputs in filled boxes:** some jacks come up through the panel and have OUT in their label. Each of these jacks gets a filled box, with the label cut out. This is the usual output marking on modular panels. These also get a box:
    - a jack with your own text OUT next to it.
    - a round extra hole with the text OUT next to it (a jack with wires that is not on the PCB).
-- **Boxes round rows of controls:** select *Box* under Pots, Buttons or Jacks. Panel Generator puts a box round each row or column of 3 or more controls, with the scales and labels in the box. Drag the top, the bottom or a side of the box to change its size. The opposite side moves too, so the box stays centred.
+- **Boxes round rows of controls:** select *Box* under Pots, Buttons or Jacks. Panel Generator puts a box round each row or column of 3 or more controls, with the scales and labels in the box. Drag the top, the bottom or a side of the box to change its size. The opposite side moves too, so the box stays centred. When you change one box, all the other boxes round the same kind of control (for example all the boxes round pots) change in the same way. Thus the gaps round the controls and labels are the same in each box. To change one box only, click the box and clear **Keep all boxes round pots the same**.
+   - To move the labels in a box: click a label and drag it. To move all the labels in a box together, drag a selection box round them, from an empty area inside the box. Then drag one of them.
+   - To select the box itself: click an empty area inside it, or its edge.
 - **Horizontal jacks in tabs:** some jacks lie flat at the panel edge, and the plug goes in from the side. These jacks get a filled tab at the edge, with the labels cut out. Labels such as MIDI IN and MIDI OUT become IN and OUT, with MIDI below them. Drag an edge of a tab or an output box to make it larger. It snaps to the edges of the other tabs and boxes, so you can make them all the same size.
 - **Border:** a line round the panel. It can be square, follow the panel corners, or have its own corner radius. Set its **gap from the edge** and its **thickness**. If the gap is 0, Panel Generator sets it automatically: 1.5 mm, or just inside the case holes.
 - **Title:** your title, and your name or brand in small text along the bottom. The title can go across the top, letter below letter down a side, or turned on its side (reading up or reading down). Select **Mirror image** to flip the letters left to right. The title goes in the first free position. Drag it to a different position if necessary. If there is no free position, the title shows on top of something, and Result gives a warning. Drag the title to a clear area.

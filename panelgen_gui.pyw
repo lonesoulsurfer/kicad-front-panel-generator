@@ -29,7 +29,7 @@ TECH_URL = 'https://github.com/lonesoulsurfer/kicad-front-panel-generator/blob/m
 HOW_PANEL = [("Change the size of one part's hole", "In KiCad, on the PCB, open the part's properties and add a field named Panel. Its value sets the hole: circle:6.5 (a 6.5 mm round hole), square:7, rect:8x6. The hole stays centred on the part and moves with it. For several parts the same (all the tactile switches with caps, say), add the field to the symbol in the schematic and use Update PCB from Schematic."), ("Give a hole to a part the generator doesn't know", 'Draw the hole on the User.1 layer of the PCB: any closed shape there is cut exactly as drawn. Or add a Panel field (above). If you use the part often, add a rule for it to panel_rules.json, next to the app.'), ('Stop a part getting a hole', "Add a Panel field with the value skip. Or, if it shows an orange 'no cutout?' box, click the box. Or delete its hole in the panel file in KiCad - it then stays off, and is listed under Holes you removed or changed."), ("Add a hole for something that isn't on the PCB", 'A jack or switch wired to the board: use Extra holes above. Or, in the panel file in KiCad, place a part from PanelParts.pretty (jacks, LEDs, toggles, tactile switch, screws, a USB-C charge slot).'), ('Move or resize a hole just on the panel', 'Change it in the panel file in KiCad and save. Your version is kept every time you generate, and listed under Holes you removed or changed - pick it there and click Bring back to undo it.'), ('Show where a part is without cutting a hole', 'Draw it on the User.2 layer of the PCB. It shows in the preview as a blue guide to line things up with, and is never cut or printed.'), ('Check the spacing by the size of the parts',
   "Right-click a hole and choose Show the part's size round it: a dashed blue circle or rectangle for the part's body, nut or knob. Drag its edge to set the size - the size and the gap to the nearest part show as you drag. A rectangle's sides move one at a time, so it can stick out to one side of its hole (a board with its connector at one end); a corner moves two sides; Shift keeps it even round the hole. Or put one on every hole that size at once. They're never cut or printed."),
  ('Start again from the PCB', 'Reset (above the preview) takes the panel back to the bare PCB: its own size and holes, nothing added. Undo brings it all back.')]
-HOW_ART = [('Change what a label says', "Click it (or right-click, Change text). To set it on the PCB so it's the same every time, add a field named Label to the part in KiCad - it's used instead of the part's Value."), ('Line labels up', 'Drag a label: it snaps level with the others, to the middle of holes and of the keys under a window (the blue dotted outlines), and half way between two holes. Hold Alt to place it freely.'), ('Change several things at once', 'Drag a box round them, or Shift-click each. Then drag them together, copy them (Ctrl+C, Ctrl+V), or press Delete.'), ('White text on a black bar', "Click the text and set Box to A filled bar - the text is cut out of it. Drag the bar's ends to stretch it over a row of keys."), ('Put a shape round a hole', 'Set it up under Shapes, then right-click the hole and choose Add a shape round it. A filled box pulled over a label cuts the label out of it.'), ('Measure, or place something an exact distance away', 'Click Measure, click the first point, then type a length and press Enter. The ruler stays as a guide: things snap to its ends and middle. Hold Ctrl to keep it straight.'), ('Anything else', 'Switch on Artwork from Inkscape and draw it there: black prints, white cuts out of black.')]
+HOW_ART = [('Change what a label says', "Click it (or right-click, Change text). To set it on the PCB so it's the same every time, add a field named Label to the part in KiCad - it's used instead of the part's Value."), ('Line labels up', 'Drag a label: it snaps level with the others, to the middle of holes and of the keys under a window (the blue dotted outlines), and half way between two holes. Hold Alt to place it freely.'), ('Change several things at once', 'Drag a box round them, or Shift-click each. Then drag them together, copy them (Ctrl+C, Ctrl+V), or press Delete.'), ('White text on a black bar', "Click the text and set Box to A filled bar - the text is cut out of it. Drag the bar's ends to stretch it over a row of keys."), ('Put a shape round a hole', 'Set it up under Shapes, then right-click the hole and choose Add a shape round it. A filled box pulled over a label cuts the label out of it.'), ('Measure, or place something an exact distance away', 'Click Measure, click the first point, then type a length and press Enter. The ruler stays as a guide: things snap to its ends and middle. Hold Ctrl to keep it straight. To move a label an exact distance from a hole: measure from the hole edge to the label edge, click the figure on the ruler, type the distance and press Enter.'), ('Anything else', 'Switch on Artwork from Inkscape and draw it there: black prints, white cuts out of black.')]
 MULTI = ('text', 'label', 'line', 'image')    # what a box or Shift-click can pick up, besides holes you added
 MARKS = {'Circle': 'circle', 'Box': 'box', 'Triangle': 'triangle', 'Hexagon': 'hexagon', 'Diamond': 'diamond'}
 LINE_ENDS = {'Plain': 'none', 'Arrow at the end': 'end', 'Arrows at both ends': 'both'}
@@ -237,12 +237,16 @@ class App(tk.Tk):
                            'any other PCB gets a panel fitted to its outline.')
         self.mode_hint = ttk.Label(s, text='', style='Dim.TLabel', wraplength=440, justify='left')
         self.mode_hint.pack(anchor='w')
-        self.kicad_link = ttk.Label(s, text='＋ Add an "Open Panel Generator" button to KiCad', cursor='hand2',
+        self.kicad_row = ttk.Frame(s)
+        self.kicad_link = ttk.Label(self.kicad_row, text='＋ Add an "Open Panel Generator" button to KiCad', cursor='hand2',
                                     foreground='#2563eb')
         self.kicad_link.bind('<Button-1>', lambda e: self.kicad_button())
         Tip(self.kicad_link, "A button in KiCad's PCB editor that opens Panel Generator with the board you're working on.")
-        if button_source() and any(not button_installed(v, p) for v, p in kicad_versions()):
-            self.kicad_link.pack(anchor='w', pady=(2, 0))
+        self.kicad_off = ttk.Label(self.kicad_row, text='Remove the KiCad button', cursor='hand2', foreground='#6b7280')
+        self.kicad_off.bind('<Button-1>', lambda e: self.kicad_button_remove())
+        Tip(self.kicad_off, "Take the Open Panel Generator button out of KiCad again. A button installed with KiCad's "
+                            "Plugin and Content Manager is removed there.")
+        self.show_kicad_link()
         tabs = ttk.Frame(top); tabs.pack(fill='x', pady=(4, 8))
         tabs.columnconfigure(0, weight=1, uniform='t'); tabs.columnconfigure(1, weight=1, uniform='t')
         self.tab_btn = {}
@@ -608,9 +612,11 @@ class App(tk.Tk):
         self.w_measure = ttk.Button(ph, text='Measure', command=self.toggle_measure, width=11)
         self.w_measure.pack(side='right', padx=(0, 6))
         Tip(self.w_measure, 'A ruler: click two points in the preview to see how far apart they are. It snaps to the middle '
-                            'and edge of holes and to the panel edges (hold Alt for anywhere). Hold Ctrl to keep it dead level or straight up and '
-                            'down. After the first click you can type a length instead and press Enter. The ruler then stays as a '
-                            'guide: anything you drag, add or paste snaps to its ends and its middle. Press M for a new one.')
+                            'and edge of holes, the panel edges and the edges of labels and texts (hold Alt for anywhere). Hold Ctrl '
+                            'to keep it dead level or straight up and down. After the first click you can type a length instead and '
+                            'press Enter. The ruler then stays as a guide: anything you drag, add or paste snaps to its ends and its '
+                            'middle. Click the figure on it to type an exact length: a label or text at its end moves to fit. '
+                            'Press M for a new one.')
         self.w_undo = ttk.Button(ph, text='Undo', command=self.undo, width=6); self.w_undo.pack(side='right', padx=(0, 6))
         rs = ttk.Button(ph, text='Reset', command=self.reset_panel, width=6); rs.pack(side='right', padx=(0, 6))
         Tip(rs, 'Start this panel again from the PCB: the same size as the PCB, with its holes and nothing else. Clears the '
@@ -1615,6 +1621,12 @@ class App(tk.Tk):
         if self.measuring:
             self.drag = None
             return
+        self._ruler_click = False
+        if len(getattr(self, 'measure', [])) == 2 and set(self.canvas.find_withtag('rulerfig')) & \
+                set(self.canvas.find_overlapping(e.x, e.y, e.x, e.y)):
+            self.drag, self._ruler_click = None, True  # the figure on the ruler: type an exact length
+            self.after_idle(self.edit_ruler)
+            return
         k = None if self.adding else self.head_at(e)
         if k is not None:                              # the edge of a screw head: drag it to set every head's size
             self.canvas.delete('headhi'); self.head_mark(k)     # stays lit while you hold it
@@ -1662,8 +1674,10 @@ class App(tk.Tk):
                     if abs(e.x - hx) <= 8 and abs(e.y - hy) <= 8:
                         self.drag = ('resize', e.x, e.y, sel, False, 1.0)
                         return
-        if not self.adding and getattr(self, 'cur_view', None):     # near the edge of a tab or box: grab the edge, not the text
-            x, y = self.to_mm(e)
+        x_, y_ = self.to_mm(e) if getattr(self, 'cur_view', None) else (0, 0)
+        on_text = bool(t and t[1] != 'tab' and t[0][0] <= x_ <= t[0][2] and t[0][1] <= y_ <= t[0][3])
+        if not self.adding and not on_text and getattr(self, 'cur_view', None):   # near the edge of a tab or box: grab the
+            x, y = self.to_mm(e)                                                   # edge - but a text you're on wins
             grab = 6 / self.cur_view[0]
             for tt in getattr(self, 'targets', []):
                 if tt[1] != 'tab':
@@ -1683,6 +1697,9 @@ class App(tk.Tk):
             if t[2]['kind'] in ('textbox', 'mark') and dist[edge] > 6 / self.cur_view[0]:
                 self.drag = ('item', e.x, e.y, t, False)        # the middle of a box round text: move it, texts and all
                 return
+            if t[2]['kind'] == 'group' and dist[edge] > 6 / self.cur_view[0]:
+                self.drag = ('band', e.x, e.y, False, t)        # inside a box round controls: drag a box to pick the
+                return                                          # labels in it; a click selects the box
             self.drag = ('item', e.x, e.y, t, False, 0, 0, edge)
             return
         if t and t[1] == 'shape':                       # one of several selected holes: they all move together
@@ -1707,6 +1724,26 @@ class App(tk.Tk):
             if k not in self.multi and (self.multi or self.shape_sel):
                 self.multi, self.shape_sel = [], []    # something else: the group is let go
         self.drag = ('item', e.x, e.y, t, False) if t else ('band', e.x, e.y, False)
+
+    def sync_boxes(self, key):
+        """A box round a row of controls changed size: every other box round the same kind of control (pots, buttons,
+        jacks) gets the same sides, so the gaps round the controls and labels are the same in all of them. Untick 'Keep
+        boxes the same' to change one on its own."""
+        if not self.cfg.get('link_boxes', True) or not self.pv:
+            return
+        src = next((tb for tb in self.pv.get('tab_boxes', []) if tb.get('key') == key and tb.get('kind') == 'group'), None)
+        if not src:
+            return
+        sides = {k: v for k, v in self.ui['label_edits'].get(key, {}).items() if k in ('l', 'r', 't', 'b')}
+        for tb in self.pv.get('tab_boxes', []):
+            if tb.get('kind') != 'group' or tb.get('of') != src.get('of') or tb['key'] == key:
+                continue
+            g = {k: v for k, v in self.ui['label_edits'].get(tb['key'], {}).items() if k not in ('l', 'r', 't', 'b')}
+            g.update(sides)
+            if g:
+                self.ui['label_edits'][tb['key']] = g
+            else:
+                self.ui['label_edits'].pop(tb['key'], None)
 
     def mirrored(self, d, edge, e):
         """Pulling this edge also moves the opposite one: the sides of a box round controls, the top and bottom of a box
@@ -1958,14 +1995,17 @@ class App(tk.Tk):
             self.drag = ('item', x0, y0, t, True, dx, dy)
             c.config(cursor='fleur')
             return
-        _, x0, y0, moved = self.drag                    # a box round the holes you added, to select them
+        _, x0, y0, moved = self.drag[:4]                # a box round the holes you added, to select them
         if not moved and abs(e.x - x0) + abs(e.y - y0) < 4:
             return
         self.canvas.delete('dragbox')
         self.canvas.create_rectangle(x0, y0, e.x, e.y, outline='#2563eb', dash=(4, 2), tags='dragbox')
-        self.drag = ('band', x0, y0, True)
+        self.drag = ('band', x0, y0, True) + tuple(self.drag[4:])
 
     def release(self, e):
+        if getattr(self, '_ruler_click', False):
+            self._ruler_click = False
+            return
         if self.drag and self.drag[0] == 'head':
             _, _, _, _, moved, d = self.drag
             self.drag = None
@@ -2057,6 +2097,8 @@ class App(tk.Tk):
                             g.pop(k, None)
                 if not g:
                     self.ui['label_edits'].pop(t[2]['key'], None)
+                if group:
+                    self.sync_boxes(t[2]['key'])
                 self.select(t); self.persist_ui(); self.update_preview()
                 return
             if moved:
@@ -2083,6 +2125,11 @@ class App(tk.Tk):
                 else:
                     self.set_ruler(p)
             return
+        if self.drag and self.drag[0] == 'band' and not self.drag[3] and len(self.drag) > 4:
+            t = self.drag[4]                           # a click inside a box round controls: the box is selected
+            self.drag = None
+            self.canvas.delete('dragbox')
+            return self.select(t)
         band = self.drag if self.drag and self.drag[0] == 'band' and self.drag[3] else None
         self.drag = None
         self.canvas.config(cursor='')
@@ -2172,6 +2219,9 @@ class App(tk.Tk):
         strong = 12 / self.cur_view[0]
         xs, ys, sxs, sys_ = [], [], [], []
         moving = {'add:' + i for i in self.shape_sel} if kind == 'shape' else set()
+        # several picked and moving together: they don't snap to each other (they'd hold the drag where it started)
+        together = {k[1] for k in self.multi} if d is not None and self.in_group(t) and self.group_size() > 1 else set()
+        mates = lambda it: it.get('fid') in together or it.get('id') in together or it.get('key') in together
         holes = [sh for sh in self.pv.get('shapes', []) if sh.get('key') not in moving]
         if kind in ('shape', 'newshape'):
             ys.append((self.pv['panel_box'][1] + self.pv['panel_box'][3]) / 2)
@@ -2188,7 +2238,7 @@ class App(tk.Tk):
                 if texty:
                     sxs.append((px, py))
         for L in self.pv.get('labels', []):
-            if d is not None and (L is d or (L.get('fid') is not None and L.get('fid') == d.get('fid'))):
+            if d is not None and (L is d or (L.get('fid') is not None and L.get('fid') == d.get('fid')) or mates(L)):
                 continue
             xs.append(L['x']); ys.append(L['y'])
             if texty:
@@ -2196,7 +2246,7 @@ class App(tk.Tk):
         boxes = []                                     # other things on the panel, as boxes
         for key in ('art_items', 'knocked', 'images'):
             for it in self.pv.get(key, []):
-                if d is not None and it is d:
+                if d is not None and (it is d or mates(it)):
                     continue
                 boxes.append(it['box'])
         for mk in self.pv.get('markers', []):
@@ -2222,7 +2272,7 @@ class App(tk.Tk):
         w2, h2 = (b[2] - b[0]) / 2, (b[3] - b[1]) / 2
         obst = [sh['geom'].bounds for sh in holes] + boxes + \
                [(L['x'] - L['w'] / 2, L['y'] - L['h'] / 2, L['x'] + L['w'] / 2, L['y'] + L['h'] / 2)
-                for L in self.pv.get('labels', []) if not (d is not None and L is d)]
+                for L in self.pv.get('labels', []) if not (d is not None and (L is d or mates(L)))]
         row = [o for o in obst if o[1] < cy + h2 and o[3] > cy - h2]
         left = max([o[2] for o in row if o[2] <= cx - w2 + 0.01] + [x1])
         right = min([o[0] for o in row if o[0] >= cx + w2 - 0.01] + [x2])
@@ -2506,6 +2556,8 @@ class App(tk.Tk):
                                 gg.pop(k, None)
                         if not gg:
                             self.ui['label_edits'].pop(d['key'], None)
+                        if group:
+                            self.sync_boxes(d['key'])
                         self.persist_ui(); self.update_preview()
                 entry(row, f"{g.get(edge, 0.0):g}", setg); ttk.Label(row, text='mm').pack(side='left')
             ttk.Label(box, text='Or drag an edge of it in the preview: it snaps to the edges of the other tabs and boxes'
@@ -2515,8 +2567,25 @@ class App(tk.Tk):
                                   'another label, and only that end moves. Shift always moves just one edge.' if d['kind'] == 'textbox' else
                                   '. Pull a side and the other side follows, so the box stays centred on the controls.' if group else '.'),
                       style='Dim.TLabel', wraplength=390, justify='left').pack(anchor='w', pady=(4, 0))
-            ttk.Button(box, text='Back to its own size', command=lambda: (self.ui['label_edits'].pop(d['key'], None),
-                                                                          self.persist_ui(), self.update_preview())).pack(anchor='w', pady=(6, 0))
+            if group:
+                same = [tb for tb in self.pv.get('tab_boxes', []) if tb.get('kind') == 'group' and tb.get('of') == d.get('of')]
+                if len(same) > 1:
+                    lv = tk.BooleanVar(value=bool(self.cfg.get('link_boxes', True)))
+                    def link(lv=lv):
+                        self.cfg['link_boxes'] = lv.get(); self.save_cfg()
+                        if lv.get():                   # ticked again: the others follow this one
+                            self.sync_boxes(d['key']); self.persist_ui(); self.update_preview()
+                    kind_ = {'pot': 'pots', 'button': 'buttons', 'jack': 'jacks'}.get(d.get('of'), 'controls')
+                    cb = ttk.Checkbutton(box, text=f'Keep all boxes round {kind_} the same', variable=lv, command=link)
+                    cb.pack(anchor='w', pady=(6, 0))
+                    Tip(cb, 'When on, a change to one box (here or by dragging an edge) changes the others the same way, '
+                            'so the gaps round the controls and their labels are the same in every box.')
+            def own_size():
+                self.ui['label_edits'].pop(d['key'], None)
+                if group:
+                    self.sync_boxes(d['key'])
+                self.persist_ui(); self.update_preview()
+            ttk.Button(box, text='Back to its own size', command=own_size).pack(anchor='w', pady=(6, 0))
 
     # ------------------------------------------------------------------ holes, rectangles and slots you add
     def hole_dia(self):
@@ -2813,6 +2882,7 @@ class App(tk.Tk):
         """The second point is down: the ruler stays on the panel as a guide. Its ends and its middle are snap points for
         anything you drag, add or paste, until you clear it."""
         self.measure = [self.measure[0], (round(p[0], 4), round(p[1], 4))]
+        self.measure_own = [self.ruler_owner(self.measure[0]), self.ruler_owner(self.measure[1])]
         self.measuring, self.len_buf = False, ''
         self.w_measure.config(text='Clear ruler')
         self.canvas.config(cursor='')
@@ -2824,6 +2894,119 @@ class App(tk.Tk):
             return []
         (ax, ay), (bx, by) = self.measure
         return [(ax, ay), (bx, by), ((ax + bx) / 2, (ay + by) / 2)]
+
+    @staticmethod
+    def ruler_movable(t):
+        """Things the ruler can move to an exact distance: labels, your texts, pictures, lines, title and art copies,
+        holes you added, and boxes round text."""
+        return t[1] in ('label', 'text', 'image', 'art', 'line', 'shape') or (t[1] == 'tab' and t[2].get('kind') == 'textbox')
+
+    def ruler_key_of(self, t):
+        return ('shape', t[2]['id']) if t[1] == 'shape' else self.sel_key(t)
+
+    def ruler_owner(self, p):
+        """The movable thing a ruler end sits on (on an edge of its box, or its middle), or None."""
+        eps = 0.02
+        x, y = p
+        for t in reversed(getattr(self, 'targets', [])):
+            if not self.ruler_movable(t):
+                continue
+            b = t[0]
+            if t[1] == 'line':                         # a line: on the line itself
+                d = t[2]
+                ax, ay, bx, by = d['x1'], d['y1'], d['x2'], d['y2']
+                L2 = (bx - ax) ** 2 + (by - ay) ** 2
+                u = max(0.0, min(1.0, ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / L2)) if L2 > 1e-9 else 0.0
+                if math.hypot(x - ax - u * (bx - ax), y - ay - u * (by - ay)) <= float(d.get('w', 0.5)) / 2 + eps:
+                    return self.ruler_key_of(t)
+                continue
+            in_x, in_y = b[0] - eps <= x <= b[2] + eps, b[1] - eps <= y <= b[3] + eps
+            on_v = in_y and (abs(x - b[0]) <= eps or abs(x - b[2]) <= eps)
+            on_h = in_x and (abs(y - b[1]) <= eps or abs(y - b[3]) <= eps)
+            mid = abs(x - (b[0] + b[2]) / 2) <= eps and abs(y - (b[1] + b[3]) / 2) <= eps
+            if on_v or on_h or mid:
+                return self.ruler_key_of(t)
+        return None
+
+    def ruler_target(self, key):
+        if not key:
+            return None
+        return next((t for t in getattr(self, 'targets', []) if self.ruler_movable(t) and self.ruler_key_of(t) == key), None)
+
+    def ruler_name(self, t):
+        _, kind, d = t
+        if kind in ('label', 'text'):
+            return f"'{d.get('text', '')}'"
+        return {'image': 'the picture', 'art': 'the title', 'line': 'the line', 'shape': 'the hole you added',
+                'tab': 'the box'}.get(kind, 'it')
+
+    def ruler_length(self, length):
+        """A new length for a ruler that's set. If its far end is on something you can move (a label, a text, a hole
+        you added...), that thing moves along the ruler to the new distance; else, if its first end is, that moves; else
+        only the ruler changes."""
+        if len(self.measure) != 2 or length <= 0:
+            return
+        (ax, ay), (bx, by) = self.measure
+        dx, dy = bx - ax, by - ay
+        d = (dx * dx + dy * dy) ** 0.5
+        ux, uy = (dx / d, dy / d) if d > 1e-6 else (1.0, 0.0)
+        step = length - d
+        owners = getattr(self, 'measure_own', [None, None])
+        tb, ta = self.ruler_target(owners[1]), self.ruler_target(owners[0])
+        mover, sign = (tb, 1) if tb else (ta, -1) if ta else (None, 1)
+        mx, my = round(ux * step * sign, 4), round(uy * step * sign, 4)
+        if mover is None:
+            self.measure = [(ax, ay), (round(bx + ux * step, 4), round(by + uy * step, 4))]
+            self.draw()
+            return
+        if sign > 0:
+            self.measure = [(ax, ay), (round(bx + mx, 4), round(by + my, 4))]
+        else:
+            self.measure = [(round(ax + mx, 4), round(ay + my, 4)), (bx, by)]
+        self._ruler_said = None
+        if mover[1] == 'shape':                        # holes you added move as the selection
+            self.shape_sel = [mover[2]['id']]
+        self.move_target(mover, mx, my)
+        self.hover.config(text=f'Moved {self.ruler_name(mover)} {abs(step):.2f} mm: it is now {length:g} mm away. '
+                               'Undo (Ctrl+Z) takes it back.')
+
+    def edit_ruler(self):
+        """Click the figure on a ruler: type the length it should be."""
+        if len(self.measure) != 2 or not getattr(self, 'cur_view', None):
+            return
+        c = self.canvas
+        c.delete('rulerbox')
+        bb = c.bbox('rulerfig')
+        if not bb:
+            return
+        (ax, ay), (bx, by) = self.measure
+        var = tk.StringVar(value=f'{math.hypot(bx - ax, by - ay):.2f}')
+        ent = tk.Entry(c, textvariable=var, width=8, font=self.f_head, justify='center', relief='solid', bd=1)
+        c.create_window(bb[0], (bb[1] + bb[3]) / 2, window=ent, anchor='w', tags='rulerbox')
+        owners = getattr(self, 'measure_own', [None, None])
+        t = self.ruler_target(owners[1]) or self.ruler_target(owners[0])
+        self.hover.config(text='Type the length in mm and press Enter' +
+                               (f': {self.ruler_name(t)} moves along the ruler to that distance.' if t else
+                                '. Nothing movable is at its ends, so only the ruler changes.') + '  Esc: cancel.')
+        done = []
+        def close(_=None):
+            if not done:
+                done.append(1)
+                c.delete('rulerbox')
+                ent.destroy()
+            return 'break'
+        def ok(_=None):
+            try:
+                v = float(var.get().replace(',', '.').replace('mm', '').strip())
+            except ValueError:
+                v = 0
+            close()
+            if v > 0:
+                self.ruler_length(round(v, 3))
+            return 'break'
+        ent.bind('<Return>', ok); ent.bind('<KP_Enter>', ok)
+        ent.bind('<Escape>', close); ent.bind('<FocusOut>', close)
+        ent.focus_set(); ent.select_range(0, 'end'); ent.icursor('end')
 
     def ruler_key(self, e):
         """Typing a length: after the first point it sets the second that far away (towards the pointer, dead level or
@@ -2849,6 +3032,9 @@ class App(tk.Tk):
                 length = float(buf)
             except ValueError:
                 length = 0
+            if length > 0 and not picking:             # a ruler that's set: what it measured to moves to fit
+                self.len_buf = ''
+                return self.ruler_length(length)
             if length > 0:
                 ax, ay = self.measure[0]
                 if picking:
@@ -2876,6 +3062,8 @@ class App(tk.Tk):
         if not self.measuring and not self.measure:
             return
         self.measuring, self.measure, self.len_buf = False, [], ''
+        self.measure_own = [None, None]
+        self.canvas.delete('rulerbox')
         self.w_measure.config(text='Measure')
         self.canvas.config(cursor='')
         self.hover.config(text='Hover over a cutout to see what it is.')
@@ -2900,19 +3088,26 @@ class App(tk.Tk):
         for sh in self.pv.get('shapes', []):
             b = sh['geom'].bounds
             pts.append(((b[0] + b[2]) / 2, (b[1] + b[3]) / 2))
+        # labels, texts and other things you can move: the middle of each side and the middle. A ruler that ends on one
+        # can then move it to an exact distance.
+        boxes = [t[0] for t in getattr(self, 'targets', []) if self.ruler_movable(t) and t[1] != 'line']
+        for b in boxes:
+            mx_, my_ = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
+            pts += [(mx_, my_), (mx_, b[1]), (mx_, b[3]), (b[0], my_), (b[2], my_)]
         near = min(pts, key=lambda p: (p[0] - x) ** 2 + (p[1] - y) ** 2)
         if (near[0] - x) ** 2 + (near[1] - y) ** 2 <= thr ** 2:
             return near
         try:
-            from shapely.geometry import Point
+            from shapely.geometry import Point, box as sbox
             best = None
-            for sh in self.pv.get('shapes', []):
-                for g in (sh['geom'].geoms if hasattr(sh['geom'], 'geoms') else [sh['geom']]):
-                    ring = g.exterior
-                    q = ring.interpolate(ring.project(Point(x, y)))
-                    d = (q.x - x) ** 2 + (q.y - y) ** 2
-                    if d <= (thr * 0.75) ** 2 and (best is None or d < best[0]):
-                        best = (d, (q.x, q.y))
+            rings = [g.exterior for sh in self.pv.get('shapes', [])
+                     for g in (sh['geom'].geoms if hasattr(sh['geom'], 'geoms') else [sh['geom']])]
+            rings += [sbox(*b).exterior for b in boxes]
+            for ring in rings:
+                q = ring.interpolate(ring.project(Point(x, y)))
+                d = (q.x - x) ** 2 + (q.y - y) ** 2
+                if d <= (thr * 0.75) ** 2 and (best is None or d < best[0]):
+                    best = (d, (q.x, q.y))
             if best:
                 return best[1]
         except ImportError:
@@ -2963,17 +3158,27 @@ class App(tk.Tk):
             c.create_line(X(ax), Y(ay), X(bx), Y(ay), X(bx), Y(by), fill=col, dash=(2, 3), tags='ruler')
         tx, ty = (X(ax) + X(bx)) / 2, (Y(ay) + Y(by)) / 2
         upright = abs(dy) > abs(dx)                    # keep the figure off the line and off what's being measured
+        figtags = ('ruler', 'rulerfig') if fixed else 'ruler'
         i = c.create_text(tx + (10 if upright else 0), ty - (0 if upright else 14), text=txt, fill='#ffffff',
-                          font=self.f_head, tags='ruler', anchor='w' if upright else 'center')
-        r = c.create_rectangle(*[v + o for v, o in zip(c.bbox(i), (-4, -2, 4, 2))], fill='#7a1f6b', outline=col, tags='ruler')
+                          font=self.f_head, tags=figtags, anchor='w' if upright else 'center')
+        r = c.create_rectangle(*[v + o for v, o in zip(c.bbox(i), (-4, -2, 4, 2))], fill='#7a1f6b', outline=col, tags=figtags)
         c.tag_raise(i, r)
+        if fixed:
+            for it in (i, r):
+                c.tag_bind(it, '<Enter>', lambda _: c.config(cursor='xterm'))
+                c.tag_bind(it, '<Leave>', lambda _: c.config(cursor=''))
         if getattr(self, 'len_buf', ''):
             return
         if fixed:
             if getattr(self, '_ruler_said', None) != self.measure:      # say it once, not on every redraw
                 self._ruler_said = list(self.measure)
-                self.hover.config(text='Ruler: ' + txt + '  ·  it stays as a guide: things snap to its ends and middle. '
-                                                         'Type a length + Enter to change it; Clear ruler (or M for a new one).')
+                owners = getattr(self, 'measure_own', [None, None])
+                t = self.ruler_target(owners[1]) or self.ruler_target(owners[0])
+                self.hover.config(text='Ruler: ' + txt + (f'  ·  click the figure to type an exact length: {self.ruler_name(t)} '
+                                                          'moves to fit' if t else
+                                                          '  ·  it stays as a guide: things snap to its ends and middle. '
+                                                          'Click the figure to type a length') +
+                                       '. Clear ruler (or M for a new one).')
         else:
             self.hover.config(text='Ruler: ' + txt + '  ·  click to set it, or type a length in mm and press Enter')
 
@@ -3517,13 +3722,13 @@ class App(tk.Tk):
         if kind == 'text':
             o = self.own_text(d['fid'])
             if o:
-                o['x'] = round(o['x'] + dx, 2); o['y'] = round(o['y'] + dy, 2)
+                o['x'] = round(o['x'] + dx, 3); o['y'] = round(o['y'] + dy, 3)
         elif kind == 'art':
             self.ui.setdefault('art_pos', {})[d['key']] = [round(d['at'][0] + dx, 2), round(d['at'][1] + dy, 2)]
         elif kind == 'image':
             o = self.own_image(d['id'])
             if o:
-                o['x'] = round(o['x'] + dx, 2); o['y'] = round(o['y'] + dy, 2)
+                o['x'] = round(o['x'] + dx, 3); o['y'] = round(o['y'] + dy, 3)
         elif kind == 'shape':
             for o in self.ui.get('shapes', []):
                 if o['id'] in self.shape_sel:
@@ -4041,8 +4246,8 @@ class App(tk.Tk):
                                                    "then try again.")
             return
         done, errors = add_button_to_kicad()
+        self.show_kicad_link()
         if done:
-            self.kicad_link.pack_forget()
             messagebox.showinfo('Panel Generator',
                                 f"The button is added to KiCad {', '.join(done)}.\n\n"
                                 "Close KiCad's PCB editor and open it again. The button is at the right-hand end of the top "
@@ -4052,6 +4257,33 @@ class App(tk.Tk):
                                 + (('\n\nNot done: ' + '; '.join(errors)) if errors else ''))
         else:
             messagebox.showerror('Panel Generator', "The button couldn't be added:\n" + '\n'.join(errors))
+
+    def show_kicad_link(self):
+        """'Add the button' while a KiCad version doesn't have it; 'Remove' when this app put it in."""
+        if not self.kicad_row.winfo_manager():
+            self.kicad_row.pack(anchor='w', after=self.mode_hint)
+        self.kicad_link.pack_forget(); self.kicad_off.pack_forget()
+        vers = kicad_versions()
+        if button_source() and any(not button_installed(v, p) for v, p in vers):
+            self.kicad_link.pack(side='left', pady=(2, 0))
+        elif button_added_here(vers):
+            self.kicad_off.pack(side='left', pady=(2, 0))
+
+    def kicad_button_remove(self):
+        if not messagebox.askyesno('Panel Generator', 'Remove the "Open Panel Generator" button from KiCad?\n\n'
+                                   'Panel Generator itself stays. You can add the button again here at any time.', parent=self):
+            return
+        done, errors, pcm = remove_button_from_kicad()
+        self.show_kicad_link()
+        msg = (f"The button is removed from KiCad {', '.join(done)}. Close KiCad's PCB editor and open it again." if done else
+               'The button was not found in KiCad.')
+        if pcm:
+            msg += ('\n\nKiCad ' + ', '.join(pcm) + ' also has the button from the Plugin and Content Manager. To remove that '
+                    'one: in KiCad, open the Plugin and Content Manager, click the Installed tab, click Uninstall on '
+                    'Panel Generator button, then click Apply Pending Changes.')
+        if errors:
+            msg += '\n\nNot done: ' + '; '.join(errors)
+        (messagebox.showwarning if errors else messagebox.showinfo)('Panel Generator', msg, parent=self)
 
     def save_cfg(self):
         try:
@@ -4247,6 +4479,33 @@ def button_installed(ver, settings):
     kicad = 'KiCad' if sys.platform in ('win32', 'darwin') else 'kicad'
     return (os.path.isfile(os.path.join(settings, 'scripting', 'plugins', BUTTON_DIR, '__init__.py')) or
             os.path.isdir(os.path.join(docs, kicad, ver, '3rdparty', 'plugins', PCM_DIR)))
+
+
+def pcm_button_dir(ver):
+    docs = os.environ.get('KICAD_DOCUMENTS_HOME') or documents_folder()
+    return os.path.join(docs, 'KiCad' if sys.platform in ('win32', 'darwin') else 'kicad', ver, '3rdparty', 'plugins', PCM_DIR)
+
+
+def button_added_here(vers=None):
+    """Did this app put the button into any KiCad version (not the Plugin and Content Manager)?"""
+    return any(os.path.isdir(os.path.join(p, 'scripting', 'plugins', BUTTON_DIR)) for _, p in (vers or kicad_versions()))
+
+
+def remove_button_from_kicad():
+    """Take out the copies this app put in. Returns (versions done, errors, versions that also have a PCM copy)."""
+    import shutil
+    done, errors, pcm = [], [], []
+    for ver, settings in kicad_versions():
+        dest = os.path.join(settings, 'scripting', 'plugins', BUTTON_DIR)
+        if os.path.isdir(dest):
+            try:
+                shutil.rmtree(dest)
+                done.append(ver)
+            except OSError as e:
+                errors.append(f'KiCad {ver}: {e}')
+        if os.path.isdir(pcm_button_dir(ver)):
+            pcm.append(ver)
+    return done, errors, pcm
 
 
 def add_button_to_kicad():

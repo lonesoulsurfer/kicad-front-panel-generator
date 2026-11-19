@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.28.0
+
+- **Move a label to an exact distance with the ruler:** the ruler now snaps to the edges and centres of labels, texts and pictures. Click the figure on a ruler and type a length: the label (or text, picture, line, title or extra hole) at the far end moves along the ruler to that distance. If only the first end is on something that can move, that moves instead. Typing a length and pushing Enter on a ruler does the same.
+- **Labels inside a box round pots are easy to pick:** a click on a label selects the label, not the edge of the box round it. A drag from an empty area inside the box draws a selection box, so you can pick all its labels and move them together. A click on an empty area inside the box selects the box.
+- **Boxes round controls stay the same:** when you change the size of one box round a row of pots (by dragging an edge or typing a value), the other boxes round pots change in the same way, so the gaps round the controls and labels match. Buttons and jacks work the same way. Clear *Keep all boxes round pots the same* to change one box only.
+- **Several labels moved together no longer stick:** when you drag a selection of labels, they no longer snap to each other, which held a short drag where it started.
+- **Remove the KiCad button:** when Panel Generator has added its button to KiCad, the line under your PCB changes to *Remove the KiCad button*. A button from the Plugin and Content Manager is removed there; the message says how.
+
 ## 0.27.4
 
 - **Hover line:** a shorter message now clears the previous one completely (on Windows, the end of a long message could stay on the line).
