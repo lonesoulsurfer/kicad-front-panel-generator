@@ -44,7 +44,9 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     ver = meta['versions'][0]['version']
     pkg = os.path.join(OUT, f"panel-generator-button_v{ver}_pcm.zip")
-    files = [('metadata.json', os.path.join(SRC, 'metadata.json')), ('LICENSE', os.path.join(SRC, 'LICENSE')),
+    # KiCad's official repository allows only metadata.json, resources/icon.png and plugins/ in a package, so the
+    # licence goes in plugins/
+    files = [('metadata.json', os.path.join(SRC, 'metadata.json')), ('plugins/LICENSE', os.path.join(SRC, 'LICENSE')),
              ('resources/icon.png', os.path.join(SRC, 'resources', 'icon.png'))]
     for n in sorted(os.listdir(os.path.join(SRC, 'plugins'))):
         p = os.path.join(SRC, 'plugins', n)
