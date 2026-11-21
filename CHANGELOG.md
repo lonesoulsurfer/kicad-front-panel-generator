@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.28.15
+
+- **No drill map in the gerber zip:** *Make gerbers* no longer adds KiCad's drill map drawings (the two *-drl_map.gbr* files). They are drawings for people, and a board house's upload page can take one for a layer of the board (JLCPCB showed a 7.5 x 7.5 mm board).
+- **No hairlines in filled shapes:** a filled shape with holes in it (a bar with text cut out, an edge tab) is put on the panel in pieces, because KiCad polygons can't have holes. The pieces now overlap by 0.01 mm, so gerber viewers no longer draw a thin line where they meet.
+
 ## 0.28.14
 
 - **Text in a line box is centred in KiCad too:** a text with *A line round it* is now put on the panel as outlines, the same outlines the box is measured from, as a text in a filled bar already was. KiCad draws TrueType text a little higher than its size says (about 0.07 x the size with some fonts), so the text sat high in its box in KiCad, though it looked right in the preview.

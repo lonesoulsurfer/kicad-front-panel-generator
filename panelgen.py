@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.28.14"
+VERSION = "0.28.15"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -1597,7 +1597,18 @@ def refresh_artwork_guides(art_svg, template_svg, log):
     return False
 
 def fracture(poly):
-    """KiCad polygons can't have holes: cut a polygon with holes into pieces that have none (same area)."""
+    """KiCad polygons can't have holes: cut a polygon with holes into pieces that have none (same area). The pieces
+    overlap by 0.01 mm where they were cut, so no seam shows between them (gerber viewers drew a hairline there)."""
+    if not poly.interiors:
+        return [poly]
+    out = []
+    for piece in _fracture(poly):
+        q = piece.buffer(0.01, join_style=2).intersection(poly)
+        parts = [g for g in (q.geoms if hasattr(q, 'geoms') else [q]) if g.geom_type == 'Polygon' and g.area > 1e-9]
+        out += parts if parts and not any(g.interiors for g in parts) else [piece]
+    return out
+
+def _fracture(poly):
     from shapely.ops import split
     if not poly.interiors:
         return [poly]
@@ -1606,7 +1617,7 @@ def fracture(poly):
     out = []
     for piece in split(poly, LineString([(hx, y1 - 1), (hx, y2 + 1)])).geoms:
         if piece.geom_type == 'Polygon' and piece.area > 1e-9:
-            out += fracture(piece)
+            out += _fracture(piece)
     return out
 
 def trace_png(png, dpi, x0, y0, mm_per_unit=1.0):
@@ -2706,8 +2717,8 @@ def make_gerbers(panel_path, log):
         return True
     if not run(['pcb', 'export', 'gerbers', '-o', out + os.sep, '-l', GERBER_LAYERS, panel_path], 'gerbers'):
         return None
-    if not run(['pcb', 'export', 'drill', '-o', out + os.sep, '--excellon-separate-th', '--generate-map',
-                '--map-format', 'gerberx2', panel_path], 'drill files'):
+    # no drill map: it's a drawing for people, and board houses can take it for a layer of the board
+    if not run(['pcb', 'export', 'drill', '-o', out + os.sep, '--excellon-separate-th', panel_path], 'drill files'):
         return None
     files = sorted(f for f in os.listdir(out) if os.path.isfile(os.path.join(out, f)))
     zpath = os.path.join(folder, base + '_gerbers.zip')
