@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.28.6"
+VERSION = "0.28.7"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -909,7 +909,7 @@ def part_markers(pcb, ids, outline):
         fp = footprint(node)
         for g in edge_shapes(node, 'fp_', fp.world, layer=MARKER_LAYER):
             name = guess_label(fp)[0]
-            out.append(dict(geom=g, text=fp.ref + (f' {name}' if name else ''), at=(fp.x, fp.y)))
+            out.append(dict(geom=g, text=fp.ref + (f' {name}' if name else ''), at=(fp.x, fp.y), fid=fp.uuid, ref=fp.ref))
     return [m for m in out if m['geom'].intersects(outline.buffer(5))]
 
 def write_svg(path, x1, y1, x2, y2, shapes, labels=(), a=None):
@@ -1872,6 +1872,17 @@ def own_tabs(a, placed, fps, no_hole, edits, edge_parts, pb, tab_edge, font, sbo
         side = 'top' if cb[1] < pb[1] + 1.0 else 'bottom' if cb[3] > pb[3] - 1.0 else None
         if side:
             jacks.append((side, cb, fid, fp.ref))
+    # a module with its jack drawn on User.2 (a DAC board with a line out at the edge) and no cutout: the jack is the
+    # shape drawn there
+    live = getattr(a, '_live_ids', set())
+    for m in getattr(a, '_markers', []):
+        fid = m.get('fid')
+        if not fid or fid in done or fid in live or any(j[2] == fid for j in jacks):
+            continue
+        cb = m['geom'].bounds                   # a module's jack can sit a little further in: 2.5 mm
+        side = 'top' if cb[1] < pb[1] + 2.5 else 'bottom' if cb[3] > pb[3] - 2.5 else None
+        if side:
+            jacks.append((side, cb, fid, m.get('ref') or m['text']))
     if not jacks:
         return
     texts = []
@@ -2097,6 +2108,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             side = 'top' if cb[1] < pb[1] + 1.0 else 'bottom' if cb[3] > pb[3] - 1.0 else None
             if side:
                 edge_parts.append((side, cb, L))
+        a._live_ids = {c['id'] for c in cutouts if not c.get('shadow')}
         own_tabs(a, placed, fps, no_hole, edits, edge_parts, pb, tab_edge, font, sbold, holes, keep_out,
                  outline, shapes, tab_areas, knocked, log)
         for side in ('top', 'bottom'):
@@ -3065,6 +3077,7 @@ def main(argv=None, preview=None):
         problems += sum(1 for l in log[n0:] if l.startswith('WARN'))
         log.append(f"labels {len(placed)} on the silkscreen ({sum(1 for r in label_rows if r['hide'])} hidden, "
                    f"{sum(1 for r in label_rows if not r['hide'] and not r['text'].strip())} with no text)")
+    a._markers = part_markers(pcb, set(cfg.get('_none_ids', set())) | set(ignore_uncut), outline)
     a._auto, knocked, a._art_items, a._knock_boxes, a._tab_boxes = [], set(), [], {}, []
     if a.auto_art == 'on':
         n0 = len(log)
@@ -3082,7 +3095,6 @@ def main(argv=None, preview=None):
     a._auto += line_shapes(lines, groups, outline, log)
     knocked |= tb_knocked
     placed = [L for L in placed if L['fid'] not in knocked]     # those are in the artwork now, cut out of their box
-    a._markers = part_markers(pcb, set(cfg.get('_none_ids', set())) | set(ignore_uncut), outline)
     # the template and the artwork file's guides first, so the artwork is rendered on the panel's current page
     if preview is None and (a.svg or a.make_artwork_file or os.path.exists(artwork_path_for(out_path))):
         os.makedirs(os.path.dirname(out_path), exist_ok=True)

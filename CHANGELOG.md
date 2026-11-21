@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.28.7
+
+- **Edge tabs for jacks on a module:** a jack that is part of a module (for example the line out on a PCM5102 DAC board) now gets an edge tab from your own texts, as other jacks do. Panel Generator uses the jack's outline on User.2 in the module's footprint, and the jack can be up to 2.5 mm in from the PCB edge.
+
 ## 0.28.6
 
 - **Move the texts in an edge tab:** you can drag a text inside an edge tab again. Before, the click on the text failed and the text stayed where it was.
