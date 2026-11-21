@@ -242,7 +242,8 @@ class App(tk.Tk):
                                     foreground='#2563eb')
         self.kicad_link.bind('<Button-1>', lambda e: self.kicad_button())
         Tip(self.kicad_link, "A button in KiCad's PCB editor that opens Panel Generator with the board you're working on.")
-        self.kicad_off = ttk.Label(self.kicad_row, text='Remove the KiCad button', cursor='hand2', foreground='#6b7280')
+        self.kicad_off = ttk.Label(self.kicad_row, text='－ Remove the "Open Panel Generator" button from KiCad', cursor='hand2',
+                                   foreground='#2563eb')
         self.kicad_off.bind('<Button-1>', lambda e: self.kicad_button_remove())
         Tip(self.kicad_off, "Take the Open Panel Generator button out of KiCad again. A button installed with KiCad's "
                             "Plugin and Content Manager is removed there.")
@@ -318,7 +319,7 @@ class App(tk.Tk):
         s = self.section('case', 'Case mounting holes', 'Screw holes round the panel edge, for fixing it to a case.')
         f = self.form(s)
         c = field(f, 'Where')
-        for txt, val in (('None', 'none'), ('Corners', 'corners'), ('Corners + sides', 'corners+mid')):
+        for txt, val in (('None', 'none'), ('Corners', 'corners'), ('All sides', 'corners+mid')):   # short: the column is narrow
             r_ = ttk.Radiobutton(c, text=txt, value=val, variable=v['screws'], command=self.refresh_states)
             r_.pack(side='left', padx=(0, 12))
         Tip(r_, 'A hole in each corner and one in the middle of each side.')

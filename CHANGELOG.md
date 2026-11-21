@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.28.2
+
+- **The Remove link is easy to see:** *－ Remove the "Open Panel Generator" button from KiCad* is now a blue link, like the Add link. It was grey and looked like plain text.
+- **Case mounting holes:** the third choice is now called *All sides* (a hole in each corner and in the middle of each side). Its old name, *Corners + sides*, was too long and showed as a second *Corners*.
+
 ## 0.28.1
 
 - **Output boxes stay the same size:** when you change the size of one output box (a jack with OUT), all the output boxes change in the same way. A new output box, for example a jack and its OUT text that you copy, gets the same size at once. Clear *Keep all outputs the same size* to change one box only.

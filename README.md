@@ -54,7 +54,7 @@ Panel Generator reads the PCB file that is saved on the disk. Save the board in 
 
 If you move the Panel Generator folder, run `PanelGenerator.exe` one time from the new folder. The button then finds the app again.
 
-**To remove the button:** in Panel Generator, click **Remove the KiCad button** (in the same place, below the name of your PCB). Then close the KiCad PCB editor and open it again. If you installed the button with the Plugin and Content Manager, remove it there: click the **Installed** tab, click **Uninstall** on *Panel Generator button*, then click **Apply Pending Changes**.
+**To remove the button:** in Panel Generator, click the blue link **－ Remove the "Open Panel Generator" button from KiCad** (in the same place, below the name of your PCB). Then close the KiCad PCB editor and open it again. If you installed the button with the Plugin and Content Manager, remove it there: click the **Installed** tab, click **Uninstall** on *Panel Generator button*, then click **Apply Pending Changes**.
 
 <details><summary>Other ways to install the button (KiCad Plugin and Content Manager)</summary>
 
