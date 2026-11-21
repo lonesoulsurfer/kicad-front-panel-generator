@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.28.3
+
+- **Tabs for horizontal jacks on a bigger panel:** a jack at the edge of the PCB now gets its tab also when the panel is bigger than the PCB. The tab then starts 1.2 mm inside the border, so it doesn't touch it (or at the PCB edge if there is no border). Before, only a jack at the edge of the panel itself got a tab.
+- **Jacks a little short of the edge:** a jack counts as "at the edge" when its outline is within 1 mm of it. Many jack footprints stop a fraction of a millimetre short of the PCB edge, and these got no tab.
+
 ## 0.28.2
 
 - **The Remove link is easy to see:** *－ Remove the "Open Panel Generator" button from KiCad* is now a blue link, like the Add link. It was grey and looked like plain text.

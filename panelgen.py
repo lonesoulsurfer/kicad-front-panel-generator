@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.28.2"
+VERSION = "0.28.3"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -1989,6 +1989,17 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
     # 4. tabs for jacks on the panel edge (no hole, the plug goes in from the side): a filled tab hanging from the edge
     if a.art_tabs == 'on':
         px1, py1, px2, py2 = outline.bounds
+        # a jack on the edge of the PCB counts, also when the panel is bigger than the PCB. The tab then floats: it
+        # starts just inside the border (or at the PCB edge if there's no border) instead of hanging from the panel edge
+        pb = getattr(a, '_pcb_box', None) or (px1, py1, px2, py2)
+        inset = border_inset(a) + a.art_border_width + 1.2 if a.art_border == 'on' else None
+        def tab_edge(side):
+            pe, ce = (py1, pb[1]) if side == 'top' else (py2, pb[3])
+            if abs(ce - pe) < 0.5:
+                return pe, False                 # the panel edge is the PCB edge: the tab hangs from it, as before
+            if inset is not None:
+                return (py1 + inset if side == 'top' else py2 - inset), True
+            return ce, True
         edge_parts = []
         for L in placed:
             fp = fps.get(L['fid'])
@@ -1997,7 +2008,8 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             cb = courtyard_box(fp)
             if not cb:
                 continue
-            side = 'top' if cb[1] < py1 + 0.01 else 'bottom' if cb[3] > py2 - 0.01 else None
+            # at the edge: within 1 mm of it (a jack's outline often stops a little short of the PCB edge)
+            side = 'top' if cb[1] < pb[1] + 1.0 else 'bottom' if cb[3] > pb[3] - 1.0 else None
             if side:
                 edge_parts.append((side, cb, L))
         for side in ('top', 'bottom'):
@@ -2013,7 +2025,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
                     continue
                 h = run[0][2]['h']
                 sgn = 1 if side == 'top' else -1
-                edge_y = py1 if side == 'top' else py2
+                edge_y, floating = tab_edge(side)
                 ys = edge_y + sgn * (1.4 + h / 2)
                 # labels sharing a first word (MIDI IN, MIDI OUT): the rest over each jack, the shared word once underneath
                 words = [L['text'].split() for _, _, L in run]
@@ -2049,9 +2061,9 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
                 g_ = edits.get(tkey, {})                                  # made bigger in the window
                 l_, r_ = min(xs) - 1.5 - g_.get('l', 0.0), max(xs) + 1.5 + g_.get('r', 0.0)
                 if side == 'top':
-                    tab = rounded_box(l_, py1 - 3, r_, far + g_.get('b', 0.0), 1.2)
+                    tab = rounded_box(l_, edge_y if floating else py1 - 3, r_, far + g_.get('b', 0.0), 1.2)
                 else:
-                    tab = rounded_box(l_, far - g_.get('t', 0.0), r_, py2 + 3, 1.2)
+                    tab = rounded_box(l_, far - g_.get('t', 0.0), r_, edge_y if floating else py2 + 3, 1.2)
                 tab_areas.append(tab)
                 vis = tab.intersection(outline).bounds
                 a._tab_boxes.append(dict(key=tkey, kind='edge', edges='lrb' if side == 'top' else 'lrt', box=vis,
@@ -2788,10 +2800,12 @@ def main(argv=None, preview=None):
         if any(m.values()) or a.screws != 'none':
             log.append("NOTE  Eurorack panel: the panel size and holes are standard, so expand-panel and case-hole settings are ignored")
         a.screws = 'none'
+        a._pcb_box = None                         # Eurorack: tabs hang from the panel edge, as before
         rail_bad = []
         rail_warn = check_rails(pcb, tpl, x1, y1, x2, y2, log, rail_bad)
     else:
         bx1, by1, bx2, by2 = board_outline(pcb)
+        a._pcb_box = (bx1, by1, bx2, by2)
         x1, y1, x2, y2 = bx1 - m['left'], by1 - m['top'], bx2 + m['right'], by2 + m['bottom']
         log.append(f"pcb   {bx2-bx1:.2f} x {by2-by1:.2f} mm")
         log.append(f"panel {x2-x1:.2f} x {y2-y1:.2f} mm  (margins T{m['top']} R{m['right']} B{m['bottom']} L{m['left']})")
