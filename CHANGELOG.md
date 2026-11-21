@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.28.12
+
+- **Text sits where KiCad puts it:** the preview drew labels and your texts a little low (about 0.15 mm on 2 mm text with some fonts), so a box round a text looked off centre. The preview now puts the letters on the same baseline as KiCad does: half the text size below the text's middle.
+
 ## 0.28.11
 
 - **Ruler to the bottom of the letters:** in the preview, the bottom of the letters can be a little outside the label's box (UP above a window, say). A ruler that ends there now still finds the label, so it moves when you type a length. Up to 0.3 mm outside the box counts; the nearest label wins.

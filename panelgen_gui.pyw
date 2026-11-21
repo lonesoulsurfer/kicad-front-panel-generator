@@ -1543,8 +1543,12 @@ class App(tk.Tk):
             self.targets.append((im['box'], 'image', im))
         for L in pv.get('labels', []):
             px = -max(5, round(L['h'] * self.pg.KICAD_EM * sc))     # KiCad's em square is 1.4 x the text size
-            i = c.create_text(X(L['x']), Y(L['y']), text=L['text'], fill='#ffffff' if L['status'] == 'ok' else '#ffb347',
-                              font=(fam, px, 'bold' if pv.get('label_bold') else 'normal'))
+            fnt = (fam, px, 'bold' if pv.get('label_bold') else 'normal')
+            # KiCad puts the baseline of centred text half the text size below its middle, so the capitals sit in the
+            # label's box. Tk centres the whole line (with room for accents and descenders), which drew the letters
+            # low: draw them on KiCad's baseline instead.
+            i = c.create_text(X(L['x']), Y(L['y'] + L['h'] / 2) + self.font_descent(fnt), anchor='s', text=L['text'],
+                              fill='#ffffff' if L['status'] == 'ok' else '#ffb347', font=fnt)
             c.tag_bind(i, '<Enter>', lambda e, L=L: self.hover.config(
                 text=f"{L['ref']}  ·  label '{L['text']}'" + ('  ·  runs into something (see Result)' if L['status'] != 'ok' else '')
                      + ('  ·  drag to move, right-click to change or delete' if L.get('own') else '  ·  drag to move, click to edit')))
@@ -1607,6 +1611,16 @@ class App(tk.Tk):
     def to_mm(self, e):
         sc, ox, oy = self.cur_view
         return (e.x - ox) / sc, (e.y - oy) / sc
+
+    def font_descent(self, fnt):
+        """How far below the baseline Tk's line box reaches, in pixels, for this font (kept: asked on every redraw)."""
+        cache = self.__dict__.setdefault('_descents', {})
+        if fnt not in cache:
+            try:
+                cache[fnt] = tkfont.Font(family=fnt[0], size=fnt[1], weight=fnt[2]).metrics('descent')
+            except Exception:
+                cache[fnt] = round(abs(fnt[1]) * 0.21)
+        return cache[fnt]
 
     def target_at(self, e):
         if not getattr(self, 'cur_view', None) or not getattr(self, 'targets', None):
