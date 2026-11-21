@@ -110,6 +110,17 @@ class Tip:
         self.top = tk.Toplevel(self.w); self.top.wm_overrideredirect(True); self.top.wm_geometry(f'+{x}+{y}')
         tk.Label(self.top, text=self.text, justify='left', wraplength=340, bg='#fffbe6', fg='#222',
                  relief='solid', borderwidth=1, padx=8, pady=5).pack()
+        # keep it inside the window (and the screen): near the right edge it opens to the left, near the bottom above
+        self.top.update_idletasks()
+        tw, th = self.top.winfo_reqwidth(), self.top.winfo_reqheight()
+        win = self.w.winfo_toplevel()
+        right = min(win.winfo_rootx() + win.winfo_width(), self.w.winfo_screenwidth()) - 4
+        bottom = min(win.winfo_rooty() + win.winfo_height(), self.w.winfo_screenheight()) - 4
+        if x + tw > right:
+            x = max(win.winfo_rootx() + 4, right - tw)
+        if y + th > bottom:
+            y = max(4, self.w.winfo_rooty() - th - 4)
+        self.top.wm_geometry(f'+{x}+{y}')
 
     def hide(self, _=None):
         if self.top:

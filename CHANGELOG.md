@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.28.10
+
+- **Hover help stays on the screen:** the help that shows when you point at a button (for example Measure, Fit and Refresh at the top right) now stays inside the window. Near the right edge it opens to the left, and near the bottom it opens above the button.
+
 ## 0.28.9
 
 - **Type a length while you point at a text:** click the first point of a ruler, point at a label, your text, a picture or a line, type a length and press Enter. That item now moves to that distance. Before, only the ruler was drawn, and the text stayed where it was.
