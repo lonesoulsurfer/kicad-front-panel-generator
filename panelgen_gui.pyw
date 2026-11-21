@@ -10,7 +10,7 @@ CONFIG = os.path.join(os.environ.get('APPDATA') or os.path.expanduser('~'), 'pan
 
 DEFAULTS = dict(margin=0.0, margin_top=0.0, margin_right=0.0, margin_bottom=0.0, margin_left=0.0,
                 screws='none', screw_dia=2.2, screw_inset=3.5, screw_slot=0.0, rail_slot=0.0, screw_head='auto',
-                corner_radius=0.0, grow=0.0, svg=False, check_uncut='on',
+                corner_radius=0.0, grow=0.0, svg=False, check_uncut='on', copper='back',
                 artwork='off', labels='off', label_size=2.0, label_gap=1.5, label_pos='above', label_font='', label_bold='off', label_caps='off',
                 extras='on', auto_art='off', art_style='Classic synth', art_scale='ticks', art_rings='on', art_outputs='off', art_border='off',
                 art_border_radius=0.0, art_border_gap=0.0, art_border_width=0.6, ring_width=0.8, ring_gap=0.8, art_groups='off', art_tabs='off',
@@ -156,6 +156,7 @@ class App(tk.Tk):
         v['art_outputs'] = tk.BooleanVar(); v['art_border'] = tk.BooleanVar()
         for k in GROUP_KINDS:
             v['art_groups_' + k] = tk.BooleanVar()
+        v['copper'] = tk.BooleanVar(value=True)
         v['art_tabs'] = tk.BooleanVar(); v['border_radius'] = tk.StringVar(value='0')
         v['border_width'] = tk.StringVar(value='0.6')
         v['border_gap'] = tk.StringVar(value='0'); v['ring_width'] = tk.StringVar(value='0.8'); v['ring_gap'] = tk.StringVar(value='0.8')
@@ -314,6 +315,10 @@ class App(tk.Tk):
         f = self.form(s)
         c = field(f, 'Corner radius', 'Rounds the four corners of the panel. 0 = square corners.')
         self.w_radius = mm(c, 'radius')
+        c = field(f, 'Copper', "Copper over the back of the panel, 0.5 mm in from the edges and cutouts. Board houses such as "
+                               "JLCPCB work out the panel's size from its copper - with none, they can get it wrong. It also "
+                               "makes the panel stiffer. It's on the back, so the front looks the same.")
+        ttk.Checkbutton(c, text='On the back (helps board houses)', variable=v['copper']).pack(side='left')
 
         # rail holes (Eurorack)
         s = self.section('rail', 'Rail holes', '3.2 mm holes at the standard Eurorack positions. 4 holes from 10HP up.')
@@ -1161,6 +1166,7 @@ class App(tk.Tk):
         if s['rail_slot'] > 0:
             v['rslot'].set(f"{s['rail_slot']:g}")
         v['radius'].set(f"{s['corner_radius']:g}")
+        v['copper'].set(s.get('copper', 'back') == 'back')
         v['svg'].set(bool(s['svg']))
         v['art_on'].set(s['artwork'] == 'on')
         v['labels_on'].set(s['labels'] == 'on')
@@ -1317,7 +1323,7 @@ class App(tk.Tk):
             else:
                 args += ['--screws', 'none']
             args += ['--corner-radius', f"{self.number('radius', 'corner radius'):g}"]
-        args += ['--grow', '0', '--screw-head', self.screw_head()]
+        args += ['--grow', '0', '--screw-head', self.screw_head(), '--copper', 'back' if v['copper'].get() else 'off']
         size = self.number('label_size', 'label text size')          # your own texts use these too
         if size < 0.5:
             raise ValueError('Label text size must be at least 0.5 mm (1 mm or more is safer for silkscreen)')

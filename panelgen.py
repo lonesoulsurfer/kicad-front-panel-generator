@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.28.15"
+VERSION = "0.29.0"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -1742,6 +1742,24 @@ def import_artwork(svg_path, outline, log, cache_dir, dpi=600):
         log.append("WARN  the artwork is empty, or only white - nothing to put on the silkscreen")
     return pieces
 
+def copper_items(outline, groups, uuids, log, gap=0.5):
+    """Copper over the back of the panel, gap mm in from the edge and from every cutout. Board houses (JLCPCB, say) work
+    out a board's size from its copper: with none, they can take a cutout for the board. It also makes the panel stiffer."""
+    cu = outline.buffer(-gap, join_style=2)
+    if groups:
+        cu = cu.difference(unary_union([g['geom'] for g in groups]).buffer(gap))
+    out = []
+    for p in (cu.geoms if hasattr(cu, 'geoms') else [cu]):
+        if p.geom_type != 'Polygon' or p.area < 1.0:
+            continue
+        for q in fracture(p):
+            u = stable_uuid('copper', len(out)); uuids.append(u)
+            xy = ' '.join(f'(xy {fmt(x)} {fmt(y)})' for x, y in list(q.exterior.coords)[:-1])
+            out.append(f'\t(gr_poly (pts {xy}) (stroke (width 0) (type solid)) (fill yes) (layer "B.Cu") (uuid "{u}"))')
+    if out:
+        log.append(f"copper on the back, {gap:g} mm in from the edges and cutouts ({len(out)} pieces)")
+    return out
+
 def artwork_items(polys, uuids):
     out = []
     for n, p in enumerate(polys):
@@ -2817,6 +2835,9 @@ def main(argv=None, preview=None):
                     help='bring back a cutout you deleted in the panel (e.g. H1, CASE-tl, or "all"); repeatable')
     ap.add_argument('--no-uncut-check', dest='check_uncut', action='store_const', const='off', default=None,
                     help="don't list parts that look like they go through the panel but got no cutout")
+    ap.add_argument('--copper', choices=['back', 'off'],
+                    help="copper over the back of the panel, 0.5 mm in from every edge and cutout (default back): board houses "
+                         "work out the panel's size from it, and it stiffens the panel. 'off' for a panel with no copper")
     ap.add_argument('--labels', choices=['on', 'off'], help='add text labels from the PCB to the panel silkscreen (default off)')
     ap.add_argument('--label-size', type=float, help='label text height, mm (default 2.0)')
     ap.add_argument('--label-gap', type=float, help='gap between a cutout and its label, mm (default 1.5)')
@@ -2876,7 +2897,7 @@ def main(argv=None, preview=None):
     mem_path = re.sub(r'\.kicad_pcb$', '', out_path) + '.panelgen.json'
     saved = load_memory(mem_path).get('settings', {}) if a.again else {}
     defaults = dict(margin=0.0, corner_radius=0.0, screw_dia=2.2, screw_inset=3.5, screw_slot=0.0, rail_slot=0.0, screws='none', screw_head='auto',
-                    min_web=1.0, svg=False, grow=0.0, panel_layer='User.1', check_uncut='on',
+                    min_web=1.0, svg=False, grow=0.0, panel_layer='User.1', check_uncut='on', copper='back',
                     artwork='off', artwork_file='',
                     labels='off', label_size=2.0, label_gap=1.5, label_pos='above', label_font='', label_bold='off', label_caps='off',
                     extras='on', auto_art='off', art_style='', art_scale='ticks', art_rings='on', art_outputs='off', art_border='off', art_border_radius=0.0, art_border_gap=0.0, art_border_width=0.6, ring_width=0.8, ring_gap=0.8,
@@ -3170,7 +3191,7 @@ def main(argv=None, preview=None):
         return dict(margin=a.margin, **{f'margin_{k}': v for k, v in m.items()},
                                        screws=a.screws, screw_dia=a.screw_dia, screw_inset=a.screw_inset, screw_head=a.screw_head, screw_slot=a.screw_slot, rail_slot=a.rail_slot,
                                        corner_radius=a.corner_radius, grow=a.grow, min_web=a.min_web,
-                                       panel_layer=a.panel_layer, svg=bool(a.svg), check_uncut=a.check_uncut,
+                                       panel_layer=a.panel_layer, svg=bool(a.svg), check_uncut=a.check_uncut, copper=a.copper,
                                        labels=a.labels, label_size=a.label_size, label_gap=a.label_gap, label_pos=a.label_pos,
                                        label_font=a.label_font, label_bold=a.label_bold, label_caps=a.label_caps,
                                        artwork=a.artwork, artwork_file=a.artwork_file,
@@ -3205,6 +3226,8 @@ def main(argv=None, preview=None):
         generated[g['key']] = dict(describe(g), uuids=uuids[start:])
     items += label_items(placed, a, uuids)
     items += artwork_items(art, uuids)
+    if a.copper == 'back':
+        items += copper_items(outline, groups, uuids, log)
     # guides only, never manufactured: parts with no hole (an edge jack, a module), User.2 drawings, part sizes
     guides = [(m['geom'], m.get('text') or '') for m in getattr(a, '_markers', [])]
     guides += body_guides(ui.get('bodies', mem0.get('bodies', [])), groups, anchors)

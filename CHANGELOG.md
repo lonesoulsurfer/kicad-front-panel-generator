@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.29.0
+
+- **Copper on the back of the panel:** new panels get copper over the back, 0.5 mm in from the edges and from every cutout. Board houses such as JLCPCB work out a board's size from its copper; with none, JLCPCB took a pot cutout for the board (7.5 x 7.5 mm). It also makes the panel stiffer, and it is on the back, so the front looks the same. Switch it off on the Panel tab: Size and shape > Copper (or `--copper off`).
+
 ## 0.28.15
 
 - **No drill map in the gerber zip:** *Make gerbers* no longer adds KiCad's drill map drawings (the two *-drl_map.gbr* files). They are drawings for people, and a board house's upload page can take one for a layer of the board (JLCPCB showed a 7.5 x 7.5 mm board).
