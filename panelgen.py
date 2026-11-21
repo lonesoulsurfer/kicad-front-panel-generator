@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.28.4"
+VERSION = "0.28.5"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -1856,6 +1856,91 @@ def auto_scale_radius(a, fid=None):
         r += 0.5 + a.scale_text
     return r
 
+def own_tabs(a, placed, fps, no_hole, edits, edge_parts, pb, tab_edge, font, sbold, holes, keep_out, outline, shapes,
+             tab_areas, knocked, log):
+    """Edge tabs from your own texts: a jack at the PCB edge whose PCB label isn't shown, with texts you added over it
+    (between the border and the bottom of the jack). The texts stay where you put them and are cut out of a tab drawn
+    round them. Jacks that share a text (MIDI over IN and OUT) share one tab; a jack with a text of its own gets its own."""
+    done = {p[2]['fid'] for p in edge_parts}
+    jacks = []
+    for fid, fp in fps.items():
+        if fid not in no_hole or fid in done:
+            continue
+        cb = courtyard_box(fp)
+        if not cb:
+            continue
+        side = 'top' if cb[1] < pb[1] + 1.0 else 'bottom' if cb[3] > pb[3] - 1.0 else None
+        if side:
+            jacks.append((side, cb, fid, fp.ref))
+    if not jacks:
+        return
+    texts = []
+    for T in placed:
+        if not T.get('own'):
+            continue
+        ts = text_shapes(T['text'], T['x'], T['y'], T['h'], font, sbold)
+        if ts:
+            texts.append((T, ts, unary_union(ts).bounds))
+    for side in ('top', 'bottom'):
+        js = [j for j in jacks if j[0] == side]
+        if not js:
+            continue
+        top, floating = tab_edge(side)
+        # a text belongs to the jacks it sits over: across, it overlaps them; up and down, it is between the tab's
+        # edge and the far side of the jack
+        claims = []
+        row = sorted(js, key=lambda j: j[1][0])
+        for T, ts, tb in texts:
+            near = lambda j: (tb[1] >= top - 0.5 and (tb[1] + tb[3]) / 2 <= j[1][3] if side == 'top'
+                              else tb[3] <= top + 0.5 and (tb[1] + tb[3]) / 2 >= j[1][1])
+            over = {j[2] for j in row if near(j) and tb[2] > j[1][0] - 1.5 and tb[0] < j[1][2] + 1.5}
+            cx = (tb[0] + tb[2]) / 2               # a text over the gap between two jacks (MIDI over IN and OUT): both
+            for j1, j2 in zip(row, row[1:]):
+                if j1[1][2] <= cx <= j2[1][0] and near(j1) and near(j2) and j2[1][0] - j1[1][2] < 10:
+                    over |= {j1[2], j2[2]}
+            if over:
+                claims.append((T, ts, tb, over))
+        if not claims:
+            continue
+        group = {j[2]: j[2] for j in js}            # jacks that share a text are one group
+        def root(f):
+            while group[f] != f:
+                f = group[f]
+            return f
+        for *_, fids in claims:
+            fl = sorted(fids)
+            for f in fl[1:]:
+                group[root(f)] = root(fl[0])
+        for rid in sorted({root(next(iter(c[3]))) for c in claims}):
+            members = [j for j in js if root(j[2]) == rid]
+            if edits.get('tab:' + rid, {}).get('off'):         # deleted in the window
+                continue
+            cl = [c for c in claims if root(next(iter(c[3]))) == rid]
+            xs = [b for c in cl for b in (c[2][0], c[2][2])]
+            ys = [b for c in cl for b in (c[2][1], c[2][3])]
+            g_ = edits.get('tab:' + rid, {})
+            l_, r_ = min(xs) - 1.5 - g_.get('l', 0.0), max(xs) + 1.5 + g_.get('r', 0.0)
+            if side == 'top':
+                y0 = top if floating else top - 3
+                y1 = max(ys) + 1.4 + g_.get('b', 0.0)
+            else:
+                y0 = min(ys) - 1.4 - g_.get('t', 0.0)
+                y1 = top if floating else top + 3
+            tab = rounded_box(l_, y0, r_, y1, 1.2)
+            tab_areas.append(tab)
+            refs = ', '.join(j[3] for j in sorted(members, key=lambda j: j[1][0]))
+            a._tab_boxes.append(dict(key='tab:' + rid, kind='edge', edges='lrb' if side == 'top' else 'lrt',
+                                     box=tab.intersection(outline).bounds, ref=refs))
+            cut = unary_union([t for c in cl for t in c[1]])
+            for T, ts, tb, _f in cl:
+                knocked.add(T['fid'])
+                a._knock_boxes[T['fid']] = dict(box=tb, ref='edge tab', text=T['text'])
+            tab = tab.difference(cut)
+            if tab.intersects(keep_out):
+                log.append(f"NOTE  the edge tab for {refs} runs into a hole - it's trimmed there")
+            shapes.append(tab.difference(keep_out))
+
+
 def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=()):
     """Artwork made from the panel itself: pot scales, rings round buttons, outputs in filled boxes, a border and a
     title. Returns silkscreen polygons; labels that get cut out of an output box are taken off the plain labels."""
@@ -2012,6 +2097,8 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
             side = 'top' if cb[1] < pb[1] + 1.0 else 'bottom' if cb[3] > pb[3] - 1.0 else None
             if side:
                 edge_parts.append((side, cb, L))
+        own_tabs(a, placed, fps, no_hole, edits, edge_parts, pb, tab_edge, font, sbold, holes, keep_out,
+                 outline, shapes, tab_areas, knocked, log)
         for side in ('top', 'bottom'):
             row = sorted([p for p in edge_parts if p[0] == side], key=lambda p: p[1][0])
             runs = []

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.28.5
+
+- **Edge tabs from your own texts:** add texts over the jacks at the edge of the PCB (for example MIDI between two jacks, and IN and OUT over each), and Panel Generator draws the tab round them, where you put them, with the texts cut out. The jacks' labels from the PCB no longer have to be shown. Jacks that share a text share one tab; a jack with a text of its own gets its own tab.
+
 ## 0.28.4
 
 - **One tab for each group of jacks:** jacks next to each other share an edge tab only when their labels start with the same word. MIDI IN and MIDI OUT share one tab, with MIDI below them, and SYNC IN next to them gets its own tab.
