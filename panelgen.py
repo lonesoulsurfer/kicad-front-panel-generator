@@ -18,7 +18,21 @@ Footprint field "Panel" (optional; select the part in KiCad, press E, add a fiel
 import argparse, fnmatch, json, math, os, re, sys, uuid
 
 # where panel_rules.json and the libraries live: next to the .exe when packaged, next to this file otherwise
-APP_DIR = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+def app_dir():
+    """The Panel Generator folder: next to PanelGenerator.exe, or next to PanelGenerator.app on a Mac (the app runs
+    from .../PanelGenerator.app/Contents/MacOS). A Mac can also run the app from a hidden copy (an app downloaded from
+    the internet and not yet moved), so then it's the copy of panel_rules.json packed inside the app."""
+    if not getattr(sys, 'frozen', False):
+        return os.path.dirname(os.path.abspath(__file__))
+    d = os.path.dirname(sys.executable)
+    if sys.platform == 'darwin' and d.endswith(os.path.join('.app', 'Contents', 'MacOS')):
+        outside = os.path.dirname(os.path.dirname(os.path.dirname(d)))
+        if os.path.exists(os.path.join(outside, 'panel_rules.json')):
+            return outside
+        return getattr(sys, '_MEIPASS', outside)
+    return d
+
+APP_DIR = app_dir()
 from shapely.geometry import Point, Polygon, box, MultiPolygon, LineString
 from shapely.ops import unary_union
 from shapely import affinity
@@ -1199,6 +1213,9 @@ def font_file(family, bold=False):
     if key in _font_files:
         return _font_files[key]
     path = None
+    if sys.platform == 'darwin':
+        _font_files[key] = mac_font_file(family, bold)
+        return _font_files[key]
     try:
         import winreg
         hits = []
@@ -1232,6 +1249,36 @@ def font_file(family, bold=False):
             pass
     _font_files[key] = path if path and os.path.exists(path) else None
     return _font_files[key]
+
+_mac_fonts = None
+
+def mac_font_file(family, bold):
+    """A Mac font by its family name: the font folders are read once, with each file's own family and style names."""
+    global _mac_fonts
+    if _mac_fonts is None:
+        _mac_fonts = []
+        try:
+            from PIL import ImageFont
+        except ImportError:
+            return None
+        dirs = [os.path.expanduser('~/Library/Fonts'), '/Library/Fonts', '/System/Library/Fonts',
+                '/System/Library/Fonts/Supplemental']
+        for d in dirs:
+            for root, _, files in os.walk(d):
+                for fn in files:
+                    if not fn.lower().endswith(('.ttf', '.otf', '.ttc')):
+                        continue
+                    f = os.path.join(root, fn)
+                    for index in range(4 if fn.lower().endswith('.ttc') else 1):
+                        try:
+                            fam, style = ImageFont.truetype(f, 12, index=index).getname()
+                        except Exception:
+                            break
+                        _mac_fonts.append(((fam or '').lower(), (style or '').lower(), f, index))
+    fam = family.lower()
+    hits = [(('bold' in st) == bold, st in ('regular', 'bold', 'book', 'roman', 'medium'), f) for fa, st, f, i in _mac_fonts
+            if fa == fam and i == 0]
+    return sorted(hits, reverse=True)[0][2] if hits else None
 
 def text_width(text, h, bold=False, font=''):
     """Width of a label in mm. Measured from the real font when it can be found; KiCad's own font runs about

@@ -6,6 +6,8 @@ from tkinter import ttk, filedialog, messagebox, font as tkfont
 
 HERE = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+if getattr(sys, 'frozen', False) and HERE.endswith(os.path.join('.app', 'Contents', 'MacOS')):
+    HERE = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))     # a Mac app: the folder the app is in
 CONFIG = os.path.join(os.environ.get('APPDATA') or os.path.expanduser('~'), 'panelgen', 'gui.json')
 
 DEFAULTS = dict(margin=0.0, margin_top=0.0, margin_right=0.0, margin_bottom=0.0, margin_left=0.0,
@@ -43,7 +45,10 @@ KICAD_FONT = "KiCad's own font"
 HOLE_SIZES = ('3.2  ·  3 mm LED or M3 screw', '5.2  ·  5 mm LED or small toggle', '6.2  ·  3.5 mm jack', '6.5  ·  mini toggle switch',
               '7.5  ·  pot or encoder', '4  ·  6x6 tactile switch', '10  ·  6.35 mm jack', '2.7  ·  M2.5 screw', '2.2  ·  M2 screw')
 SHAPE_NAMES = {'hole': 'hole', 'rect': 'rectangle', 'slot': 'slot'}
-ALT_MASK = 0x20000 if sys.platform == 'win32' else 0x0008   # Alt held (on Windows, 0x0008 is Num Lock)
+# Alt held (on Windows, 0x0008 is Num Lock; on a Mac, Option is 0x0010 and 0x0008 is Command)
+ALT_MASK = 0x20000 if sys.platform == 'win32' else 0x0010 if sys.platform == 'darwin' else 0x0008
+MAC = sys.platform == 'darwin'
+MONO = ('Consolas', 9) if sys.platform == 'win32' else ('Menlo', 11) if MAC else ('DejaVu Sans Mono', 9)
 
 # preview colours
 C_BG, C_PANEL, C_PANEL_EDGE, C_HOLE = '#eef1f4', '#3b4754', '#1f262e', '#eef1f4'
@@ -66,8 +71,21 @@ def lock_file(path):
     return os.path.join(d, '~' + f + '.lck')
 
 
+def open_path(p):
+    """Open a file or folder the way double-clicking it would."""
+    if hasattr(os, 'startfile'):
+        os.startfile(p)
+    else:
+        subprocess.Popen(['open' if MAC else 'xdg-open', p])
+
+
 def find_kicad():
-    """Newest KiCad PCB editor on Windows, or None."""
+    """Newest KiCad PCB editor, or None. On a Mac, the pcbnew app inside the KiCad folder."""
+    if MAC:
+        for p in ('/Applications/KiCad/pcbnew.app', os.path.expanduser('~/Applications/KiCad/pcbnew.app')):
+            if os.path.isdir(p):
+                return p
+        return None
     hits = glob.glob(r'C:\Program Files\KiCad\*\bin\pcbnew.exe')
     def ver(p):
         m = re.search(r'KiCad\\([\d.]+)\\', p)
@@ -642,6 +660,8 @@ class App(tk.Tk):
         Tip(self.w_undo, 'Take back the last change (Ctrl+Z): a setting on the left, or a move, text, picture, box '
                          'or label edit in the preview. Up to 50 steps.')
         self.bind_all('<Control-z>', self.undo); self.bind_all('<Control-Z>', self.undo)
+        if MAC:                                      # on a Mac, Command does what Ctrl does on Windows
+            self.bind_all('<Command-z>', self.undo); self.bind_all('<Command-Z>', self.undo)
 
         Tip(fb, 'Show the whole panel again. Mouse wheel zooms in and out where the pointer is; drag with the right '
                 '(or middle) mouse button to move around; double-click also fits.')
@@ -666,11 +686,12 @@ class App(tk.Tk):
         self.bind_all('<Delete>', lambda e: None if typing() else self.delete_selected())
         for key, (ax, ay) in (('Left', (-1, 0)), ('Right', (1, 0)), ('Up', (0, -1)), ('Down', (0, 1))):
             self.bind_all(f'<{key}>', lambda e, ax=ax, ay=ay: None if typing() else self.nudge(e, ax, ay))
-        self.bind_all('<Control-d>', lambda e: None if typing() else self.shapes_duplicate())
-        for k in ('c', 'C'):
-            self.bind_all(f'<Control-{k}>', lambda e: None if typing() else self.copy_selected())
-        for k in ('v', 'V'):
-            self.bind_all(f'<Control-{k}>', lambda e: None if typing() else self.paste())
+        for mod in ('Control', 'Command') if MAC else ('Control',):
+            self.bind_all(f'<{mod}-d>', lambda e: None if typing() else self.shapes_duplicate())
+            for k in ('c', 'C'):
+                self.bind_all(f'<{mod}-{k}>', lambda e: None if typing() else self.copy_selected())
+            for k in ('v', 'V'):
+                self.bind_all(f'<{mod}-{k}>', lambda e: None if typing() else self.paste())
         self.clip, self.mouse, self.pasted_at = None, None, None
         self.multi = []                              # several texts, labels, lines or pictures picked at once
         self.bind_all('<Escape>', self.escape)
@@ -700,14 +721,14 @@ class App(tk.Tk):
         ttk.Label(right, text='Result', style='Head.TLabel').grid(row=5, column=0, sticky='w', pady=(8, 4))
         outf = self.result_box = ttk.Frame(right, height=int(self.cfg.get('result_h', 150))); outf.grid(row=6, column=0, sticky='nsew')
         outf.pack_propagate(False)                # its height is what you drag it to
-        self.out = tk.Text(outf, height=5, wrap='word', font=('Consolas', 9), relief='flat',
+        self.out = tk.Text(outf, height=5, wrap='word', font=MONO, relief='flat',
                            highlightthickness=1, highlightbackground='#d5dbe1', padx=8, pady=6)
         sb = ttk.Scrollbar(outf, command=self.out.yview); self.out['yscrollcommand'] = sb.set
         sb.pack(side='right', fill='y'); self.out.pack(fill='both', expand=True)
         for tag, colour in (('ERROR', C_ERR_TXT), ('WARN', C_WARN_TXT), ('CHECK', C_WARN_TXT), ('NOTE', '#777777'),
                             ('ok', C_OK_TXT), ('head', '#000000'), ('dim', '#888888')):
             self.out.tag_configure(tag, foreground=colour)
-        self.out.tag_configure('head', font=('Consolas', 9, 'bold'))
+        self.out.tag_configure('head', font=MONO + ('bold',))
         self.out.tag_configure('fold', foreground='#2563eb', underline=True)
         self.out.tag_bind('fold', '<Button-1>', lambda e: self.toggle_notes())
         self.out.tag_bind('fold', '<Enter>', lambda e: self.out.config(cursor='hand2'))
@@ -957,15 +978,15 @@ class App(tk.Tk):
             if ink:
                 gui_exe = ink[:-4] + '.exe' if ink.lower().endswith('.com') else ink
                 subprocess.Popen([gui_exe, f])
-            elif hasattr(os, 'startfile'):
-                os.startfile(f)
+            else:
+                open_path(f)
         except OSError as e:
             messagebox.showerror('Panel Generator', f"Couldn't open Inkscape ({e}). Open {f} yourself.")
 
     def open_folder(self):
         d = os.path.dirname(panel_paths(self.board.get())[0]) if self.board.get() else None
-        if d and os.path.isdir(d) and hasattr(os, 'startfile'):
-            os.startfile(d)
+        if d and os.path.isdir(d):
+            open_path(d)
         elif d:
             messagebox.showinfo('Panel Generator', f"The panel folder is:\n{d}" + ('' if os.path.isdir(d) else '\n(not made yet)'))
 
@@ -4285,10 +4306,12 @@ class App(tk.Tk):
     def open_panel(self, panel):
         try:
             kicad = find_kicad()
-            if kicad:
+            if kicad and MAC:
+                subprocess.Popen(['open', '-a', kicad, panel])
+            elif kicad:
                 subprocess.Popen([kicad, panel])
-            elif hasattr(os, 'startfile'):
-                os.startfile(panel)
+            else:
+                open_path(panel)
         except OSError as e:
             self.write([('WARN', f"Couldn't open KiCad automatically ({e}). Open {panel} yourself.\n")])
 
@@ -4509,7 +4532,11 @@ PCM_DIR = 'com_github_lonesoulsurfer_panel-generator-button'    # its folder whe
 def button_source():
     """The plugin's files that came with this app (the kicad-plugin folder next to it), or None."""
     base = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
-    for p in (os.path.join(base, 'kicad-plugin', 'plugins'), os.path.join(base, '_internal', 'kicad-plugin', 'plugins')):
+    places = [os.path.join(base, 'kicad-plugin', 'plugins'), os.path.join(base, '_internal', 'kicad-plugin', 'plugins')]
+    if MAC and getattr(sys, 'frozen', False):        # next to PanelGenerator.app, or packed inside it
+        places = [os.path.join(HERE, 'kicad-plugin', 'plugins'),
+                  os.path.join(getattr(sys, '_MEIPASS', base), 'kicad-plugin', 'plugins')] + places
+    for p in places:
         if os.path.isfile(os.path.join(p, '__init__.py')):
             return p
     return None
