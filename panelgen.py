@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.28.13"
+VERSION = "0.28.14"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -2486,6 +2486,15 @@ def text_boxes(placed, texts, edits, a, groups, outline, log):
                     a._knock_boxes[M['fid']] = dict(box=unary_union(mt).bounds, ref=M['ref'], text=M['text'], h=M['h'])
         else:
             shape = shape.difference(shape.buffer(-0.3, join_style=1))
+            # the text goes on the panel as the same outlines the box was measured from, not as KiCad text: KiCad puts
+            # TrueType text a little higher than its size says (about 0.07 x the size with some fonts), which left it
+            # off centre in its box
+            for M in [L] + inner:
+                mt = txt if M is L else text_shapes(M['text'], M['x'], M['y'], M['h'], font, sbold)
+                if mt:
+                    polys += mt
+                    knocked.add(M['fid'])
+                    a._knock_boxes[M['fid']] = dict(box=unary_union(mt).bounds, ref=M['ref'], text=M['text'], h=M['h'])
         taken |= {M['fid'] for M in inner}
         a._tab_boxes.append(dict(key=key, kind='textbox', edges='lrtb', box=bx, ref=f"'{L['text']}'", anchor=anchor,
                                  members=[L['fid']] + [M['fid'] for M in inner]))

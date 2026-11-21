@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.28.14
+
+- **Text in a line box is centred in KiCad too:** a text with *A line round it* is now put on the panel as outlines, the same outlines the box is measured from, as a text in a filled bar already was. KiCad draws TrueType text a little higher than its size says (about 0.07 x the size with some fonts), so the text sat high in its box in KiCad, though it looked right in the preview.
+
 ## 0.28.13
 
 - **Boxes centred on the letters:** with your own font, text cut out of a bar or tab, and the box round a text, are now made from the letters as KiCad draws them (an em square 1.4 x the text size, the baseline half the size below the middle). Before, Panel Generator made the capitals exactly the text size, so with many fonts the printed text sat a little low in its box. Panels with KiCad's own font are unchanged.
