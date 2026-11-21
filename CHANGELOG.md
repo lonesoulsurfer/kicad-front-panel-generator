@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.28.8
+
+- **Right-click a hole inside a box:** a hole inside a box round pots (or inside a tab) now gives the hole's own menu, with *Add a shape round it* and *Show the part's size round it*. Right-click the box away from the holes for the box's menu.
+- **Ruler to the top of the letters:** end a ruler on a label where you see it (for example the top of its letters, a little inside its box), click the figure and type a length. The label now moves so that point is at that distance. Before, the ruler had to end exactly on the edge of the label's box.
+
 ## 0.28.7
 
 - **Edge tabs for jacks on a module:** a jack that is part of a module (for example the line out on a PCM5102 DAC board) now gets an edge tab from your own texts, as other jacks do. Panel Generator uses the jack's outline on User.2 in the module's footprint, and the jack can be up to 2.5 mm in from the PCB edge.

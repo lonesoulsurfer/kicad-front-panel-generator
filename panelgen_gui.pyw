@@ -2952,6 +2952,13 @@ class App(tk.Tk):
             mid = abs(x - (b[0] + b[2]) / 2) <= eps and abs(y - (b[1] + b[3]) / 2) <= eps
             if on_v or on_h or mid:
                 return self.ruler_key_of(t)
+        # not on an edge, but on the thing itself - the top of the letters of a label, say, which is a little inside
+        # its box: that's what you see and aim at. It moves so the point you picked is at the new distance.
+        for t in reversed(getattr(self, 'targets', [])):
+            if self.ruler_movable(t) and t[1] != 'line' and not (t[1] == 'tab'):
+                b = t[0]
+                if b[0] - eps <= x <= b[2] + eps and b[1] - eps <= y <= b[3] + eps:
+                    return self.ruler_key_of(t)
         return None
 
     def ruler_target(self, key):
@@ -3828,6 +3835,9 @@ class App(tk.Tk):
 
     def context_menu(self, e):
         t = self.target_at(e)
+        if t and t[1] == 'tab' and t[2].get('kind') != 'mark' and getattr(self, 'cur_view', None):
+            if self.hole_at(*self.to_mm(e)):           # a hole inside a box round pots or a tab: the hole's own menu
+                t = None
         if not t:
             if not self.pv or 'message' in self.pv or not getattr(self, 'cur_view', None):
                 return
