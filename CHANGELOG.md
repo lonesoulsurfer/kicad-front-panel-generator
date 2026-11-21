@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.28.11
+
+- **Ruler to the bottom of the letters:** in the preview, the bottom of the letters can be a little outside the label's box (UP above a window, say). A ruler that ends there now still finds the label, so it moves when you type a length. Up to 0.3 mm outside the box counts; the nearest label wins.
+
 ## 0.28.10
 
 - **Hover help stays on the screen:** the help that shows when you point at a button (for example Measure, Fit and Refresh at the top right) now stays inside the window. Near the right edge it opens to the left, and near the bottom it opens above the button.

@@ -2965,12 +2965,17 @@ class App(tk.Tk):
                 return self.ruler_key_of(t)
         # not on an edge, but on the thing itself - the top of the letters of a label, say, which is a little inside
         # its box: that's what you see and aim at. It moves so the point you picked is at the new distance.
+        # The letters on screen can reach a little past the label's box (the bottom of UP, say), so allow a small margin.
+        pad = max(0.3, 6 / self.cur_view[0]) if getattr(self, 'cur_view', None) else 0.3
+        best = None
         for t in reversed(getattr(self, 'targets', [])):
             if self.ruler_movable(t) and t[1] != 'line' and not (t[1] == 'tab'):
                 b = t[0]
-                if b[0] - eps <= x <= b[2] + eps and b[1] - eps <= y <= b[3] + eps:
-                    return self.ruler_key_of(t)
-        return None
+                if b[0] - pad <= x <= b[2] + pad and b[1] - pad <= y <= b[3] + pad:
+                    out = max(b[0] - x, x - b[2], b[1] - y, y - b[3], 0.0)     # 0 inside the box
+                    if best is None or out < best[0]:
+                        best = (out, t)
+        return self.ruler_key_of(best[1]) if best else None
 
     def ruler_target(self, key):
         if not key:
