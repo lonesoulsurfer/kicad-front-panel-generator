@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.28.9
+
+- **Type a length while you point at a text:** click the first point of a ruler, point at a label, your text, a picture or a line, type a length and press Enter. That item now moves to that distance. Before, only the ruler was drawn, and the text stayed where it was.
+
 ## 0.28.8
 
 - **Right-click a hole inside a box:** a hole inside a box round pots (or inside a tab) now gives the hole's own menu, with *Add a shape round it* and *Show the part's size round it*. Right-click the box away from the holes for the box's menu.

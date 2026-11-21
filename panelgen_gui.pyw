@@ -3068,6 +3068,12 @@ class App(tk.Tk):
             if length > 0 and not picking:             # a ruler that's set: what it measured to moves to fit
                 self.len_buf = ''
                 return self.ruler_length(length)
+            if length > 0 and picking and self.mouse:   # pointing at a text, picture or line you can move: it moves to
+                self.len_buf = ''                          # that distance, as if you'd clicked it and typed on the ruler
+                p = self.measure_point(E_(self.mouse))     # (where the pointer is, not where the typed length reaches)
+                if self.ruler_owner(p):
+                    self.set_ruler(p)
+                    return self.ruler_length(length)
             if length > 0:
                 ax, ay = self.measure[0]
                 if picking:
