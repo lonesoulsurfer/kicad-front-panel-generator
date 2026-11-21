@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.28.4
+
+- **One tab for each group of jacks:** jacks next to each other share an edge tab only when their labels start with the same word. MIDI IN and MIDI OUT share one tab, with MIDI below them, and SYNC IN next to them gets its own tab.
+- **Your own title for a tab:** right-click the title below the labels in an edge tab (for example MIDI) and select *Change title…*. The labels themselves change with *Change text…*, as before.
+
 ## 0.28.3
 
 - **Tabs for horizontal jacks on a bigger panel:** a jack at the edge of the PCB now gets its tab also when the panel is bigger than the PCB. The tab then starts 1.2 mm inside the border, so it doesn't touch it (or at the PCB edge if there is no border). Before, only a jack at the edge of the panel itself got a tab.

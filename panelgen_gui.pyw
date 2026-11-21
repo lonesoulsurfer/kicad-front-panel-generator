@@ -3900,9 +3900,11 @@ class App(tk.Tk):
             m.add_command(label='Back to its own size', command=lambda: (self.ui['label_edits'].pop(d['key'], None),
                                                                          self.persist_ui(), self.update_preview()))
             m.add_command(label='Delete box', command=lambda: (self.select(t), self.delete_selected()))
+        elif str(d['fid']).startswith('tabword:'):     # the title under the labels in an edge tab (MIDI under IN and OUT)
+            m.add_command(label='Change title…', command=lambda: self.label_change(d))
+            m.add_command(label='Put it back where it was', command=lambda: self.label_reset(d['fid']))
         else:
-            if not str(d['fid']).startswith('tabword:'):
-                m.add_command(label='Change text…', command=lambda: self.label_change(d))
+            m.add_command(label='Change text…', command=lambda: self.label_change(d))
             m.add_command(label='Edit labels…', command=lambda: (self.edit_labels(), self.editor.focus_row(d['fid'])))
             m.add_command(label='Put it back where it was', command=lambda: self.label_reset(d['fid']))
             m.add_command(label='Hide this label', command=lambda: self.label_hide(d['fid']))

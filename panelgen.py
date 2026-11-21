@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.28.3"
+VERSION = "0.28.4"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -2015,8 +2015,9 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
         for side in ('top', 'bottom'):
             row = sorted([p for p in edge_parts if p[0] == side], key=lambda p: p[1][0])
             runs = []
-            for p in row:                         # neighbours less than 10 mm apart share one tab
-                if runs and p[1][0] - runs[-1][-1][1][2] < 10:
+            first = lambda p: (p[2]['text'].split() or [''])[0].lower()
+            for p in row:                         # neighbours less than 10 mm apart, whose labels start with the same
+                if runs and p[1][0] - runs[-1][-1][1][2] < 10 and first(p) == first(runs[-1][-1]):   # word, share a tab
                     runs[-1].append(p)
                 else:
                     runs.append([p])
@@ -2050,6 +2051,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
                     wkey = 'tabword:' + run[0][2]['fid']            # the shared word can be dragged too
                     ew = edits.get(wkey, {})
                     y2_ = ys + sgn * (h * 1.7 + 0.8) + ew.get('dy', 0.0)
+                    shared = (ew.get('text') or shared).strip() or shared          # you can type your own title
                     ts = text_shapes(shared, (min(xs) + max(xs)) / 2 + ew.get('dx', 0.0), y2_, h * 1.15, font, sbold)
                     if ts:
                         txts += ts
