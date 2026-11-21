@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.28.12"
+VERSION = "0.28.13"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -1766,7 +1766,8 @@ def part_kind(c, fp=None):
 _text_cache = {}
 
 def text_shapes(text, cx, cy, h, font='', bold=False):
-    """Text as silkscreen polygons, its capital letters h mm tall and centred on (cx, cy). Uses the font's own shapes,
+    """Text as silkscreen polygons centred on (cx, cy), as KiCad draws it: in your font, an em square KICAD_EM x h with
+    the baseline h/2 below cy; in KiCad's own font (no font set), capital letters h mm tall. Uses the font's own shapes,
     so it can be cut out of a filled shape (KiCad's text can't). The same words at the same size are drawn once and kept:
     the preview asks for them every time anything changes."""
     key = (text, round(h, 4), font, bool(bold))
@@ -1793,10 +1794,15 @@ def _text_shapes(text, cx, cy, h, font='', bold=False):
         except TypeError:
             return ImageFont.load_default()
     ppm = 40                                                    # pixels per mm: 0.025 mm steps
-    f0 = load(200)
-    cap = f0.getbbox('H', anchor='ls')
-    cap_px = max(1, cap[3] - cap[1])
-    f = load(max(4, round(200 * h * ppm / cap_px)))
+    if path and font:
+        # your font: drawn as KiCad draws it, so cut-out text matches the printed labels and a box round it is centred
+        # on the letters KiCad prints - an em square KICAD_EM x the size, the baseline half the size below the middle
+        f = load(max(4, round(h * KICAD_EM * ppm)))
+    else:
+        f0 = load(200)                                          # KiCad's own font: capitals the size tall
+        cap = f0.getbbox('H', anchor='ls')
+        cap_px = max(1, cap[3] - cap[1])
+        f = load(max(4, round(200 * h * ppm / cap_px)))
     l, t, r, b = f.getbbox(text, anchor='ls')
     pad = 4
     im = Image.new('L', (r - l + 2 * pad, b - t + 2 * pad), 255)
@@ -1804,7 +1810,7 @@ def _text_shapes(text, cx, cy, h, font='', bold=False):
     cap_s = f.getbbox('H', anchor='ls')
     base_row = pad - t                                         # the baseline, in image rows
     x0 = cx - im.width / ppm / 2
-    y0 = cy + (cap_s[3] - cap_s[1]) / ppm / 2 - base_row / ppm
+    y0 = cy + (h if path and font else (cap_s[3] - cap_s[1]) / ppm) / 2 - base_row / ppm
     fd, png = tempfile.mkstemp(suffix='.png'); os.close(fd)
     try:
         im.save(png)

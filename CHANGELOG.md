@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.28.13
+
+- **Boxes centred on the letters:** with your own font, text cut out of a bar or tab, and the box round a text, are now made from the letters as KiCad draws them (an em square 1.4 x the text size, the baseline half the size below the middle). Before, Panel Generator made the capitals exactly the text size, so with many fonts the printed text sat a little low in its box. Panels with KiCad's own font are unchanged.
+
 ## 0.28.12
 
 - **Text sits where KiCad puts it:** the preview drew labels and your texts a little low (about 0.15 mm on 2 mm text with some fonts), so a box round a text looked off centre. The preview now puts the letters on the same baseline as KiCad does: half the text size below the text's middle.
