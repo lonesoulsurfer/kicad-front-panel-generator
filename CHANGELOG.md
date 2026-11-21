@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.28.6
+
+- **Move the texts in an edge tab:** you can drag a text inside an edge tab again. Before, the click on the text failed and the text stayed where it was.
+- **Even sides on an edge tab:** drag the left or right side of an edge tab, and the other side moves the same distance, so the tab stays centred on its jacks. Hold Shift to move only one side.
+
 ## 0.28.5
 
 - **Edge tabs from your own texts:** add texts over the jacks at the edge of the PCB (for example MIDI between two jacks, and IN and OUT over each), and Panel Generator draws the tab round them, where you put them, with the texts cut out. The jacks' labels from the PCB no longer have to be shown. Jacks that share a text share one tab; a jack with a text of its own gets its own tab.

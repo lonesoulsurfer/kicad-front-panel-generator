@@ -24,7 +24,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.28.5"
+VERSION = "0.28.6"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -1934,7 +1934,7 @@ def own_tabs(a, placed, fps, no_hole, edits, edge_parts, pb, tab_edge, font, sbo
             cut = unary_union([t for c in cl for t in c[1]])
             for T, ts, tb, _f in cl:
                 knocked.add(T['fid'])
-                a._knock_boxes[T['fid']] = dict(box=tb, ref='edge tab', text=T['text'])
+                a._knock_boxes[T['fid']] = dict(box=tb, ref='edge tab', text=T['text'], h=T['h'])
             tab = tab.difference(cut)
             if tab.intersects(keep_out):
                 log.append(f"NOTE  the edge tab for {refs} runs into a hole - it's trimmed there")
@@ -2128,7 +2128,7 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
                         txts += ts
                         tb = unary_union(ts).bounds
                         xs += [tb[0], tb[2]]
-                        a._knock_boxes[L['fid']] = dict(box=tb, ref=L['ref'], text=L['text'])
+                        a._knock_boxes[L['fid']] = dict(box=tb, ref=L['ref'], text=L['text'], h=L['h'])
                     xs += [cx - 3.5, cx + 3.5]
                     knocked.add(L['fid'])
                 far = max([ys + sgn * (h / 2 + 1.4)] + [(b['box'][3] + 1.4) if side == 'top' else (b['box'][1] - 1.4)

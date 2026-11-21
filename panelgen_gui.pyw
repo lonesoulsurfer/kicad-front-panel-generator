@@ -1771,7 +1771,7 @@ class App(tk.Tk):
         round text, and the ends of a bar shared by several labels. Hold Shift to move just the one edge."""
         if getattr(e, 'state', 0) & 0x0001:
             return False
-        if d['kind'] == 'group':
+        if d['kind'] in ('group', 'edge'):         # a tab along the edge: its sides stay even about its jacks
             return edge in 'lr'
         if d['kind'] == 'mark':                   # a box round a hole: its sides stay even, its top or bottom reaches for a label
             return edge in 'lr' or d.get('shape') != 'box'
@@ -2486,7 +2486,7 @@ class App(tk.Tk):
                 x = num(v, 0.8, 30)
                 if o and x and abs(x - float(o.get('size') or 0)) > 1e-6:
                     o['size'] = round(x, 2); self.persist_ui(); self.update_preview()
-            entry(row, f"{d['h']:g}", sets); ttk.Label(row, text='mm').pack(side='left')
+            entry(row, f"{float(d.get('h') or (o or {}).get('size') or 0):g}", sets); ttk.Label(row, text='mm').pack(side='left')
             self.box_choice(fld('Box'), o.get('box') if o else None, lambda v: (o.__setitem__('box', v) if v else o.pop('box', None),
                                                                          self.persist_ui(), self.update_preview()))
             ttk.Button(box, text='Delete text', command=lambda: (self.text_delete(d['fid']), self.select(None))).pack(anchor='w', pady=(6, 0))
