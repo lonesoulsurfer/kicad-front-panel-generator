@@ -2,10 +2,10 @@
 
 Panel Generator makes a front panel PCB from your KiCad PCB.
 
-[![Download Panel Generator for Windows](https://img.shields.io/github/v/release/lonesoulsurfer/kicad-front-panel-generator?label=%E2%AC%87%20Download%20Panel%20Generator&style=for-the-badge&color=2563eb)](https://github.com/lonesoulsurfer/kicad-front-panel-generator/releases/latest)
+[![Download Panel Generator for Windows and Mac](https://img.shields.io/github/v/release/lonesoulsurfer/kicad-front-panel-generator?label=%E2%AC%87%20Download%20Panel%20Generator&style=for-the-badge&color=2563eb)](https://github.com/lonesoulsurfer/kicad-front-panel-generator/releases/latest)
 
-**[⬇ Download Panel Generator for Windows](https://github.com/lonesoulsurfer/kicad-front-panel-generator/releases/latest)**: on that page, under **Assets**, click **`PanelGenerator-v…-windows.zip`**.
-⚠️ **Do not use the green *Code → Download ZIP* button.** That zip has only the source code. It does not have the app (`PanelGenerator.exe`).
+**[⬇ Download Panel Generator](https://github.com/lonesoulsurfer/kicad-front-panel-generator/releases/latest)**: on that page, under **Assets**, click **`PanelGenerator-v…-windows.zip`** for Windows, or **`PanelGenerator-v…-mac.zip`** for a Mac (M1 or later).
+⚠️ **Do not use the green *Code → Download ZIP* button.** That zip has only the source code. It does not have the app.
 
 [![Sponsor lonesoulsurfer](https://img.shields.io/badge/%E2%99%A5%20Sponsor-lonesoulsurfer-db61a2?style=for-the-badge)](https://github.com/sponsors/lonesoulsurfer)
 
@@ -25,11 +25,13 @@ You do not have to copy the parts onto a User layer. You do not have to export t
 
 ## What you need
 
-- **Windows.** To use the source code on macOS or Linux, see the [technical guide](docs/TECHNICAL.md#run-from-source-windows-macos-linux).
+- **Windows**, or a **Mac with Apple Silicon (M1 or later)**. There is no app for Intel Macs or Linux. To use the source code on them, see the [technical guide](docs/TECHNICAL.md#run-from-source-windows-macos-linux).
 - **KiCad 9 or 10.**
 - **[Inkscape](https://inkscape.org) 1.2 or later.** You need it only if you draw your own artwork.
 
 ## Install
+
+### Windows
 
 1. **[Download Panel Generator](https://github.com/lonesoulsurfer/kicad-front-panel-generator/releases/latest).** Under **Assets**, click **`PanelGenerator-v…-windows.zip`**. Do not click *Source code*.
 2. Unzip the file into a folder of your choice.
@@ -42,6 +44,24 @@ You do not have to copy the parts onto a User layer. You do not have to export t
    3. Add `PanelParts.pretty` from the Panel Generator folder. It has extra panel holes, for example jacks and screws.
    4. Add `Eurorack.pretty`. It has the Eurorack templates.
 
+### Mac (M1 or later)
+
+1. Put KiCad in the correct place. In Finder, make sure that the **KiCad** folder (with **KiCad.app** and **pcbnew.app** in it) is in **Applications**. If the KiCad folder is on the Desktop or in Downloads, drag it to **Applications** in the Finder sidebar. Panel Generator can find KiCad in other places too, but Applications is the safest place.
+2. **[Download Panel Generator](https://github.com/lonesoulsurfer/kicad-front-panel-generator/releases/latest).** Under **Assets**, click **`PanelGenerator-v…-mac.zip`**. Do not click *Source code*.
+3. In **Downloads**, double-click the zip file. The Mac unzips it to a `PanelGenerator` folder.
+4. Drag the `PanelGenerator` folder to a place of your choice, for example **Documents** or **Applications**. Keep all the files in the folder together.
+5. Open the app the first time. The Mac blocks it, because the app does not have a paid Apple signature. Do one of these:
+   - **Right-click** (or Control-click) **PanelGenerator.app**, click **Open**, then click **Open** again in the message.
+   - Or double-click **PanelGenerator.app** and click **Done**. Then open **System Settings → Privacy & Security**, scroll down to *"PanelGenerator" was blocked*, click **Open Anyway** and type your Mac password. Then double-click **PanelGenerator.app** again.
+
+   You do this one time only. After that, the app opens with a usual double-click.
+6. *(Optional)* Add the **Open Panel Generator** button to KiCad. See [Open it from KiCad](#open-it-from-kicad).
+7. *(Optional)* Add the two footprint libraries to KiCad, as in step 6 for Windows. On a Mac, the menu is **KiCad → Preferences → Manage Footprint Libraries** (in the PCB editor).
+
+**Mac keys and mouse:** where this guide says **Alt**, use **Option**. Where it says **Ctrl**, use **Command** (for example **Command+Z** to undo). Where it says right-click, click with two fingers on the trackpad, or Control-click.
+
+**Your fonts:** to use your own font on a Mac, install it first: double-click the font file and click **Install Font**. Then select it on the **Artwork** tab.
+
 ### Open it from KiCad
 
 Panel Generator can add an **Open Panel Generator** button to the KiCad PCB editor. When you click the button, Panel Generator opens with the board that is open in KiCad. The button operates in KiCad 7, 8, 9 and 10.
@@ -52,7 +72,7 @@ Panel Generator can add an **Open Panel Generator** button to the KiCad PCB edit
 
 Panel Generator reads the PCB file that is saved on the disk. Save the board in KiCad before you click the button. Each time you save in KiCad, Panel Generator updates the panel.
 
-If you move the Panel Generator folder, run `PanelGenerator.exe` one time from the new folder. The button then finds the app again.
+If you move the Panel Generator folder, open the app (`PanelGenerator.exe` or `PanelGenerator.app`) one time from the new folder. The button then finds the app again.
 
 **To remove the button:** in Panel Generator, click the blue link **－ Remove the "Open Panel Generator" button from KiCad** (in the same place, below the name of your PCB). Then close the KiCad PCB editor and open it again. If you installed the button with the Plugin and Content Manager, remove it there: click the **Installed** tab, click **Uninstall** on *Panel Generator button*, then click **Apply Pending Changes**.
 

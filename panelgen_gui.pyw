@@ -47,6 +47,7 @@ HOLE_SIZES = ('3.2  ·  3 mm LED or M3 screw', '5.2  ·  5 mm LED or small toggl
 SHAPE_NAMES = {'hole': 'hole', 'rect': 'rectangle', 'slot': 'slot'}
 # Alt held (on Windows, 0x0008 is Num Lock; on a Mac, Option is 0x0010 and 0x0008 is Command)
 ALT_MASK = 0x20000 if sys.platform == 'win32' else 0x0010 if sys.platform == 'darwin' else 0x0008
+STRAIGHT_MASK = 0x0005 | (0x0008 if sys.platform == 'darwin' else 0)   # Shift or Ctrl, and Command on a Mac
 MAC = sys.platform == 'darwin'
 MONO = ('Consolas', 9) if sys.platform == 'win32' else ('Menlo', 11) if MAC else ('DejaVu Sans Mono', 9)
 
@@ -3103,7 +3104,7 @@ class App(tk.Tk):
     def ruler_key(self, e):
         """Typing a length: after the first point it sets the second that far away (towards the pointer, dead level or
         straight up if it's nearly so); on a ruler that's already set it changes its length."""
-        if isinstance(self.focus_get(), (ttk.Entry, tk.Entry, ttk.Combobox)) or (e.state & 0x0004):
+        if isinstance(self.focus_get(), (ttk.Entry, tk.Entry, ttk.Combobox)) or (e.state & (0x0004 | (0x0008 if MAC else 0))):
             return
         if e.keysym in ('m', 'M') and not self.adding:
             return self.start_measure()
@@ -3170,7 +3171,7 @@ class App(tk.Tk):
     def measure_point(self, e):
         """Where the ruler lands. Ctrl (or Shift) keeps the second point dead level with, or straight above, the first."""
         p = self.measure_snap(e)
-        if getattr(e, 'state', 0) & 0x0005 and len(self.measure) == 1:
+        if getattr(e, 'state', 0) & STRAIGHT_MASK and len(self.measure) == 1:
             ax, ay = self.measure[0]
             p = (p[0], ay) if abs(p[0] - ax) >= abs(p[1] - ay) else (ax, p[1])
         return p
@@ -3406,7 +3407,7 @@ class App(tk.Tk):
             if near and (near[0] - x) ** 2 + (near[1] - y) ** 2 <= thr ** 2:
                 p = near
         p = p or self.measure_snap(e)
-        if anchor and getattr(e, 'state', 0) & 0x0005:
+        if anchor and getattr(e, 'state', 0) & STRAIGHT_MASK:
             p = (p[0], anchor[1]) if abs(p[0] - anchor[0]) >= abs(p[1] - anchor[1]) else (anchor[0], p[1])
         return p
 

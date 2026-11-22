@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.30.0
+
+- **Mac version (M1 or later):** a new download, `PanelGenerator-v0.30.0-mac.zip`, next to the Windows zip. It was tested on an Apple M1 Mac: open a board, your own fonts, moving and editing, the ruler, Generate panel, Make gerbers and the KiCad button. The app has no paid Apple signature, so the Mac blocks it the first time: see *Install → Mac* in the README for the one-time steps. There is no app for Intel Macs.
+- On a Mac, **Option** does what Alt does on Windows (free placement), and **Command** does what Ctrl does (undo, copy, paste, a straight ruler or line).
+- Panel Generator finds KiCad on a Mac in Applications, and also on the Desktop, in Downloads or Documents, or on the KiCad disk image. Applications is still the best place for it.
+- Your own fonts are found on a Mac in the user and system font folders.
+
 ## 0.29.0
 
 - **Copper on the back of the panel:** new panels get copper over the back, 0.5 mm in from the edges and from every cutout. Board houses such as JLCPCB work out a board's size from its copper; with none, JLCPCB took a pot cutout for the board (7.5 x 7.5 mm). It also makes the panel stiffer, and it is on the back, so the front looks the same. Switch it off on the Panel tab: Size and shape > Copper (or `--copper off`).
