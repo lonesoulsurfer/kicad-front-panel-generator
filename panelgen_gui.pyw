@@ -1515,10 +1515,13 @@ class App(tk.Tk):
                 c.create_rectangle(X(x1), Y(a), X(x2), Y(b), fill=C_RAIL, stipple='gray25', outline='')
             c.create_text(X((x1 + x2) / 2), Y(y1 + r / 2), text='RAIL', fill='#dfe5ea', font=self.f_small)
             c.create_text(X((x1 + x2) / 2), Y(y2 - r / 2), text='RAIL', fill='#dfe5ea', font=self.f_small)
-        for g in pv.get('artwork', []):
-            pts = [v for x, y in g.exterior.coords for v in (X(x), Y(y))]
-            if len(pts) >= 6:
-                c.create_polygon(pts, fill='#ffffff', outline='')
+        # Tk polygons can't have holes: draw each shape, then its holes (the middle of an O, the inside of a ring) in
+        # the panel colour. Biggest first, so a letter inside a ring's hole is drawn after the hole.
+        for g in sorted(pv.get('artwork', []), key=lambda g: -g.envelope.area):
+            for ring, col in [(g.exterior, '#ffffff')] + [(r, C_PANEL) for r in g.interiors]:
+                pts = [v for x, y in ring.coords for v in (X(x), Y(y))]
+                if len(pts) >= 6:
+                    c.create_polygon(pts, fill=col, outline='')
         for mk in pv.get('markers', []):          # parts with no cutout (edge jacks...) and User.2 drawings: guides only
             for p in (mk['geom'].geoms if hasattr(mk['geom'], 'geoms') else [mk['geom']]):
                 pts = [v for x, y in p.exterior.coords for v in (X(x), Y(y))]
@@ -1577,7 +1580,9 @@ class App(tk.Tk):
             # KiCad puts the baseline of centred text half the text size below its middle, so the capitals sit in the
             # label's box. Tk centres the whole line (with room for accents and descenders), which drew the letters
             # low: draw them on KiCad's baseline instead.
-            i = c.create_text(X(L['x']), Y(L['y'] + L['h'] / 2) + self.font_descent(fnt), anchor='s', text=L['text'],
+            al = L.get('align')                     # a line of a block: held by its left or right end
+            i = c.create_text(X(L.get('ax', L['x'])), Y(L['y'] + L['h'] / 2) + self.font_descent(fnt),
+                              anchor={'left': 'sw', 'right': 'se'}.get(al, 's'), text=L['text'],
                               fill='#ffffff' if L['status'] == 'ok' else '#ffb347', font=fnt)
             c.tag_bind(i, '<Enter>', lambda e, L=L: self.hover.config(
                 text=f"{L['ref']}  ·  label '{L['text']}'" + ('  ·  runs into something (see Result)' if L['status'] != 'ok' else '')
@@ -2271,16 +2276,52 @@ class App(tk.Tk):
         self.canvas.config(cursor='crosshair')
         self.hover.config(text='Click on the panel where the text should go.')
 
+    def ask_text(self):
+        """The text to add: one line, or several (one under the other). Returns (text, line up) or None."""
+        d = tk.Toplevel(self); d.title('Add text'); d.transient(self); d.resizable(False, False)
+        f = ttk.Frame(d, padding=12); f.pack(fill='both', expand=True)
+        ttk.Label(f, text='Text (for several lines, push Enter between them):').pack(anchor='w')
+        box_ = tk.Text(f, width=44, height=6, font=MONO, undo=True, wrap='none'); box_.pack(fill='both', pady=(4, 8))
+        how = tk.StringVar(value=self.ui.get('text_align', 'left'))
+        r = ttk.Frame(f); r.pack(anchor='w')
+        ttk.Label(r, text='Several lines line up on the').pack(side='left')
+        for v_, t_ in (('left', 'left'), ('centre', 'middle'), ('right', 'right')):
+            ttk.Radiobutton(r, text=t_, value=v_, variable=how).pack(side='left', padx=(6, 0))
+        out = {}
+        def ok(_=None):
+            out['t'] = box_.get('1.0', 'end'); d.destroy(); return 'break'
+        b = ttk.Frame(f); b.pack(fill='x', pady=(10, 0))
+        ttk.Button(b, text='Cancel', command=d.destroy).pack(side='right')
+        ttk.Button(b, text='Add', command=ok).pack(side='right', padx=(0, 6))
+        mod = 'Command' if MAC else 'Control'
+        box_.bind(f'<{mod}-Return>', ok); d.bind('<Escape>', lambda e: d.destroy())
+        box_.focus_set(); d.grab_set(); self.wait_window(d)
+        if 't' in out:
+            self.ui['text_align'] = how.get()         # remembered for next time
+        return (out['t'], how.get()) if out.get('t', '').strip() else None
+
     def add_text_at(self, x, y):
-        from tkinter import simpledialog
-        txt = simpledialog.askstring('Add text', 'Text:', parent=self)
-        if not txt or not txt.strip():
+        got = self.ask_text()
+        if not got:
             return
+        lines = [ln.strip() for ln in got[0].splitlines() if ln.strip()]
         import uuid
-        new = dict(id=uuid.uuid4().hex[:8], text=txt.strip(), x=round(x, 2), y=round(y, 2))
-        self.ui.setdefault('texts', []).append(new)
+        try:
+            h = float(self.vars['label_size'].get())
+        except ValueError:
+            h = 2.0
+        step = h * 1.7                                   # one line under the other
+        al = got[1] if len(lines) > 1 and got[1] in ('left', 'right') else None
+        new = []
+        for i, ln in enumerate(lines):
+            # several lines: you clicked where the first one starts (or ends); each line is held by that end
+            new.append(dict(id=uuid.uuid4().hex[:8], text=ln, x=round(x, 2), y=round(y + i * step, 2),
+                            **({'align': al} if al else {})))
+        self.ui.setdefault('texts', []).extend(new)
         self.vars['texts_on'].set(True)                 # something you just added should show
-        self.sel, self.shape_sel, self.multi = ('text', 'text:' + new['id']), [], []   # and is selected, ready to adjust
+        # and is selected, ready to adjust (several lines: picked together, so you can drag them as one)
+        self.shape_sel, self.multi = [], [('text', 'text:' + n['id']) for n in new] if len(new) > 1 else []
+        self.sel = None if self.multi else ('text', 'text:' + new[0]['id'])
         self.persist_ui(); self.update_preview()
 
     def snap(self, t, dx, dy, free=False):
@@ -2334,8 +2375,10 @@ class App(tk.Tk):
         x1, y1, x2, y2 = self.pv['panel_box']
         xs.append((x1 + x2) / 2)
         # half way between two neighbouring holes in a row or a column (MIDI over its IN and OUT jacks)
-        cs = sorted(((sh['geom'].bounds[0] + sh['geom'].bounds[2]) / 2, (sh['geom'].bounds[1] + sh['geom'].bounds[3]) / 2)
-                    for sh in holes)
+        # (jacks with no hole, at the panel edge, count too: they are the markers)
+        cs = sorted([((sh['geom'].bounds[0] + sh['geom'].bounds[2]) / 2, (sh['geom'].bounds[1] + sh['geom'].bounds[3]) / 2)
+                     for sh in holes] +
+                    [((m[0] + m[2]) / 2, (m[1] + m[3]) / 2) for m in (mk['geom'].bounds for mk in self.pv.get('markers', []))])
         for i, (ax, ay) in enumerate(cs):
             for bx_, by_ in cs[i + 1:]:
                 if abs(ay - by_) < 1.0 and 0 < bx_ - ax < 40:
@@ -2369,6 +2412,27 @@ class App(tk.Tk):
         near = [p for p in sxs if abs(p[0] - cx) <= strong]
         sx = [min(near, key=lambda p: math.hypot(p[0] - cx, p[1] - cy))[0]] if near else []
         gx, gy = pick(xs, sx, cx), pick(ys, sys_, cy)
+        ex = None                                      # a text's left or right edge lined up with another text's
+        if texty:
+            def ends(L, mv=0.0):                       # left and right end; exact for a line held by one of them
+                al, ax = L.get('align'), L.get('ax')
+                lft = ax if al == 'left' else (ax - L['w'] if al == 'right' else L['x'] - L['w'] / 2)
+                rgt = ax if al == 'right' else lft + L['w']
+                return lft + mv, rgt + mv
+            tb_ = [ends(L) for L in self.pv.get('labels', [])
+                   if L.get('own') and not (d is not None and (L is d or L.get('fid') == d.get('fid') or mates(L)))]
+            me = ends(d, dx) if d is not None and 'w' in d and 'x' in d else (cx - w2, cx + w2)
+            best = None
+            for side, at in ((0, me[0]), (1, me[1])):
+                for t_ in tb_:
+                    dist = abs(t_[side] - at)
+                    if dist <= strong and (best is None or dist < best[0]):
+                        best = (dist, t_[side], at)
+            # an edge wins over a middle that is further away
+            if best and (gx is None or best[0] < abs(gx - cx) - 1e-6):
+                gx, ex = None, best
+        if ex:
+            return dx + ex[1] - ex[2], dy + (gy - cy if gy is not None else 0), ex[1], gy
         if kind in ('shape', 'newshape'):              # not lined up with anything: whole half millimetres from the panel corner
             if gx is None:
                 dx += round((cx - x1) * 2) / 2 + x1 - cx

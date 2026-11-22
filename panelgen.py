@@ -38,7 +38,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.30.0"
+VERSION = "0.30.1"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -1382,9 +1382,14 @@ def make_labels(pcb, cutouts, groups, outline, a, edits, log, no_hole=(), clear=
             continue
         tx = t['text'].upper() if a.label_caps == 'on' else t['text']
         th = float(t.get('size') or h)
-        placed.append(dict(fid='text:' + t['id'], ref='your text', text=tx, x=round(t['x'], 4), y=round(t['y'], 4),
-                           auto=(round(t['x'], 4), round(t['y'], 4)), h=th, w=text_width(tx, th, bold, a.label_font),
-                           status='ok', own=True))
+        tw = text_width(tx, th, bold, a.label_font)
+        # a text in a block of lines is held by its left (or right) end, so the lines start exactly level in KiCad
+        # whatever the real width of each line is; its middle (for checks and boxes) is worked out from the width
+        al = t.get('align') if t.get('align') in ('left', 'right') else None
+        mx = t['x'] + (tw / 2 if al == 'left' else -tw / 2 if al == 'right' else 0)
+        placed.append(dict(fid='text:' + t['id'], ref='your text', text=tx, x=round(mx, 4), y=round(t['y'], 4),
+                           auto=(round(mx, 4), round(t['y'], 4)), h=th, w=tw, status='ok', own=True,
+                           **(dict(align=al, ax=round(t['x'], 4)) if al else {})))
     # checks: over a cutout, off the panel, on top of another label (sizes are estimates)
     holes = [g['geom'] for g in groups]
     boxes = [box(L['x'] - L['w'] / 2, L['y'] - L['h'] / 2, L['x'] + L['w'] / 2, L['y'] + L['h'] / 2) for L in placed]
@@ -1407,8 +1412,10 @@ def label_items(placed, a, uuids):
     for L in placed:
         u = stable_uuid('label:' + L['fid'], 0); uuids.append(u); L['uuid'] = u
         txt = L['text'].replace('\\', '\\\\').replace('"', '\\"')
-        out.append(f'\t(gr_text "{txt}" (at {fmt(L["x"])} {fmt(L["y"])} 0) (layer "F.SilkS") (uuid "{u}") '
-                   f'(effects (font {font}(size {fmt(L["h"])} {fmt(L["h"])}) (thickness {fmt(L["h"] * (0.2 if a.label_bold == "on" else 0.15))}){bold})))')
+        al = L.get('align')
+        just = f' (justify {al})' if al else ''
+        out.append(f'\t(gr_text "{txt}" (at {fmt(L.get("ax", L["x"]))} {fmt(L["y"])} 0) (layer "F.SilkS") (uuid "{u}") '
+                   f'(effects (font {font}(size {fmt(L["h"])} {fmt(L["h"])}) (thickness {fmt(L["h"] * (0.2 if a.label_bold == "on" else 0.15))}){bold}){just}))')
     return out
 
 def label_changes_in_panel(tree, memory, edits, log):
@@ -2012,7 +2019,10 @@ def own_tabs(a, placed, fps, no_hole, edits, edge_parts, pb, tab_edge, font, sbo
             xs = [b for c in cl for b in (c[2][0], c[2][2])]
             ys = [b for c in cl for b in (c[2][1], c[2][3])]
             g_ = edits.get('tab:' + rid, {})
-            l_, r_ = min(xs) - 1.5 - g_.get('l', 0.0), max(xs) + 1.5 + g_.get('r', 0.0)
+            # centred on its jacks (MIDI over IN and OUT: the same margin each side), and wide enough for its texts
+            jx = ((min(j[1][0] for j in members) + max(j[1][2] for j in members)) / 2)
+            half = max(jx - min(xs), max(xs) - jx) + 1.5
+            l_, r_ = jx - half - g_.get('l', 0.0), jx + half + g_.get('r', 0.0)
             if side == 'top':
                 y0 = top if floating else top - 3
                 y1 = max(ys) + 1.4 + g_.get('b', 0.0)
@@ -2242,7 +2252,10 @@ def auto_artwork(cutouts, fps, groups, outline, placed, a, edits, log, no_hole=(
                         a._knock_boxes[wkey] = dict(box=tb, ref='edge tab', text=shared)
                 tkey = 'tab:' + run[0][2]['fid']
                 g_ = edits.get(tkey, {})                                  # made bigger in the window
-                l_, r_ = min(xs) - 1.5 - g_.get('l', 0.0), max(xs) + 1.5 + g_.get('r', 0.0)
+                # centred on its jacks, and wide enough for its texts
+                jx = (min(p[1][0] for p in run) + max(p[1][2] for p in run)) / 2
+                half = max(jx - min(xs), max(xs) - jx) + 1.5
+                l_, r_ = jx - half - g_.get('l', 0.0), jx + half + g_.get('r', 0.0)
                 if side == 'top':
                     tab = rounded_box(l_, edge_y if floating else py1 - 3, r_, far + g_.get('b', 0.0), 1.2)
                 else:
@@ -3325,7 +3338,7 @@ def main(argv=None, preview=None):
     json.dump({'panelgen': VERSION, 'note': 'panelgen memory: what it generated last run, and what you deleted or edited. Keep next to the panel.',
                'outline': outline_ids, 'outline_box': [round(v, 4) for v in (x1, y1, x2, y2)],
                'generated': generated, 'suppressed': suppressed, 'kept': kept,
-               'texts_generated': {L['fid'][5:]: dict(uuid=L['uuid'], at=[L['x'], L['y']], text=L['text'])
+               'texts_generated': {L['fid'][5:]: dict(uuid=L['uuid'], at=[L.get('ax', L['x']), L['y']], text=L['text'])
                                    for L in placed if L.get('own')},
                'labels_generated': {L['fid']: dict(uuid=L['uuid'], at=[L['x'], L['y']], auto=list(L['auto']), text=L['text'],
                                                     ref=L['ref']) for L in placed if not L.get('own')},

@@ -256,6 +256,7 @@ You do this work in the preview. Your own texts are under **Labels**, and pictur
    Hold **Alt** to put the item in a free position. For small movements, click the item and push the arrow keys (0.1 mm, or 1 mm with Shift).
 - **To change an item, click it.** Its settings show on the left: text, size, position and delete. To change the size of the title, a picture or one of your texts, click it and drag one of its white corner squares.
 - **To add text:** under **Labels → Your own**, click **Text…**. Or right-click the panel and select *Add text here*. Then click where the text goes, and type it. Use this for items that are not on the PCB, for example the function of each key.
+- **Several lines of text** (for example a list of key combinations): type them in the same box, with **Enter** between the lines. Select **left**, **middle** or **right** to line them up, then click **Add**. You click where the first line starts. The lines are picked together, so you can drag them as one. Each line is kept at its left (or right) end, so the lines stay exactly level in KiCad.
 - **Boxes round text:** use a box for a key with two functions, or for a function that needs two keys.
    1. Click the text.
    2. Set **Box** to *Line round it* or *Filled bar*. A filled bar has the text cut out.

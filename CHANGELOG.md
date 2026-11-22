@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.30.1
+
+- **Edge tabs are centred on their jacks:** a tab over two jacks (MIDI over IN and OUT) was made from the width of its texts, so with IN on one side and OUT on the other it was wider on one side. The tab now has the same margin on each side of its jacks, and is still wide enough for its texts.
+- **Snap to the middle of two jacks with no hole:** a text dragged between two jacks at the panel edge snaps to the middle between them, as it already did between two holes.
+- **Snap to the ends of other texts:** a text you drag snaps its left or right end to the left or right end of your other texts, so lines can be lined up on the left.
+- **Several lines of text at once:** the *Add text* box takes several lines. Select left, middle or right, and the lines are added one under the other, lined up. A line in a block is held by its left (or right) end, so the lines start exactly level in KiCad, whatever the width of each line.
+- **Preview: the holes in letters show again:** a text cut out as outlines (a text with *A line round it*, such as HOLD) showed the middle of O, D and similar letters filled in the preview. The panel file was correct; only the preview was wrong.
+
 ## 0.30.0
 
 - **Mac version (M1 or later):** a new download, `PanelGenerator-v0.30.0-mac.zip`, next to the Windows zip. It was tested on an Apple M1 Mac: open a board, your own fonts, moving and editing, the ruler, Generate panel, Make gerbers and the KiCad button. The app has no paid Apple signature, so the Mac blocks it the first time: see *Install → Mac* in the README for the one-time steps. There is no app for Intel Macs.
