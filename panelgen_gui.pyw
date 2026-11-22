@@ -2284,7 +2284,7 @@ class App(tk.Tk):
 
     def ask_text(self):
         """The text to add: one line, or several (one under the other). Returns (text, line up) or None."""
-        d = tk.Toplevel(self); d.title('Add text'); d.transient(self); d.resizable(False, False)
+        d = tk.Toplevel(self); d.withdraw(); d.title('Add text'); d.transient(self); d.resizable(False, False)
         f = ttk.Frame(d, padding=12); f.pack(fill='both', expand=True)
         ttk.Label(f, text='Text (for several lines, push Enter between them):').pack(anchor='w')
         box_ = tk.Text(f, width=44, height=6, font=MONO, undo=True, wrap='none'); box_.pack(fill='both', pady=(4, 8))
@@ -2301,7 +2301,19 @@ class App(tk.Tk):
         ttk.Button(b, text='Add', command=ok).pack(side='right', padx=(0, 6))
         mod = 'Command' if MAC else 'Control'
         box_.bind(f'<{mod}-Return>', ok); d.bind('<Escape>', lambda e: d.destroy())
-        box_.focus_set(); d.grab_set(); self.wait_window(d)
+        # Open it in front of the window, in its middle (as Tk's own dialogs do). Opened from a right-click menu on
+        # Windows, a new window can otherwise go behind the main one, where it still takes all the clicks.
+        d.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - d.winfo_reqwidth()) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - d.winfo_reqheight()) // 3
+        d.geometry(f'+{max(0, x)}+{max(0, y)}')
+        d.deiconify(); d.lift(); d.attributes('-topmost', True)
+        d.after(300, lambda: d.winfo_exists() and d.attributes('-topmost', False))
+        try:
+            d.wait_visibility(); d.grab_set()
+        except tk.TclError:
+            pass
+        d.focus_force(); box_.focus_set(); self.wait_window(d)
         if 't' in out:
             self.ui['text_align'] = how.get()         # remembered for next time
         return (out['t'], how.get()) if out.get('t', '').strip() else None
@@ -4009,7 +4021,7 @@ class App(tk.Tk):
             if self.clip:
                 m.add_command(label='Paste here', command=lambda: self.paste(at=(x, y)))
                 m.add_separator()
-            m.add_command(label='Add text here…', command=here_text)
+            m.add_command(label='Add text here…', command=lambda: self.after(20, here_text))   # once the menu has closed
             m.add_command(label='Add picture here…', command=lambda: self.add_picture(at=(x, y)))
             m.add_separator()
             try:

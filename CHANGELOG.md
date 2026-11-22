@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.30.3
+
+- **Add text works again from the right-click menu:** in 0.30.1 and 0.30.2 the new *Add text* box could open behind the main window on Windows, so nothing seemed to happen and the window did not respond until you pushed Esc. The box now opens in front, in the middle of the window, after the menu has closed.
+
 ## 0.30.2
 
 - **Shape settings: typing works:** while you typed in *Gap from the hole*, *Line thickness* or *Box corners*, the preview put the old value back (an empty box became 2 again, and "1." lost its decimal point). The box you type in now keeps what you type.
