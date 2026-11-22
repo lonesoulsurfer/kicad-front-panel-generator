@@ -38,7 +38,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.30.4"
+VERSION = "0.30.5"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -244,6 +244,32 @@ def board_outline(tree):
         sys.exit("No Edge.Cuts outline found on the PCB.")
     xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
     return min(xs), min(ys), max(xs), max(ys)
+
+def pcb_corner_radius(tree, bbox, tol=0.05):
+    """The radius of the PCB's rounded corners: arcs on Edge.Cuts that join a side edge to a top or bottom edge.
+    Returns the radius when all four corners are rounded the same, else None (square, chamfered, mixed)."""
+    bx1, by1, bx2, by2 = bbox
+    on_v = lambda p: abs(p[0] - bx1) < tol or abs(p[0] - bx2) < tol
+    on_h = lambda p: abs(p[1] - by1) < tol or abs(p[1] - by2) < tol
+    radii = []
+    for g in tree:
+        if not (isinstance(g, list) and g and g[0] == 'gr_arc'):
+            continue
+        lay = kid(g, 'layer')
+        if not lay or lay[1] != 'Edge.Cuts' or not all(kid(g, k) for k in ('start', 'mid', 'end')):
+            continue
+        (ax, ay), (mx, my), (ex, ey) = [tuple(kid(g, k)[1:3]) for k in ('start', 'mid', 'end')]
+        if not ((on_v((ax, ay)) and on_h((ex, ey))) or (on_h((ax, ay)) and on_v((ex, ey)))):
+            continue
+        d = 2 * (ax * (my - ey) + mx * (ey - ay) + ex * (ay - my))   # the circle through the three points
+        if abs(d) < 1e-9:
+            continue
+        ux = ((ax**2 + ay**2) * (my - ey) + (mx**2 + my**2) * (ey - ay) + (ex**2 + ey**2) * (ay - my)) / d
+        uy = ((ax**2 + ay**2) * (ex - mx) + (mx**2 + my**2) * (ax - ex) + (ex**2 + ey**2) * (mx - ax)) / d
+        radii.append(math.hypot(ax - ux, ay - uy))
+    if len(radii) == 4 and max(radii) - min(radii) < tol:
+        return sum(radii) / 4
+    return None
 
 # ---------------------------------------------------------------- Eurorack
 # Panel and PCB sizes: Doepfer A-100 widths, and Marcus's 4/8/14HP PCB drawing
@@ -3129,6 +3155,16 @@ def main(argv=None, preview=None):
         x1, y1, x2, y2 = bx1 - m['left'], by1 - m['top'], bx2 + m['right'], by2 + m['bottom']
         log.append(f"pcb   {bx2-bx1:.2f} x {by2-by1:.2f} mm")
         log.append(f"panel {x2-x1:.2f} x {y2-y1:.2f} mm  (margins T{m['top']} R{m['right']} B{m['bottom']} L{m['left']})")
+        # the panel's corners come from Corner radius, not from the PCB: say so when the PCB's own corners differ
+        pr = pcb_corner_radius(pcb, (bx1, by1, bx2, by2))
+        if pr:
+            same = len(set(m[k] for k in ('top', 'right', 'bottom', 'left'))) == 1
+            want = pr + m['top'] if same else None             # even margins: the PCB's curve, the margin further out
+            if want is None or abs(a.corner_radius - want) > 0.05:
+                tip = (f" - set it to {want:g} for corners that follow the PCB's" + (f" (its {pr:g} + the {m['top']:g} mm margin)" if m['top'] else '')
+                       if want is not None else '')
+                log.append(f"NOTE  your PCB has {pr:g} mm round corners; the panel uses Corner radius {a.corner_radius:g}"
+                           f" (Panel tab){tip}")
     outline = box(x1, y1, x2, y2)
     if a.corner_radius > 0:
         outline = outline.buffer(-a.corner_radius).buffer(a.corner_radius, quad_segs=32)

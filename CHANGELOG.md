@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.30.5
+
+- **A note when the panel corners don't match the PCB's:** the panel's corners come from *Corner radius* on the Panel tab, not from the shape of the PCB. When your PCB has rounded corners (the same on all four) and the panel's are different, Result now says so, for example "your PCB has 3 mm round corners; the panel uses Corner radius 5 - set it to 3". With the same margin on every side, it gives the radius that follows the PCB's curve (the PCB's radius + the margin). Nothing on the panel changes.
+
 ## 0.30.4
 
 - **Characters your font hasn't got print correctly:** many fonts (pixel and game fonts, say) have no arrows such as ▲ ▼. KiCad prints an empty box for each of them, though the preview showed them (it borrows them from another font). A text or label with such a character is now put on the panel as shapes, with those characters taken from a font that has them (Arial on Windows and Mac), at the same size and on the same line. Result has a note for each one. It can't be retyped in KiCad: change it in Panel Generator. Texts with no missing characters are unchanged.
