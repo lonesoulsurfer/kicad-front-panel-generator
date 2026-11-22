@@ -38,7 +38,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.30.3"
+VERSION = "0.30.4"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -1405,11 +1405,27 @@ def make_labels(pcb, cutouts, groups, outline, a, edits, log, no_hole=(), clear=
     rows.sort(key=lambda r: natkey(r['ref']))
     return placed, rows
 
-def label_items(placed, a, uuids):
+def label_items(placed, a, uuids, log=None):
     font = f'(face "{a.label_font}") ' if a.label_font else ''
     bold = ' (bold yes)' if a.label_bold == 'on' else ''
     out = []
     for L in placed:
+        miss = missing_chars(L['text'], a.label_font, a.label_bold == 'on') if a.label_font else set()
+        if miss:
+            # KiCad would print an empty box for each character the font hasn't got: put the text on as shapes, with
+            # those characters from a font that has them. It can't be retyped in KiCad, but it moves as a group.
+            polys = _text_shapes(L['text'], L.get('ax', L['x']), L['y'], L['h'], a.label_font,
+                                 a.label_bold == 'on', align=L.get('align'))
+            if polys:
+                L['drawn'] = True
+                for n, p in enumerate(q for poly in polys for q in fracture(poly)):
+                    u = stable_uuid('labelpoly:' + L['fid'], n); uuids.append(u)
+                    xy = ' '.join(f'(xy {fmt(x)} {fmt(y)})' for x, y in list(p.exterior.coords)[:-1])
+                    out.append(f'\t(gr_poly (pts {xy}) (stroke (width 0) (type solid)) (fill yes) (layer "F.SilkS") (uuid "{u}"))')
+                if log is not None:
+                    log.append(f"NOTE  '{L['text']}': {a.label_font} has no {' '.join(sorted(miss))} - put on as shapes, "
+                               f"with those from another font (change it in Panel Generator, not in KiCad)")
+                continue
         u = stable_uuid('label:' + L['fid'], 0); uuids.append(u); L['uuid'] = u
         txt = L['text'].replace('\\', '\\\\').replace('"', '\\"')
         al = L.get('align')
@@ -1861,7 +1877,51 @@ def text_shapes(text, cx, cy, h, font='', bold=False):
     polys = _text_cache[key]
     return [shapely_translate(p, cx, cy) for p in polys] if (cx or cy) else list(polys)
 
-def _text_shapes(text, cx, cy, h, font='', bold=False):
+_missing_cache = {}
+
+def missing_chars(text, font, bold=False):
+    """The characters of a text that your font hasn't got (a pixel font with no arrows, say). KiCad prints an empty
+    box for each of them, so a text with any is put on the panel as shapes instead. Empty when the font can't be found
+    (KiCad's own font, or a font that isn't installed): nothing is changed then."""
+    path = font_file(font, bold) if font else None
+    if not path:
+        return set()
+    out = set()
+    try:
+        from PIL import ImageFont
+        f = _missing_cache.get(path)
+        if f is None:
+            ft = ImageFont.truetype(path, 48)
+            nd = ft.getmask('\uffff')                     # never a real character: the font's "no glyph" shape
+            f = _missing_cache[path] = (ft, (nd.size, bytes(nd)))
+        ft, nd = f
+        for ch in set(text):
+            if ch.isspace():
+                continue
+            m = ft.getmask(ch)
+            if (m.size, bytes(m)) == nd:
+                out.add(ch)
+    except Exception:
+        return set()
+    return out
+
+def fallback_font(chars, bold=False):
+    """A font that has all of these characters (Arial has the arrows ▲ ▼ ◀ ▶), or None."""
+    from PIL import ImageFont
+    for fam in SANS_FONTS + ('Segoe UI Symbol', 'Arial Unicode MS', 'DejaVu Sans'):
+        path = font_file(fam, bold) or font_file(fam, False)
+        if not path:
+            continue
+        try:
+            ft = ImageFont.truetype(path, 48)
+            nd = ft.getmask('\uffff'); nd = (nd.size, bytes(nd))
+            if all((m.size, bytes(m)) != nd for m in (ft.getmask(c) for c in chars)):
+                return path
+        except Exception:
+            continue
+    return None
+
+def _text_shapes(text, cx, cy, h, font='', bold=False, align=None):
     from PIL import Image, ImageDraw, ImageFont
     import tempfile
     path = font_file(font, bold) if font else None
@@ -1886,13 +1946,37 @@ def _text_shapes(text, cx, cy, h, font='', bold=False):
         cap = f0.getbbox('H', anchor='ls')
         cap_px = max(1, cap[3] - cap[1])
         f = load(max(4, round(200 * h * ppm / cap_px)))
-    l, t, r, b = f.getbbox(text, anchor='ls')
+    # characters your font hasn't got are drawn in a font that has them, at the same size, in line
+    miss = missing_chars(text, font, bold) if path and font else set()
+    fb = fallback_font(miss, bold) if miss else None
+    runs = []
+    for ch in text:
+        use = fb if (fb and ch in miss) else None
+        if runs and runs[-1][0] == use:
+            runs[-1][1] += ch
+        else:
+            runs.append([use, ch])
+    fonts = {None: f}
+    if fb:
+        fonts[fb] = ImageFont.truetype(fb, f.size)
+    pen, boxes = 0, []
+    for use, part in runs:
+        bb = fonts[use].getbbox(part, anchor='ls')
+        boxes.append((pen + bb[0], bb[1], pen + bb[2], bb[3]))
+        pen += fonts[use].getlength(part)
+    l, t = min(b_[0] for b_ in boxes), min(b_[1] for b_ in boxes)
+    r, b = max(b_[2] for b_ in boxes), max(b_[3] for b_ in boxes)
     pad = 4
-    im = Image.new('L', (r - l + 2 * pad, b - t + 2 * pad), 255)
-    ImageDraw.Draw(im).text((pad - l, pad - t), text, font=f, fill=0, anchor='ls')
+    im = Image.new('L', (math.ceil(r - l) + 2 * pad, math.ceil(b - t) + 2 * pad), 255)
+    dr, x = ImageDraw.Draw(im), pad - l
+    for use, part in runs:
+        dr.text((x, pad - t), part, font=fonts[use], fill=0, anchor='ls')
+        x += fonts[use].getlength(part)
     cap_s = f.getbbox('H', anchor='ls')
     base_row = pad - t                                         # the baseline, in image rows
-    x0 = cx - im.width / ppm / 2
+    # where the pen starts, in image columns: a text held by its left end starts there, one held by its right end
+    # ends where the pen stops (as KiCad lines up left and right text)
+    x0 = {'left': cx - (pad - l) / ppm, 'right': cx - (pad - l + pen) / ppm}.get(align, cx - im.width / ppm / 2)
     y0 = cy + (h if path and font else (cap_s[3] - cap_s[1]) / ppm) / 2 - base_row / ppm
     fd, png = tempfile.mkstemp(suffix='.png'); os.close(fd)
     try:
@@ -3312,7 +3396,7 @@ def main(argv=None, preview=None):
         start = len(uuids)
         items += emit_geom(g, uuids)
         generated[g['key']] = dict(describe(g), uuids=uuids[start:])
-    items += label_items(placed, a, uuids)
+    items += label_items(placed, a, uuids, log)
     items += artwork_items(art, uuids)
     if a.copper == 'back':
         items += copper_items(outline, groups, uuids, log)
@@ -3342,9 +3426,9 @@ def main(argv=None, preview=None):
                'outline': outline_ids, 'outline_box': [round(v, 4) for v in (x1, y1, x2, y2)],
                'generated': generated, 'suppressed': suppressed, 'kept': kept,
                'texts_generated': {L['fid'][5:]: dict(uuid=L['uuid'], at=[L.get('ax', L['x']), L['y']], text=L['text'])
-                                   for L in placed if L.get('own')},
+                                   for L in placed if L.get('own') and not L.get('drawn')},
                'labels_generated': {L['fid']: dict(uuid=L['uuid'], at=[L['x'], L['y']], auto=list(L['auto']), text=L['text'],
-                                                    ref=L['ref']) for L in placed if not L.get('own')},
+                                                    ref=L['ref']) for L in placed if not L.get('own') and not L.get('drawn')},
                'label_edits': label_edits, 'ignore_uncut': ignore_uncut, 'texts': texts, 'art_pos': a._art_pos,
                'images': [{k: v for k, v in i.items() if not k.startswith('_')} for i in images], 'shapes': added,
                'lines': [{k: v for k, v in i.items() if not k.startswith('_')} for i in lines], 'titles': a._titles, 'marks': marks,

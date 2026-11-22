@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.30.4
+
+- **Characters your font hasn't got print correctly:** many fonts (pixel and game fonts, say) have no arrows such as ▲ ▼. KiCad prints an empty box for each of them, though the preview showed them (it borrows them from another font). A text or label with such a character is now put on the panel as shapes, with those characters taken from a font that has them (Arial on Windows and Mac), at the same size and on the same line. Result has a note for each one. It can't be retyped in KiCad: change it in Panel Generator. Texts with no missing characters are unchanged.
+
 ## 0.30.3
 
 - **Add text works again from the right-click menu:** in 0.30.1 and 0.30.2 the new *Add text* box could open behind the main window on Windows, so nothing seemed to happen and the window did not respond until you pushed Esc. The box now opens in front, in the middle of the window, after the menu has closed.
