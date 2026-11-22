@@ -544,16 +544,21 @@ class App(tk.Tk):
         c = field(f, 'Shape')
         ttk.Combobox(c, textvariable=v['mark_kind'], values=list(MARKS), width=14, state='readonly').pack(side='left')
         ttk.Checkbutton(c, text='Filled', variable=v['mark_fill']).pack(side='left', padx=(12, 0))
-        mm(field(f, 'Gap from the hole', 'From the edge of the hole to the inside of the shape.'), 'mark_gap')
-        mm(field(f, 'Line thickness', 'For an outline: the line starts at the gap and grows outwards. A filled shape has no line - '
-                                         'its gap is from the hole to its outside edge.'), 'mark_w')
-        mm(field(f, 'Box corners', 'Corner radius of a box. 0 = square corners.'), 'mark_r', note='0 = square')
+        self.mark_entries = {
+            'mark_gap': mm(field(f, 'Gap from the hole', 'An outline: from the edge of the hole to the inside of the line. '
+                                                         'Filled: from the edge of the hole to the outside of the shape.'), 'mark_gap'),
+            'mark_w': mm(field(f, 'Line thickness', 'For an outline: the line starts at the gap and grows outwards, so the gap '
+                                                    'stays the same. A filled shape has no line: untick Filled to use this.'),
+                         'mark_w', note='outline only'),
+            'mark_r': mm(field(f, 'Box corners', 'Corner radius of a box. 0 = square corners.'), 'mark_r', note='0 = square')}
         bt = ttk.Button(field(f, 'Add'), text='Shape round a hole…', command=self.start_mark); bt.pack(side='left')
         Tip(bt, 'Click this, then click a hole - any hole, from the PCB, the panel file or one you added. Or right-click a hole and '
                 'choose Add a shape round it. It gets the settings above; change the one you added below, or drag its edges.')
         self.w_mark_note = ttk.Label(s, text='', style='Dim.TLabel', wraplength=440, justify='left'); self.w_mark_note.pack(anchor='w', pady=(2, 0))
         for k in ('mark_kind', 'mark_fill', 'mark_gap', 'mark_w', 'mark_r'):     # these change the selected shape, if one is
             v[k].trace_add('write', lambda *_: self.mark_vars_changed())
+        v['mark_fill'].trace_add('write', lambda *_: self.mark_entries['mark_w'].state(
+            ['disabled'] if v['mark_fill'].get() else ['!disabled']))
         ttk.Label(s, text='Right-click any hole and choose Add a shape round it. A new shape gets these settings; click a '
                           'shape and these change it.', style='Dim.TLabel', wraplength=440,
                   justify='left').pack(anchor='w', pady=(2, 0))
@@ -2164,6 +2169,7 @@ class App(tk.Tk):
                             g[k] = grow
                         else:
                             g.pop(k, None)
+                    self.fold_mark_sides(mk)
                 elif group:
                     for k in ('lr' if edge in 'lr' else edge):
                         if abs(grow) > 0.01:
@@ -3415,12 +3421,30 @@ class App(tk.Tk):
         v = self.vars
         self._mark_sync, was = True, self.loading
         self.loading = True
+        self.fold_mark_sides(o)
         v['mark_kind'].set(next((k for k, x in MARKS.items() if x == o.get('kind')), 'Circle'))
         v['mark_fill'].set(bool(o.get('fill')))
+        typing = self.focus_get()
         for key, var in (('gap', 'mark_gap'), ('w', 'mark_w'), ('r', 'mark_r')):
-            if key in o:
+            # the box you are typing in keeps what you typed ('' or '1.' half-way through a number)
+            if key in o and typing is not self.mark_entries.get(var):
                 v[var].set(f"{float(o[key]):g}")
         self.loading, self._mark_sync = was, False
+
+    def fold_mark_sides(self, o):
+        """A box dragged out (or in) by the same amount on all four sides: that is a different gap, so it goes into the
+        gap, and the Gap box shows the real gap."""
+        e = self.ui['label_edits'].get('mark:' + o['id'])
+        if not e:
+            return
+        vals = [e.get(k) for k in 'lrtb']
+        if None in vals or max(vals) - min(vals) > 0.005:
+            return
+        o['gap'] = round(max(0.0, float(o.get('gap', 1.0)) + vals[0]), 3)
+        for k in 'lrtb':
+            e.pop(k, None)
+        if not e:
+            self.ui['label_edits'].pop('mark:' + o['id'], None)
 
     def mark_delete(self, key):
         self.ui['marks'] = [o for o in self.ui.get('marks', []) if 'mark:' + o['id'] != key]

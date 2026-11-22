@@ -38,7 +38,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.30.1"
+VERSION = "0.30.2"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -2728,6 +2728,9 @@ def mark_shapes(marks, groups, anchors, placed, a, edits, outline, log):
             ink = shape.difference(shape.buffer(-w, join_style=2))
         if not other.is_empty:
             ink = ink.difference(other.buffer(0.4))
+        if ink.is_empty:
+            log.append(f"NOTE  the shape round {fmt_refs_plain(g)} is inside the hole (its gap is too small) - it's left off")
+            continue
         if not inside.contains(ink):
             log.append(f"NOTE  the shape round {fmt_refs_plain(g)} runs off the panel - that part is left off")
             ink = ink.intersection(inside)

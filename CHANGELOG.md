@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.30.2
+
+- **Shape settings: typing works:** while you typed in *Gap from the hole*, *Line thickness* or *Box corners*, the preview put the old value back (an empty box became 2 again, and "1." lost its decimal point). The box you type in now keeps what you type.
+- **The Gap box shows the real gap:** dragging all the edges of a box round a hole in (or out) by the same amount kept that apart from the gap, so the Gap box showed 2 when the real gap was 1.2, and a smaller gap could put the shape inside the hole, where it disappeared. That drag now changes the gap itself, and older panels are corrected when you click the shape.
+- **Line thickness is for outlines:** a filled shape has no line, so *Line thickness* is greyed out while *Filled* is ticked. For an outline, the gap stays as set and a thicker line grows outwards.
+- A shape whose gap is too small to show now says so in Result, instead of "runs off the panel".
+
 ## 0.30.1
 
 - **Edge tabs are centred on their jacks:** a tab over two jacks (MIDI over IN and OUT) was made from the width of its texts, so with IN on one side and OUT on the other it was wider on one side. The tab now has the same margin on each side of its jacks, and is still wide enough for its texts.
