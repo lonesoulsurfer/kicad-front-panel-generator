@@ -82,7 +82,9 @@ def open_path(p):
 def find_kicad():
     """Newest KiCad PCB editor, or None. On a Mac, the pcbnew app inside the KiCad folder."""
     if MAC:
-        for p in ('/Applications/KiCad/pcbnew.app', os.path.expanduser('~/Applications/KiCad/pcbnew.app')):
+        import panelgen
+        for d in panelgen.mac_kicad_dirs():
+            p = os.path.join(d, 'pcbnew.app')
             if os.path.isdir(p):
                 return p
         return None

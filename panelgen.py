@@ -2732,6 +2732,29 @@ def shapely_translate(g, dx, dy):
 # ---------------------------------------------------------------- gerbers
 GERBER_LAYERS = 'F.Cu,B.Cu,F.Mask,B.Mask,F.SilkS,B.SilkS,Edge.Cuts'
 
+def mac_kicad_dirs():
+    """Folders on a Mac that hold KiCad.app (and pcbnew.app), the usual place first. People often leave the
+    KiCad folder on the Desktop or in Downloads, or run it from the disk image, so look there too, and then
+    ask Spotlight. A folder with 'KiCad 9' or '10' in its name sorts by that number, newest first."""
+    import glob, subprocess
+    home = os.path.expanduser('~')
+    pats = ['/Applications/KiCad', '/Applications/KiCad*', home + '/Applications/KiCad*',
+            home + '/Desktop/KiCad*', home + '/Downloads/KiCad*', home + '/Documents/KiCad*', '/Volumes/KiCad*']
+    found = []
+    for pat in pats:
+        found += sorted(glob.glob(pat), reverse=True)
+    try:
+        r = subprocess.run(['mdfind', "kMDItemFSName == 'KiCad.app'"], capture_output=True, text=True, timeout=10)
+        found += [os.path.dirname(x) for x in r.stdout.splitlines() if x.endswith('/KiCad.app')]
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    out = []
+    for d in found:
+        d = os.path.realpath(d)
+        if d not in out and os.path.isdir(os.path.join(d, 'KiCad.app')):
+            out.append(d)
+    return out
+
 def find_kicad_cli():
     """KiCad's command-line tool, newest version first, or None."""
     import glob, shutil
@@ -2739,7 +2762,9 @@ def find_kicad_cli():
         m = re.search(r'KiCad[\\/]([\d.]+)[\\/]', p)
         return [int(x) for x in m.group(1).split('.') if x.isdigit()] if m else [0]
     hits = sorted(glob.glob(r'C:\Program Files\KiCad\*\bin\kicad-cli.exe'), key=ver, reverse=True)
-    for p in hits + ['/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli', shutil.which('kicad-cli')]:
+    if sys.platform == 'darwin':
+        hits = [os.path.join(d, 'KiCad.app', 'Contents', 'MacOS', 'kicad-cli') for d in mac_kicad_dirs()]
+    for p in hits + [shutil.which('kicad-cli')]:
         if p and os.path.exists(p):
             return p
     return None
