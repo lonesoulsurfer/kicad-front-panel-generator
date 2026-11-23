@@ -17,6 +17,8 @@ You do not have to copy the parts onto a User layer. You do not have to export t
 
 **▶ Watch the video: [Front Panel Design - Made Easy!](https://youtu.be/RBMhfjR1O0A)**
 
+**📖 Step-by-step guide with pictures: [Front Panel Generator for KiCad on Instructables](https://www.instructables.com/Front-Panel-Generator-for-KiCad/)**
+
 [![Front Panel Design - Made Easy! on YouTube](https://img.youtube.com/vi/RBMhfjR1O0A/hqdefault.jpg)](https://youtu.be/RBMhfjR1O0A)
 
 ![A finished panel in KiCad's 3D viewer](docs/images/finished_3d.png)
