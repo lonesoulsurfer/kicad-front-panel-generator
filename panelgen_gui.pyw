@@ -58,13 +58,56 @@ C_WARN, C_WARN_FILL, C_ERR, C_ERR_FILL = '#e8930c', '#fbe3b6', '#d93025', '#f6c3
 C_OK_TXT, C_WARN_TXT, C_ERR_TXT, C_DIM = '#1e7e34', '#b35c00', '#c00000', '#6b7580'
 
 
-def panel_paths(board):
-    """Panel and its memory file: in the Front Panel folder, or next to the board if it hasn't been moved yet."""
+DESIGN_OF = {}        # board -> the design open for it ('' = the first one, Front)
+# a back panel starts with none of the artwork made for the parts (labels, rings, scales, boxes, tabs, the title)
+BACK_SETTINGS = dict(labels='off', art_rings='off', art_tabs='off', art_groups='off', art_scale='none', art_outputs='off',
+                     art_title='', artwork='off', check_uncut='off')
+
+
+def board_key(board):
+    return os.path.normcase(os.path.normpath(os.path.abspath(board))) if board else ''
+
+
+def panel_paths(board, design=None):
+    """Panel and its memory file: in the Front Panel folder, or next to the board if it hasn't been moved yet.
+    For the design that is open for this board, unless one is named."""
     import panelgen
-    new = panelgen.default_panel_path(board)
+    if design is None:
+        design = DESIGN_OF.get(board_key(board), '')
+    new = panelgen.default_panel_path(board, design)
+    if panelgen.design_slug(design):
+        return new, new[:-len('.kicad_pcb')] + '.panelgen.json'
     old = panelgen.old_panel_path(board)
     p = new if (os.path.exists(new) or not os.path.exists(old)) else old
     return p, p[:-len('.kicad_pcb')] + '.panelgen.json'
+
+
+def design_files(board, design):
+    """Every file of one design in the Front Panel folder: the panel, its memory, artwork, gerbers, KiCad's own files."""
+    import glob
+    stem = panel_paths(board, design)[0][:-len('.kicad_pcb')]
+    d, base = os.path.split(stem)
+    out = [p for p in glob.glob(os.path.join(glob.escape(d), glob.escape(base) + '*'))
+           if os.path.basename(p)[len(base):len(base) + 1] in ('.', '_', '-')]
+    lock = [p for p in glob.glob(os.path.join(glob.escape(d), '~' + glob.escape(base) + '*'))]
+    return sorted(out), lock
+
+
+def list_designs(board):
+    """The designs made for this board: Front first, then the others by name (their memory file says their name)."""
+    import glob, panelgen
+    names = ['Front']
+    if not board:
+        return names
+    front = panelgen.default_panel_path(board)
+    d, f = os.path.split(front)
+    head = f[:-len('_panel.kicad_pcb')] + '_'
+    for mp in sorted(glob.glob(os.path.join(glob.escape(d), glob.escape(head) + '*_panel.panelgen.json'))):
+        nm = load_json(mp).get('design')
+        slug = os.path.basename(mp)[len(head):-len('_panel.panelgen.json')]
+        if nm and panelgen.design_slug(nm) == slug and nm not in names:
+            names.append(nm)
+    return names
 
 
 def lock_file(path):
@@ -158,6 +201,7 @@ class App(tk.Tk):
         self.themed = self.apply_theme()
         self.cfg = load_json(CONFIG)
         self.board = tk.StringVar(value=board or self.cfg.get('last_board', ''))
+        DESIGN_OF.update(self.cfg.get('designs', {}))     # the design you used last, for each board
         v = self.vars = {}
         v['margin'] = tk.StringVar(value='0')
         v['per_side'] = tk.BooleanVar()
@@ -265,6 +309,21 @@ class App(tk.Tk):
         cb.bind('<<ComboboxSelected>>', self.pick_recent)
         self.board_tip = Tip(cb, 'The synth PCB with the parts on it. Save it in KiCad first.')
         ttk.Button(row, text='Browse…', command=self.browse).pack(side='left', padx=(6, 0))
+        drow = ttk.Frame(s); drow.pack(fill='x', pady=(6, 0))
+        ttk.Label(drow, text='Design').pack(side='left', padx=(0, 6))
+        self.design_name = tk.StringVar(value='Front')
+        dcb = self.design_box = ttk.Combobox(drow, textvariable=self.design_name, state='readonly', width=8)
+        dcb.pack(side='left', fill='x', expand=True)
+        dcb.bind('<<ComboboxSelected>>', lambda e: self.switch_design(self.design_name.get()))
+        Tip(dcb, 'Several panels for the same PCB: try other looks, or make a back panel. Each design has its own '
+                 'panel file and gerbers. The first one is called Front.')
+        for txt, cmd, tip in (('New…', self.new_design, 'Start another design for this PCB: a copy of this one, or a back panel.'),
+                              ('Rename…', self.rename_design, 'Give this design another name. (Front keeps its name.)'),
+                              ('Delete…', self.delete_design, 'Delete this design. Its files go into a "Deleted designs" folder, '
+                                                              'so you can get them back. (Front stays.)')):
+            b_ = ttk.Button(drow, text=txt, command=cmd); b_.pack(side='left', padx=(6, 0))
+            Tip(b_, tip)
+            setattr(self, 'w_design_' + txt[:3].lower(), b_)
         self.mode_lbl = ttk.Label(s, text='', style='Badge.TLabel'); self.mode_lbl.pack(anchor='w', pady=(6, 0))
         Tip(self.mode_lbl, 'A PCB with a Eurorack_xHP template from Eurorack.pretty on it gets a standard Eurorack panel; '
                            'any other PCB gets a panel fitted to its outline.')
@@ -1127,6 +1186,223 @@ class App(tk.Tk):
         self.board_box['values'] = [self.board_label(r) for r in self.recent()]
         self.board_name.set(self.board_label(b) if b else 'Choose your PCB with Browse…')
         self.board_tip.text = b or ''
+        self.show_designs()
+
+    # ------------------------------------------------------------ designs: several panels for one PCB
+    def design_now(self):
+        import panelgen
+        b = self.board.get()
+        nm = DESIGN_OF.get(board_key(b), '')
+        names = list_designs(b)
+        # a design whose files were deleted or moved: back to Front
+        return next((n for n in names if panelgen.design_slug(n) == panelgen.design_slug(nm)), 'Front')
+
+    def show_designs(self):
+        if not hasattr(self, 'design_box'):
+            return
+        b = self.board.get()
+        names = list_designs(b) if b and os.path.exists(b) else ['Front']
+        now = self.design_now() if b else 'Front'
+        self.design_box['values'] = names
+        self.design_name.set(now)
+        front = now == 'Front'
+        for w in (self.w_design_ren, self.w_design_del):
+            w.state(['disabled'] if front else ['!disabled'])
+        self.w_design_new.state(['!disabled'] if b and os.path.exists(b) else ['disabled'])
+
+    def set_design(self, name):
+        import panelgen
+        b = self.board.get()
+        DESIGN_OF[board_key(b)] = '' if not panelgen.design_slug(name) else name
+        self.cfg['designs'] = {k: v for k, v in DESIGN_OF.items() if v}
+        self.save_cfg()
+
+    def switch_design(self, name):
+        b = self.board.get()
+        if not b or name == self.design_now():
+            return
+        self.persist_ui(record=False)                  # what you did in this design stays with it
+        self.set_design(name)
+        self.board_changed()
+
+    def ask_design_name(self, title, prompt, start=''):
+        from tkinter import simpledialog
+        import panelgen
+        b = self.board.get()
+        while True:
+            nm = simpledialog.askstring(title, prompt, parent=self, initialvalue=start)
+            if nm is None:
+                return None
+            nm = ' '.join(nm.split())
+            slug = panelgen.design_slug(nm)
+            if not slug:
+                messagebox.showwarning('Panel Generator', 'Type a name with at least one letter or number, other than "Front".')
+            elif any(panelgen.design_slug(n) == slug for n in list_designs(b)):
+                messagebox.showwarning('Panel Generator', f'There is already a design called "{nm}" (or a name very like it).')
+            else:
+                return nm
+            start = nm
+
+    def new_design(self):
+        """A new design for this PCB: a full copy of the one that is open (its panel file too, so what you changed in
+        KiCad comes along), under a new name. Then you change the copy, and the first one stays as it was."""
+        import shutil, panelgen
+        b = self.board.get()
+        if not b or not os.path.exists(b):
+            return
+        cur = self.design_now()
+        got = self.ask_new_design(cur)
+        if not got:
+            return
+        nm, kind = got
+        self.persist_ui(record=False)
+        if kind == 'back':
+            return self.new_back_design(nm)
+        old_stem = panel_paths(b, cur)[0][:-len('.kicad_pcb')]
+        new_stem = panel_paths(b, nm)[0][:-len('.kicad_pcb')]
+        files, _ = design_files(b, cur)
+        os.makedirs(os.path.dirname(new_stem), exist_ok=True)
+        for f in files:
+            if os.path.isdir(f) or f.endswith(('_gerbers.zip', '_drc.json', '.before-reset.kicad_pcb')):
+                continue                               # made again from the new design when you need them
+            shutil.copyfile(f, new_stem + f[len(old_stem):])
+        mem_path = new_stem + '.panelgen.json'
+        mem = load_json(mem_path)
+        if not mem:                                    # never generated: start its memory from what you see now
+            mem = {'settings': self.pv.get('settings') or {}}
+            for k in ('ignore', 'label_edits', 'texts', 'art_pos', 'images', 'shapes', 'lines', 'marks', 'bodies', 'titles'):
+                mem['ignore_uncut' if k == 'ignore' else k] = self.ui.get(k, {} if k in ('ignore', 'label_edits', 'art_pos') else [])
+        mem['design'] = nm
+        mem.pop('side', None)
+        with open(mem_path, 'w', encoding='utf-8') as f:
+            json.dump(mem, f, indent=1)
+        self.set_design(nm)
+        self.board_changed()
+        self.hover.config(text=f'New design "{nm}": a copy of "{cur}". Change it as you like - "{cur}" stays as it was.')
+
+    def ask_new_design(self, cur):
+        """Name and kind of a new design. Returns (name, 'copy' | 'back') or None."""
+        import panelgen
+        b = self.board.get()
+        d = tk.Toplevel(self); d.withdraw(); d.title('New design'); d.transient(self); d.resizable(False, False)
+        f = ttk.Frame(d, padding=14); f.pack(fill='both', expand=True)
+        ttk.Label(f, text='Name of the new design:').pack(anchor='w')
+        name = tk.StringVar(); e = ttk.Entry(f, textvariable=name, width=36); e.pack(fill='x', pady=(4, 10))
+        kind = tk.StringVar(value='copy')
+        ttk.Radiobutton(f, text=f'A copy of "{cur}" - to try another look', value='copy', variable=kind).pack(anchor='w')
+        rb = ttk.Radiobutton(f, text='A back panel - covers the back of the PCB', value='back', variable=kind)
+        rb.pack(anchor='w', pady=(4, 0))
+        ttk.Label(f, text='Same size, corners and screw holes as the front. It starts with only the mounting holes and the\n'
+                          'screen screws; you add other holes and text. You see it from behind, as you will in your hand.',
+                  style='Dim.TLabel', justify='left').pack(anchor='w', padx=(22, 0))
+        if self.mode == 'eurorack':
+            rb.state(['disabled'])
+        err = ttk.Label(f, text='', foreground=C_ERR_TXT); err.pack(anchor='w', pady=(6, 0))
+        out = {}
+        def ok(_=None):
+            nm = ' '.join(name.get().split()); slug = panelgen.design_slug(nm)
+            if not slug:
+                err.config(text='Type a name with at least one letter or number, other than "Front".'); return
+            if any(panelgen.design_slug(n) == slug for n in list_designs(b)):
+                err.config(text=f'There is already a design called "{nm}".'); return
+            out['v'] = (nm, kind.get()); d.destroy()
+        bt = ttk.Frame(f); bt.pack(fill='x', pady=(10, 0))
+        ttk.Button(bt, text='Cancel', command=d.destroy).pack(side='right')
+        ttk.Button(bt, text='Make it', command=ok).pack(side='right', padx=(0, 6))
+        e.bind('<Return>', ok); d.bind('<Escape>', lambda _e: d.destroy())
+        d.update_idletasks()
+        d.geometry(f'+{self.winfo_rootx() + (self.winfo_width() - d.winfo_reqwidth()) // 2}'
+                   f'+{self.winfo_rooty() + (self.winfo_height() - d.winfo_reqheight()) // 3}')
+        d.deiconify(); d.lift(); d.attributes('-topmost', True)
+        d.after(300, lambda: d.winfo_exists() and d.attributes('-topmost', False))
+        try:
+            d.wait_visibility(); d.grab_set()
+        except tk.TclError:
+            pass
+        d.focus_force(); e.focus_set(); self.wait_window(d)
+        return out.get('v')
+
+    def new_back_design(self, nm):
+        """A back panel: the front's size, corners, case screws and border, none of the artwork made for the parts,
+        and only the mounting holes at the start (the engine keeps those)."""
+        b = self.board.get()
+        st = dict(self.pv.get('settings') or load_json(panel_paths(b)[1]).get('settings') or {})
+        st.update(BACK_SETTINGS)
+        mem = {'design': nm, 'side': 'back', 'back_on': [], 'back_off': [], 'settings': st,
+               'texts': [], 'images': [], 'shapes': [], 'lines': [], 'marks': [], 'bodies': [], 'titles': [],
+               'label_edits': {}, 'ignore_uncut': {}, 'art_pos': {}}
+        mem_path = panel_paths(b, nm)[1]
+        os.makedirs(os.path.dirname(mem_path), exist_ok=True)
+        with open(mem_path, 'w', encoding='utf-8') as f:
+            json.dump(mem, f, indent=1)
+        self.set_design(nm)
+        self.board_changed()
+        self.hover.config(text=f'Back panel "{nm}": seen from behind. Right-click a dashed outline to add that hole; '
+                               'right-click a hole to take it off.')
+
+    def back_hole(self, key, on):
+        """Put a hole on the back panel, or take it off."""
+        bon, boff = set(self.ui.get('back_on', [])), set(self.ui.get('back_off', []))
+        if on:
+            bon.add(key); boff.discard(key)
+        else:
+            boff.add(key); bon.discard(key)
+        self.ui['back_on'], self.ui['back_off'] = sorted(bon), sorted(boff)
+        self.persist_ui(); self.update_preview()
+
+    def back_hidden_at(self, x, y):
+        from shapely.geometry import Point
+        p = Point(x, y)
+        return next((h for h in (self.pv or {}).get('back_hidden', []) if h['geom'].buffer(0.3).contains(p)), None)
+
+    def rename_design(self):
+        import panelgen
+        b = self.board.get()
+        cur = self.design_now()
+        if cur == 'Front':
+            return
+        files, locks = design_files(b, cur)
+        if locks:
+            messagebox.showwarning('Panel Generator', f'"{cur}" is open in KiCad. Close it there first, then rename it.')
+            return
+        nm = self.ask_design_name('Rename design', f'New name for "{cur}":', cur)
+        if not nm:
+            return
+        self.persist_ui(record=False)
+        old_stem = panel_paths(b, cur)[0][:-len('.kicad_pcb')]
+        new_stem = panel_paths(b, nm)[0][:-len('.kicad_pcb')]
+        for f in files:
+            os.rename(f, new_stem + f[len(old_stem):])
+        mem = load_json(new_stem + '.panelgen.json')
+        if mem:
+            mem['design'] = nm
+            with open(new_stem + '.panelgen.json', 'w', encoding='utf-8') as f:
+                json.dump(mem, f, indent=1)
+        self.set_design(nm)
+        self.board_changed()
+
+    def delete_design(self):
+        import shutil, time
+        b = self.board.get()
+        cur = self.design_now()
+        if cur == 'Front':
+            return
+        files, locks = design_files(b, cur)
+        if locks:
+            messagebox.showwarning('Panel Generator', f'"{cur}" is open in KiCad. Close it there first, then delete it.')
+            return
+        if not messagebox.askyesno('Panel Generator',
+                                   f'Delete the design "{cur}"?\n\nIts {len(files)} files go into the "Deleted designs" folder '
+                                   f'in your Front Panel folder, so you can get them back.'):
+            return
+        dest = os.path.join(os.path.dirname(panel_paths(b, cur)[0]), 'Deleted designs',
+                            f"{cur} {time.strftime('%Y-%m-%d %H%M%S')}")
+        os.makedirs(dest, exist_ok=True)
+        for f in files:
+            shutil.move(f, os.path.join(dest, os.path.basename(f)))
+        self.set_design('Front')
+        self.board_changed()
+        self.hover.config(text=f'Deleted "{cur}". Its files are in Front Panel\\Deleted designs.')
 
     def pick_recent(self, _=None):
         i = self.board_box.current()
@@ -1242,10 +1518,12 @@ class App(tk.Tk):
         self.end_measure()
         self.loading = True
         try:
-            self.set_vars(dict(DEFAULTS))
+            back = self.ui.get('side') == 'back'         # a back panel starts again as a back panel
+            self.set_vars(dict(DEFAULTS, **(BACK_SETTINGS if back else {})))
             self.ui = {'ignore': self.ui.get('ignore', {}), 'label_edits': {}, 'texts': [], 'art_pos': {}, 'images': [],
                        'shapes': [], 'lines': [], 'titles': [], 'marks': [], 'bodies': [],   # parts you said need no hole stay that way
-                       'fresh': True}       # and the panel file in KiCad is left out: its hand-placed parts, drawn cutouts, edits
+                       'fresh': True,       # and the panel file in KiCad is left out: its hand-placed parts, drawn cutouts, edits
+                       **({'side': 'back', 'back_on': [], 'back_off': []} if back else {})}
         finally:
             self.loading = False
         self.sel, self.shape_sel, self.view = None, [], None
@@ -1278,6 +1556,8 @@ class App(tk.Tk):
                        'marks': [dict(i) for i in mem.get('marks', [])],
                        'bodies': [dict(i) for i in mem.get('bodies', [])],
                        'titles': [dict(i) for i in mem.get('titles', [])]}
+            if mem.get('side') == 'back':              # a back panel: which holes it has
+                self.ui.update(side='back', back_on=list(mem.get('back_on', [])), back_off=list(mem.get('back_off', [])))
             self.reset_undo()
         finally:
             self.loading = False
@@ -1334,6 +1614,8 @@ class App(tk.Tk):
         if not os.path.exists(board):
             raise ValueError(f"Can't find {board}")
         args = [board]
+        if DESIGN_OF.get(board_key(board)):
+            args += ['--design', DESIGN_OF[board_key(board)]]
         if self.mode == 'eurorack':      # size and holes are standard
             args += ['--margin', '0', '--screws', 'none',
                      '--rail-slot', f"{self.number('rslot', 'rail slot length'):g}" if v['rail_shape'].get() == 'slot' else '0']
@@ -1446,8 +1728,12 @@ class App(tk.Tk):
             self.mode_hint.config(text='Found a Eurorack template on the PCB, so the panel size and rail holes are standard.')
         else:
             p = pv['pcb_box']
-            self.mode_lbl.config(text=f"Panel fitted to your PCB  ·  {x2 - x1:.1f} × {y2 - y1:.1f} mm")
-            self.mode_hint.config(text=f"PCB {p[2] - p[0]:.1f} × {p[3] - p[1]:.1f} mm")
+            back = pv.get('side') == 'back'
+            self.mode_lbl.config(text=(f"Back panel, seen from behind  ·  {x2 - x1:.1f} × {y2 - y1:.1f} mm" if back else
+                                       f"Panel fitted to your PCB  ·  {x2 - x1:.1f} × {y2 - y1:.1f} mm"))
+            self.mode_hint.config(text=(f"PCB {p[2] - p[0]:.1f} × {p[3] - p[1]:.1f} mm  ·  mirrored: fit it with the printed side "
+                                        f"out. Right-click a dashed outline to add that hole." if back else
+                                        f"PCB {p[2] - p[0]:.1f} × {p[3] - p[1]:.1f} mm"))
         self.set_chip(pv)
         self.show_status()
         self.draw()
@@ -1527,6 +1813,14 @@ class App(tk.Tk):
                 pts = [v for x, y in ring.coords for v in (X(x), Y(y))]
                 if len(pts) >= 6:
                     c.create_polygon(pts, fill=col, outline='')
+        for h in pv.get('back_hidden', []):       # a back panel: the PCB's other holes, left off - right-click to add one
+            for p in (h['geom'].geoms if hasattr(h['geom'], 'geoms') else [h['geom']]):
+                pts = [v for x, y in p.exterior.coords for v in (X(x), Y(y))]
+                if len(pts) >= 6:
+                    i = c.create_polygon(pts, fill='', outline='#8b97a4', dash=(2, 3))
+                    c.tag_bind(i, '<Enter>', lambda e, t=h['ref']: self.hover.config(
+                        text=f"{t}  ·  not on the back panel - right-click to add this hole"))
+                    c.tag_bind(i, '<Leave>', lambda e: self.hover.config(text='Hover over a cutout to see what it is.'))
         for mk in pv.get('markers', []):          # parts with no cutout (edge jacks...) and User.2 drawings: guides only
             for p in (mk['geom'].geoms if hasattr(mk['geom'], 'geoms') else [mk['geom']]):
                 pts = [v for x, y in p.exterior.coords for v in (X(x), Y(y))]
@@ -4010,6 +4304,17 @@ class App(tk.Tk):
             x, y = self.to_mm(e)
             m = tk.Menu(self, tearoff=0)
             sh = self.hole_at(x, y)
+            back = self.pv.get('side') == 'back'
+            hid = self.back_hidden_at(x, y) if back and not sh else None
+            if hid:                                    # a back panel: a hole of the PCB it hasn't got (yet)
+                m.add_command(label=f"Add this hole to the back panel ({hid['ref']})",
+                              command=lambda: self.back_hole(hid['key'], True))
+                m.tk_popup(e.x_root, e.y_root)
+                return
+            if sh and back and not str(sh.get('key', '')).startswith('add:'):
+                m.add_command(label=f"Take this hole off the back panel ({sh.get('label') or sh.get('ref', '')})",
+                              command=lambda: self.back_hole(sh['key'], False))
+                m.add_separator()
             if sh:                                     # on a hole: shapes round it, and the part's size
                 self.mark_menu(m, sh)
                 self.body_menu(m, sh)
@@ -4180,7 +4485,9 @@ class App(tk.Tk):
                        'lines': [dict(i) for i in mem.get('lines', [])],
                        'marks': [dict(i) for i in mem.get('marks', [])],
                        'bodies': [dict(i) for i in mem.get('bodies', [])],
-                       'titles': [dict(i) for i in mem.get('titles', [])]}
+                       'titles': [dict(i) for i in mem.get('titles', [])],
+                       **({'side': 'back', 'back_on': list(mem.get('back_on', [])), 'back_off': list(mem.get('back_off', []))}
+                          if mem.get('side') == 'back' else {})}
             self.state_prev = self.snapshot()          # keep the history; changes made in KiCad become the new start
         self.fill_restore()
         panel, _ = panel_paths(board)
@@ -4357,6 +4664,8 @@ class App(tk.Tk):
         mem['marks'] = self.ui.get('marks', [])
         mem['bodies'] = self.ui.get('bodies', [])
         mem['fresh'] = bool(self.ui.get('fresh'))
+        if self.ui.get('side') == 'back':
+            mem.update(side='back', back_on=self.ui.get('back_on', []), back_off=self.ui.get('back_off', []))
         try:
             with open(mem_path, 'w', encoding='utf-8') as f:
                 json.dump(mem, f, indent=1)

@@ -38,7 +38,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.30.5"
+VERSION = "0.31.0"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -413,6 +413,28 @@ def drawn_cutouts(tree, layer, log):
             out.append({'id': fid, 'key': key, 'ref': fp.ref, 'rule': f'drawn on {layer}',
                         'merge': False, 'geom': g, 'circle': circ, 'drawn': True})
     return out
+
+BACK_KEEP_RULES = ('Mounting hole',)
+
+def back_default(c):
+    """A hole a back panel has at the start: the PCB's mounting holes, and the screw holes of a screen or module."""
+    return c.get('rule') in BACK_KEEP_RULES or str(c.get('rule', '')).endswith(' mount') or str(c['id']).startswith('CASE')
+
+def back_cutouts(cutouts, pcb_box, back_on, back_off, log):
+    """For a back panel: mirror every cutout left to right (the panel is seen from behind), and keep only the holes it
+    has (its defaults, plus the ones you added, less the ones you took off). The others are returned to show as guides."""
+    from shapely import affinity
+    cx = (pcb_box[0] + pcb_box[2]) / 2
+    keep, hidden = [], []
+    for c in cutouts:
+        c = dict(c, geom=affinity.scale(c['geom'], xfact=-1, yfact=1, origin=(cx, 0)))
+        if c.get('circle'):
+            x, y, rr = c['circle']; c['circle'] = (2 * cx - x, y, rr)
+        on = (back_default(c) and c['key'] not in back_off) or c['key'] in back_on
+        (keep if on else hidden).append(c)
+    log.append(f"back  a back panel, seen from behind: {len(keep)} holes kept, {len(hidden)} left off "
+               f"(right-click one in the preview to add it). Fit it with the printed side out")
+    return keep, hidden
 
 def drop_markers(cutouts, log, layer):
     """Drawings on the panel layer that sit on a part panelgen already cuts are old markup, not holes.
@@ -2969,10 +2991,16 @@ def make_gerbers(panel_path, log):
 PANEL_DIR = 'Front Panel'
 PANEL_SIDE_FILES = ('.kicad_pcb', '.panelgen.json', '_template.svg', '_artwork.svg', '.kicad_pro', '.kicad_prl', '.kicad_dru')
 
-def default_panel_path(pcb):
-    """<board folder>/Front Panel/<board>_panel.kicad_pcb"""
+def design_slug(name):
+    """The part of the file names for a design: '' for the first one (Front), so its files keep their old names."""
+    s = re.sub(r'[^A-Za-z0-9]+', '_', (name or '').strip()).strip('_').lower()
+    return '' if s in ('', 'front') else s
+
+def default_panel_path(pcb, design=''):
+    """<board folder>/Front Panel/<board>_panel.kicad_pcb, or <board>_<design>_panel.kicad_pcb for another design"""
     d, f = os.path.split(os.path.abspath(pcb))
-    return os.path.join(d, PANEL_DIR, re.sub(r'\.kicad_pcb$', '', f) + '_panel.kicad_pcb')
+    slug = design_slug(design)
+    return os.path.join(d, PANEL_DIR, re.sub(r'\.kicad_pcb$', '', f) + ('_' + slug if slug else '') + '_panel.kicad_pcb')
 
 def old_panel_path(pcb):
     """Where panels went before v0.8: next to the board."""
@@ -3011,6 +3039,7 @@ def main(argv=None, preview=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('pcb', help='synth .kicad_pcb to read')
     ap.add_argument('-o', '--out', help="panel .kicad_pcb to write (default: 'Front Panel' folder next to the PCB)")
+    ap.add_argument('--design', default='', help="which of the PCB's panel designs (default: the first one, Front)")
     ap.add_argument('--rules', default=os.path.join(APP_DIR, 'panel_rules.json'))
     ap.add_argument('--margin', type=float, help='extra panel beyond the PCB outline on every side, mm (default 0: panel = PCB outline)')
     for side in ('top', 'right', 'bottom', 'left'):
@@ -3085,13 +3114,14 @@ def main(argv=None, preview=None):
     if a.out:
         out_path = a.out
     elif preview is not None:   # read-only: use wherever the panel is now
-        out_path = default_panel_path(a.pcb)
-        if not os.path.exists(out_path) and os.path.exists(old_panel_path(a.pcb)):
+        out_path = default_panel_path(a.pcb, a.design)
+        if not design_slug(a.design) and not os.path.exists(out_path) and os.path.exists(old_panel_path(a.pcb)):
             out_path = old_panel_path(a.pcb)
     else:
-        out_path = default_panel_path(a.pcb)
+        out_path = default_panel_path(a.pcb, a.design)
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
-        move_old_panel(a.pcb, out_path, early)
+        if not design_slug(a.design):
+            move_old_panel(a.pcb, out_path, early)
     mem_path = re.sub(r'\.kicad_pcb$', '', out_path) + '.panelgen.json'
     saved = load_memory(mem_path).get('settings', {}) if a.again else {}
     defaults = dict(margin=0.0, corner_radius=0.0, screw_dia=2.2, screw_inset=3.5, screw_slot=0.0, rail_slot=0.0, screws='none', screw_head='auto',
@@ -3115,6 +3145,11 @@ def main(argv=None, preview=None):
     ui = json.loads(a.ui_state) if a.ui_state else {}
     ignore_uncut = ui.get('ignore', mem0.get('ignore_uncut', {}))
     label_edits = ui.get('label_edits', mem0.get('label_edits', {}))
+    # a back panel: made as you see it from behind (mirrored), printed on its top side, fitted printed side out.
+    # It has only the holes you keep: at the start the PCB's mounting holes and the screws of screens.
+    a._back = ui.get('side', mem0.get('side')) == 'back'
+    back_on = set(ui.get('back_on', mem0.get('back_on', [])))
+    back_off = set(ui.get('back_off', mem0.get('back_off', [])))
     texts = [dict(t) for t in ui.get('texts', mem0.get('texts', []))]
     images = [dict(i) for i in ui.get('images', mem0.get('images', []))]
     lines = [dict(i) for i in ui.get('lines', mem0.get('lines', []))]
@@ -3132,6 +3167,11 @@ def main(argv=None, preview=None):
     m = {s: getattr(a, f'margin_{s}') if getattr(a, f'margin_{s}') is not None else a.margin
          for s in ('top', 'right', 'bottom', 'left')}
     tpl, hp = eurorack_template(pcb)
+    if a._back and tpl:
+        log.append("NOTE  a back panel isn't made for a Eurorack module - this design is made as a front panel")
+        a._back = False
+    if a._back:                               # seen from behind, the left margin is on the right
+        m['left'], m['right'] = m['right'], m['left']
     rail_holes, rail_warn, rail_bad = [], 0, []
     if tpl:
         if abs(tpl.angle) > 0.01:
@@ -3171,8 +3211,11 @@ def main(argv=None, preview=None):
 
     cutouts = collect_cutouts(pcb, cfg, log)
     cutouts = drop_markers(cutouts + drawn_cutouts(pcb, a.panel_layer, log), log, a.panel_layer)
+    a._back_hidden = []
+    if a._back:
+        cutouts, a._back_hidden = back_cutouts(cutouts, a._pcb_box, back_on, back_off, log)
     uncut = []
-    if a.check_uncut == 'on':
+    if a.check_uncut == 'on' and not a._back:      # a back panel leaves the parts off on purpose
         parts_without_cutouts(pcb, cutouts, tpl, log, uncut, ignore_uncut, cfg.get('_none_ids', set()))
 
     # case screws
@@ -3332,7 +3375,7 @@ def main(argv=None, preview=None):
         problems += sum(1 for l in log[n0:] if l.startswith('WARN'))
         log.append(f"labels {len(placed)} on the silkscreen ({sum(1 for r in label_rows if r['hide'])} hidden, "
                    f"{sum(1 for r in label_rows if not r['hide'] and not r['text'].strip())} with no text)")
-    a._markers = part_markers(pcb, set(cfg.get('_none_ids', set())) | set(ignore_uncut), outline)
+    a._markers = [] if a._back else part_markers(pcb, set(cfg.get('_none_ids', set())) | set(ignore_uncut), outline)
     a._auto, knocked, a._art_items, a._knock_boxes, a._tab_boxes = [], set(), [], {}, []
     if a.auto_art == 'on':
         n0 = len(log)
@@ -3410,6 +3453,9 @@ def main(argv=None, preview=None):
 
     if preview is not None:
         preview['settings'] = settings_now()
+        preview['side'] = 'back' if a._back else 'front'
+        preview['back_hidden'] = [dict(key=c['key'], ref=c['ref'], rule=c['rule'], geom=c['geom'], circle=c.get('circle'))
+                                  for c in a._back_hidden]
         fill_preview(preview, groups, outline, (x1, y1, x2, y2), a, log, problems, cutouts=cutouts + manual, fps=part_fps,
                      eurorack=hp if tpl else None,
                      pcb_box=((x1 + ER_PCB_INSET, y1 + ER_RAIL, x2 - ER_PCB_INSET, y2 - ER_RAIL) if tpl else (bx1, by1, bx2, by2)),
@@ -3469,7 +3515,11 @@ def main(argv=None, preview=None):
                'images': [{k: v for k, v in i.items() if not k.startswith('_')} for i in images], 'shapes': added,
                'lines': [{k: v for k, v in i.items() if not k.startswith('_')} for i in lines], 'titles': a._titles, 'marks': marks,
                'bodies': ui.get('bodies', mem0.get('bodies', [])),   # part-size guides drawn in the window (never cut or printed)
-               'settings': settings_now()},
+               'settings': settings_now(),
+               # which design this is (its name as you typed it), and a back panel's own kind: kept from run to run
+               **{k: mem0[k] for k in ('design', 'side', 'back_on', 'back_off') if k in mem0},
+               **{k: ui[k] for k in ('side', 'back_on', 'back_off') if k in ui},
+               **({'design': a.design.strip()} if design_slug(a.design) else {})},
               open(mem_path, 'w', encoding='utf-8'), indent=1)
 
 

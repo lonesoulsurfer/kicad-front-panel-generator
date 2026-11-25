@@ -325,6 +325,30 @@ Order it as a usual 1.6 mm PCB. Black solder mask with white silkscreen gives th
 
 **3D printing or CNC:** the panel file is a usual KiCad PCB. To get a 3D model, open it in KiCad and use **File → Export → STEP**. To get the outline and holes for a CNC machine, click **File → Plot**, select the DXF format and the Edge.Cuts layer, and plot.
 
+## More designs, and back panels
+
+### Several designs for one PCB
+
+Under **Your PCB**, the **Design** list shows the panels that you made for this PCB. The first one is called **Front**.
+
+1. Click **New…**.
+2. Type a name (for example *Dark* or *Version 2*), select **A copy of "Front"**, and click **Make it**.
+3. Change the copy. The first design stays as it was.
+
+To change to a different design, select it in the **Design** list. Each design has its own panel file and gerbers in the `Front Panel` folder, for example `MySynth_dark_panel.kicad_pcb`. **Rename…** and **Delete…** work on the open design (not on Front). **Delete…** moves its files into the `Front Panel\Deleted designs` folder, so you can get them back.
+
+### A back panel
+
+A back panel covers the back of the PCB, so that nobody can touch the solder joints. It uses the same screw holes and spacers as the front panel.
+
+1. Click **New…**, type a name (for example *Back*), select **A back panel**, and click **Make it**.
+2. The new panel has the same size, corners and border as the front. It has only the PCB's **mounting holes** and the **screw holes of a screen** (for the screen's screws and nuts). It has no labels or artwork for the parts.
+3. The other holes of the PCB show as grey dashed outlines. **To add one, right-click it** and click **Add this hole to the back panel**. To remove a hole, right-click it and click **Take this hole off the back panel**.
+4. Add text (for example instructions), pictures and lines as on the front.
+5. Click **Generate panel** and **Make gerbers** as usual.
+
+**The preview shows the back panel as you see it from behind**, so left and right are the other way round from the front. The panel file is made the same way. Order it as a usual PCB, and **fit it with the printed side facing out**. When you turn it over, every hole lines up with the PCB.
+
 ## Eurorack
 
 1. Start a new PCB in KiCad.

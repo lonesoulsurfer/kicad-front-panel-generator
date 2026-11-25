@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.31.0
+
+- **Designs: several panels for one PCB.** A new **Design** list under *Your PCB*. **New…** makes a copy of the open design under a new name (its panel file too, so what you changed in KiCad comes along), so you can try another look and keep the first one. **Rename…** and **Delete…** (to a *Deleted designs* folder). Each design has its own panel file, artwork and gerbers. Your existing panel is the design **Front**, with the same file names as before: nothing changes for it.
+- **Back panels.** **New… → A back panel** makes a panel that covers the back of the PCB. It has the front's size, corners, case screws and border, and at the start only the PCB's mounting holes and the screw holes of screens. The PCB's other holes show as grey dashed outlines: right-click one to add it, or right-click a hole to take it off. Add text, pictures and lines as usual. The panel is made as you see it from behind (mirrored), with its printing on the normal top side, so the board house makes it as a usual PCB and you fit it with the printed side out.
+
 ## 0.30.5
 
 - **A note when the panel corners don't match the PCB's:** the panel's corners come from *Corner radius* on the Panel tab, not from the shape of the PCB. When your PCB has rounded corners (the same on all four) and the panel's are different, Result now says so, for example "your PCB has 3 mm round corners; the panel uses Corner radius 5 - set it to 3". With the same margin on every side, it gives the radius that follows the PCB's curve (the PCB's radius + the margin). Nothing on the panel changes.
