@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.32.0
+
+- **A tidier Front Panel folder: one folder for each design.** `Front Panel\Front` has the first design (the panel, its settings and KiCad's files), with **Inkscape** (template and artwork), **Gerbers** (the zip, the gerber files and the DRC report) and **Backups** folders inside. Every other design gets a folder of the same kind, named after it. Pictures are in `Front Panel\Pictures`, used by all designs. Deleted designs go to `Front Panel\Deleted designs`.
+- **Older panels move by themselves:** the first time you open a PCB, its panels move from the Front Panel folder into this layout, and a message says so. If a panel is open in KiCad (its lock file is there), you are asked to close it first, or to confirm that KiCad is closed (a lock file left by a crash). Files that Panel Generator didn't make are left where they are. The panels themselves don't change.
+
 ## 0.31.1
 
 - **No more empty space in the left column:** when you unticked *Set each side separately*, or set *Case mounting holes* to None (and the same for labels and artwork), the extra fields went, but their space stayed empty. It now closes up.

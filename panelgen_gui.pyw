@@ -69,28 +69,31 @@ def board_key(board):
 
 
 def panel_paths(board, design=None):
-    """Panel and its memory file: in the Front Panel folder, or next to the board if it hasn't been moved yet.
-    For the design that is open for this board, unless one is named."""
+    """Panel and its memory file, for the design open for this board unless one is named: in the design's own folder
+    in Front Panel (or where an older version put it, if it hasn't been moved yet)."""
     import panelgen
     if design is None:
         design = DESIGN_OF.get(board_key(board), '')
-    new = panelgen.default_panel_path(board, design)
-    if panelgen.design_slug(design):
-        return new, new[:-len('.kicad_pcb')] + '.panelgen.json'
-    old = panelgen.old_panel_path(board)
-    p = new if (os.path.exists(new) or not os.path.exists(old)) else old
+    p = panelgen.panel_path_now(board, design)
     return p, p[:-len('.kicad_pcb')] + '.panelgen.json'
 
 
 def design_files(board, design):
-    """Every file of one design in the Front Panel folder: the panel, its memory, artwork, gerbers, KiCad's own files."""
-    import glob
-    stem = panel_paths(board, design)[0][:-len('.kicad_pcb')]
-    d, base = os.path.split(stem)
-    out = [p for p in glob.glob(os.path.join(glob.escape(d), glob.escape(base) + '*'))
-           if os.path.basename(p)[len(base):len(base) + 1] in ('.', '_', '-')]
-    lock = [p for p in glob.glob(os.path.join(glob.escape(d), '~' + glob.escape(base) + '*'))]
-    return sorted(out), lock
+    """The files of one design: in its folder and its Inkscape/Gerbers/Backups folders, every file or folder whose name
+    starts with the panel's name (another PCB's designs can share the folder). Returns (paths, KiCad lock files)."""
+    stem_path = panel_paths(board, design)[0][:-len('.kicad_pcb')]
+    d, stem = os.path.split(stem_path)
+    out, locks = [], []
+    for sub in ('', 'Inkscape', 'Gerbers', 'Backups'):
+        dd = os.path.join(d, sub)
+        if sub and (not os.path.isdir(dd) or os.path.basename(dd) == os.path.basename(d)):
+            continue
+        for f in (os.listdir(dd) if os.path.isdir(dd) else []):
+            if f.startswith(stem) and f[len(stem):len(stem) + 1] in ('.', '_', '-'):
+                out.append(os.path.join(dd, f))
+            elif f.startswith('~' + stem):
+                locks.append(os.path.join(dd, f))
+    return sorted(out), locks
 
 
 def list_designs(board):
@@ -99,10 +102,11 @@ def list_designs(board):
     names = ['Front']
     if not board:
         return names
-    front = panelgen.default_panel_path(board)
-    d, f = os.path.split(front)
-    head = f[:-len('_panel.kicad_pcb')] + '_'
-    for mp in sorted(glob.glob(os.path.join(glob.escape(d), glob.escape(head) + '*_panel.panelgen.json'))):
+    root = panelgen.panel_root(board)
+    head = os.path.basename(panelgen.panel_file_name(board))[:-len('_panel.kicad_pcb')] + '_'
+    found = glob.glob(os.path.join(glob.escape(root), '*', glob.escape(head) + '*_panel.panelgen.json')) + \
+        glob.glob(os.path.join(glob.escape(root), glob.escape(head) + '*_panel.panelgen.json'))
+    for mp in sorted(found, key=lambda x: os.path.basename(x).lower()):
         nm = load_json(mp).get('design')
         slug = os.path.basename(mp)[len(head):-len('_panel.panelgen.json')]
         if nm and panelgen.design_slug(nm) == slug and nm not in names:
@@ -1200,6 +1204,29 @@ class App(tk.Tk):
         # a design whose files were deleted or moved: back to Front
         return next((n for n in names if panelgen.design_slug(n) == panelgen.design_slug(nm)), 'Front')
 
+    def tidy_folder(self, board):
+        """Panels made before v0.32 sit straight in the Front Panel folder: move them into a folder for each design."""
+        try:
+            moved, blocked = self.pg.tidy_panel_folder(board)
+            if blocked and messagebox.askyesno(
+                    'Panel Generator',
+                    f"Panel Generator now keeps each design in its own folder in Front Panel, with Inkscape, Gerbers and "
+                    f"Backups folders inside.\n\n{', '.join(blocked)} looks open in KiCad (KiCad's lock file is there), so "
+                    f"its files weren't moved.\n\nClose the panel in KiCad, then click Yes to move them. If KiCad is "
+                    f"already closed, the lock file was left behind (for example after a crash): click Yes too.\n\n"
+                    f"No leaves them where they are for now. Everything still works."):
+                more, blocked = self.pg.tidy_panel_folder(board, force=True)
+                moved += more
+        except OSError as e:
+            messagebox.showwarning('Panel Generator', f"Couldn't move the panel files into their folders ({e}). "
+                                                      f"They stay where they are; everything still works.")
+            return
+        if moved:
+            messagebox.showinfo('Panel Generator',
+                                f"Tidied the Front Panel folder: each design now has its own folder (Front for the first "
+                                f"one), with Inkscape, Gerbers and Backups folders inside. Pictures are in Front Panel\\Pictures."
+                                f"\n\nMoved {len(moved)} files. Files that Panel Generator didn't make were left where they are.")
+
     def show_designs(self):
         if not hasattr(self, 'design_box'):
             return
@@ -1242,6 +1269,8 @@ class App(tk.Tk):
                 messagebox.showwarning('Panel Generator', 'Type a name with at least one letter or number, other than "Front".')
             elif any(panelgen.design_slug(n) == slug for n in list_designs(b)):
                 messagebox.showwarning('Panel Generator', f'There is already a design called "{nm}" (or a name very like it).')
+            elif panelgen.design_folder_name(nm).lower() in panelgen.RESERVED_FOLDERS:
+                messagebox.showwarning('Panel Generator', f'"{nm}" is the name of a folder Panel Generator uses. Choose another name.')
             else:
                 return nm
             start = nm
@@ -1261,14 +1290,13 @@ class App(tk.Tk):
         self.persist_ui(record=False)
         if kind == 'back':
             return self.new_back_design(nm)
-        old_stem = panel_paths(b, cur)[0][:-len('.kicad_pcb')]
-        new_stem = panel_paths(b, nm)[0][:-len('.kicad_pcb')]
+        new_panel = self.pg.default_panel_path(b, nm)
+        new_stem = new_panel[:-len('.kicad_pcb')]
         files, _ = design_files(b, cur)
-        os.makedirs(os.path.dirname(new_stem), exist_ok=True)
-        for f in files:
-            if os.path.isdir(f) or f.endswith(('_gerbers.zip', '_drc.json', '.before-reset.kicad_pcb')):
-                continue                               # made again from the new design when you need them
-            shutil.copyfile(f, new_stem + f[len(old_stem):])
+        # made again from the new design when you need them: gerbers, backups, KiCad's own backups
+        self.move_design_files(cur, files, os.path.dirname(new_panel), os.path.basename(new_stem), copy=True,
+                               skip=('Gerbers', 'Backups', '-backups', '_gerbers', '_gerbers.zip', '_drc.json',
+                                     '.before-reset.kicad_pcb'))
         mem_path = new_stem + '.panelgen.json'
         mem = load_json(mem_path)
         if not mem:                                    # never generated: start its memory from what you see now
@@ -1308,6 +1336,8 @@ class App(tk.Tk):
                 err.config(text='Type a name with at least one letter or number, other than "Front".'); return
             if any(panelgen.design_slug(n) == slug for n in list_designs(b)):
                 err.config(text=f'There is already a design called "{nm}".'); return
+            if panelgen.design_folder_name(nm).lower() in panelgen.RESERVED_FOLDERS:
+                err.config(text=f'"{nm}" is the name of a folder Panel Generator uses. Choose another name.'); return
             out['v'] = (nm, kind.get()); d.destroy()
         bt = ttk.Frame(f); bt.pack(fill='x', pady=(10, 0))
         ttk.Button(bt, text='Cancel', command=d.destroy).pack(side='right')
@@ -1358,6 +1388,30 @@ class App(tk.Tk):
         p = Point(x, y)
         return next((h for h in (self.pv or {}).get('back_hidden', []) if h['geom'].buffer(0.3).contains(p)), None)
 
+    def move_design_files(self, cur, files, to_dir, new_stem=None, copy=False, skip=()):
+        """Copy or move a design's files to another folder, keeping their subfolders, renamed to new_stem if given."""
+        import shutil
+        b = self.board.get()
+        stem_path = panel_paths(b, cur)[0][:-len('.kicad_pcb')]
+        d, stem = os.path.split(stem_path)
+        for f in files:
+            rel = os.path.relpath(f, d)
+            sub, name = os.path.split(rel)
+            if sub in skip or name.endswith(tuple(skip)):
+                continue
+            to = os.path.join(to_dir, sub, (new_stem + name[len(stem):]) if new_stem else name)
+            os.makedirs(os.path.dirname(to), exist_ok=True)
+            if copy:
+                (shutil.copytree if os.path.isdir(f) else shutil.copyfile)(f, to)
+            else:
+                shutil.move(f, to)
+        if not copy:                                   # the folders it leaves empty go
+            for sub in ('Inkscape', 'Gerbers', 'Backups', ''):
+                try:
+                    os.rmdir(os.path.join(d, sub))
+                except OSError:
+                    pass
+
     def rename_design(self):
         import panelgen
         b = self.board.get()
@@ -1372,10 +1426,9 @@ class App(tk.Tk):
         if not nm:
             return
         self.persist_ui(record=False)
-        old_stem = panel_paths(b, cur)[0][:-len('.kicad_pcb')]
-        new_stem = panel_paths(b, nm)[0][:-len('.kicad_pcb')]
-        for f in files:
-            os.rename(f, new_stem + f[len(old_stem):])
+        new_panel = self.pg.default_panel_path(b, nm)
+        new_stem = new_panel[:-len('.kicad_pcb')]
+        self.move_design_files(cur, files, os.path.dirname(new_panel), os.path.basename(new_stem))
         mem = load_json(new_stem + '.panelgen.json')
         if mem:
             mem['design'] = nm
@@ -1398,11 +1451,10 @@ class App(tk.Tk):
                                    f'Delete the design "{cur}"?\n\nIts {len(files)} files go into the "Deleted designs" folder '
                                    f'in your Front Panel folder, so you can get them back.'):
             return
-        dest = os.path.join(os.path.dirname(panel_paths(b, cur)[0]), 'Deleted designs',
-                            f"{cur} {time.strftime('%Y-%m-%d %H%M%S')}")
+        dest = os.path.join(self.pg.panel_root(b), 'Deleted designs',
+                            f"{self.pg.design_folder_name(cur)} {time.strftime('%Y-%m-%d %H%M%S')}")
         os.makedirs(dest, exist_ok=True)
-        for f in files:
-            shutil.move(f, os.path.join(dest, os.path.basename(f)))
+        self.move_design_files(cur, files, dest)
         self.set_design('Front')
         self.board_changed()
         self.hover.config(text=f'Deleted "{cur}". Its files are in Front Panel\\Deleted designs.')
@@ -1543,6 +1595,7 @@ class App(tk.Tk):
         self.show_boards()
         if not board or not os.path.exists(board):
             self.mode = None; self.renumber(); self.update_preview(); return
+        self.tidy_folder(board)
         _, mem_path = panel_paths(board)
         mem = load_json(mem_path)
         s = dict(DEFAULTS, **mem.get('settings', {}))
@@ -4163,7 +4216,7 @@ class App(tk.Tk):
         if not f:
             return
         import shutil, uuid
-        folder = os.path.join(os.path.dirname(panel_paths(b)[0]), 'images')
+        folder = self.pg.pictures_dir(panel_paths(b)[0])
         try:
             os.makedirs(folder, exist_ok=True)
             name = os.path.basename(f)

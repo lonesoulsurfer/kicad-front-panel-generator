@@ -49,7 +49,7 @@ Two habits that matter: **save the PCB** in KiCad before generating (only the sa
 py panelgen.py Sampler.kicad_pcb
 ```
 
-This writes `Front Panel/Sampler_panel.kicad_pcb`, in a **Front Panel** folder it creates next to the PCB: **the PCB outline**, plus a cutout for every pot, switch, screen, LED and so on, and the PCB's own mounting holes. Nothing else is added unless you ask:
+This writes `Front Panel/Front/Sampler_panel.kicad_pcb`, in a **Front Panel** folder it creates next to the PCB (one folder per design; `--design NAME` for another design, in `Front Panel/NAME/`): **the PCB outline**, plus a cutout for every pot, switch, screen, LED and so on, and the PCB's own mounting holes. Nothing else is added unless you ask:
 
 ```
 py panelgen.py Sampler.kicad_pcb --margin 10 --screws corners
@@ -69,7 +69,8 @@ makes the panel 10 mm bigger all round and adds a case screw in each corner. Add
 | `--corner-radius` | 0 | Rounded panel corners |
 | `--min-web` | 1.0 | Warn when material between two parts' cutouts is thinner |
 | `--grow` | 0 | Make every opening (screens, switches, pots, jacks, LEDs) this much bigger, e.g. `--grow 0.5`. Screw and mounting holes stay as they are |
-| `-o` | `Front Panel/<pcb>_panel.kicad_pcb` | Output file |
+| `-o` | `Front Panel/Front/<pcb>_panel.kicad_pcb` | Output file |
+| `--design` | Front | Which design: `Front Panel/<design>/<pcb>_<design>_panel.kicad_pcb` |
 
 ### Slotted case holes
 
@@ -167,7 +168,7 @@ Tick **Add labels from the PCB** in the window (or `--labels on`) to print a lab
 - **Drag to move:** in the preview, drag any label (including one cut out of an output box or edge tab, which then grows or moves to follow it, and the shared word under an edge tab), the title, the maker name or your own text. Its middle snaps (within 8 pixels) to the middle of any hole, label, marker, tab, picture, the title or the panel across, to the height of any of those, half way between two neighbouring holes in a row or column (a label over a pair of jacks), and to the middle of the gap between the nearest things either side of it (or above and below); pink lines show what it snapped to. A new text snaps where you click. Hold Alt to place freely. A label keeps the offset you gave it (as if you'd moved it in KiCad); the title and maker are pinned where you drop them (right-click > put it back in its automatic place). Moving labels or your texts in KiCad is kept too.
 - **Boxes round text:** select your text or a label and set **Box**: *Line round it* (0.3 mm line, the text stays a KiCad text) or *Filled bar* (the text is cut out of a solid bar, so it uses the label font file, or a bold sans with KiCad's own font). The box starts just round the text; drag its ends (or type how much longer) to stretch it, e.g. over two keys. Its ends snap to key labels, hole edges and the edges of other boxes. Any other text whose middle it reaches over (and that has no box of its own, or the same kind) goes into it where it is, so one bar can carry a whole row of key names; otherwise the text stays centred in it. Stored as `box` on the text or label and `box:<text>` for the stretch.
 - **Tabs and output boxes:** drag any edge of one (the nearest edge to where you grab it) to make it bigger; that edge snaps to the edges of the other tabs and boxes. Or type how much bigger in the left panel when it's selected. Stored in the label edits as `tab:<part>`.
-- **Pictures:** **Add picture…** copies a PNG, JPG, GIF, BMP or SVG into `Front Panel\images` and puts it in the middle of the panel, 20 mm wide (or a quarter of the panel). Dark parts print, transparent and light parts don't (*Print the light parts instead* (left panel, when it's selected) swaps that). It's traced like Inkscape artwork (up to 1200 pixels across), trimmed off holes and the edge with a NOTE, and drawn on F.Silkscreen. SVGs need Inkscape. Set its width and how far to turn it (any angle, or ↺ / ↻ 90) in the left panel when it's selected; the height follows. Right-click still works as a shortcut. Stored in the memory file (`images`).
+- **Pictures:** **Add picture…** copies a PNG, JPG, GIF, BMP or SVG into `Front Panel\Pictures` (shared by the designs) and puts it in the middle of the panel, 20 mm wide (or a quarter of the panel). Dark parts print, transparent and light parts don't (*Print the light parts instead* (left panel, when it's selected) swaps that). It's traced like Inkscape artwork (up to 1200 pixels across), trimmed off holes and the edge with a NOTE, and drawn on F.Silkscreen. SVGs need Inkscape. Set its width and how far to turn it (any angle, or ↺ / ↻ 90) in the left panel when it's selected; the height follows. Right-click still works as a shortcut. Stored in the memory file (`images`).
 - **Undo:** the Undo button above the preview (or Ctrl+Z, outside a text box) takes back the last change: any setting on the left (sizes, margins, holes, labels, artwork options) and anything done in the preview (moves, texts, pictures, boxes, tabs, label edits), up to 50 steps. Changes made within a moment of each other count as one step. The history is kept when you generate and starts again when you load another board.
 - **Right-click an empty spot** on the panel to add text or a picture right there.
 - **Leave them off:** untick *Put my text and pictures on the panel* (`--extras off`) and your texts, their boxes and your pictures are left off the panel and the preview, but kept in the memory file for when you tick it again.
@@ -200,7 +201,7 @@ Tick **Make artwork for me** (or `--auto-art on`). The artwork is drawn from the
 
 For anything labels can't do (borders, boxes, logos, white-on-black text, your own fonts), draw it in Inkscape on an exact 1:1 copy of the panel.
 
-1. Tick **Add my artwork to the silkscreen** and click **Create artwork file**. This makes `<panel>_artwork.svg` in the Front Panel folder and opens it in Inkscape. The page *is* the panel. The cutouts are drawn in red on their own layer, so you can see exactly where everything goes, and **align to them**: click a red cutout, Shift+click your text, then use Align and Distribute with *Relative to: First selected*. Moving a red cutout by accident does no harm, because that layer is rebuilt from the PCB every time you generate.
+1. Tick **Add my artwork to the silkscreen** and click **Create artwork file**. This makes `<panel>_artwork.svg` in the design's `Inkscape` folder and opens it in Inkscape. The page *is* the panel. The cutouts are drawn in red on their own layer, so you can see exactly where everything goes, and **align to them**: click a red cutout, Shift+click your text, then use Align and Distribute with *Relative to: First selected*. Moving a red cutout by accident does no harm, because that layer is rebuilt from the PCB every time you generate.
 2. Draw on the **Artwork** layer (or any layers of your own). **Every visible layer is printed**, except the red cutout layer and the labels guide. To leave a layer out (a reference picture, say), hide it with the eye icon. **Black prints** on the silkscreen. **White cuts out of black**, so a black bar with white text on it comes out as text cut into the bar. Any font installed on your computer works.
 3. **Save** in Inkscape. The preview updates by itself, and Generate puts the artwork on F.Silkscreen.
 
@@ -323,7 +324,7 @@ Everything panelgen makes is in a group called `panelgen`. Re-running after chan
 
 - gerbers for F/B copper, F/B mask, F/B silkscreen and Edge.Cuts (Protel file names, e.g. `.gto`, `.gm1`), plus the job file
 - drill files, plated and non-plated separately, with drill maps
-- all of it zipped as `<panel>_gerbers.zip` in the Front Panel folder, ready to upload. The loose files are in `<panel>_gerbers` next to it.
+- all of it zipped as `<panel>_gerbers.zip` in the design's `Gerbers` folder, ready to upload. The loose files are in `<panel>_gerbers` next to it, with the DRC report `<panel>_drc.json`.
 
 It also runs **KiCad's DRC** on the panel and reports a summary in Result (the full report is `<panel>_drc.json`). Errors there are worth a look in KiCad (Inspect > Design Rules Checker). Warnings about silkscreen over holes or the board edge are normal for a panel with artwork: the fab trims silkscreen at cutouts.
 

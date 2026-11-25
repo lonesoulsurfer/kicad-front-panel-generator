@@ -38,7 +38,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.31.1"
+VERSION = "0.32.0"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -1044,7 +1044,7 @@ def write_svg(path, x1, y1, x2, y2, shapes, labels=(), a=None):
     open(path, 'w', encoding='utf-8').write('\n'.join(parts))
 
 def artwork_path_for(out_path):
-    return re.sub(r'\.kicad_pcb$', '', out_path) + '_artwork.svg'
+    return side_path(out_path, '_artwork.svg')
 
 _courtyards = {}
 
@@ -2621,9 +2621,9 @@ def image_items(images, folder, outline, groups, log):
     holes = unary_union([g['geom'] for g in groups]).buffer(0.3) if groups else None
     inside = outline.buffer(-0.6)
     for im in images:
-        path = os.path.join(folder, 'images', im['file'])
+        path = os.path.join(folder, im['file'])
         if not os.path.exists(path):
-            log.append(f"WARN  picture {im['file']} is missing from the Front Panel\\images folder - add it again"); continue
+            log.append(f"WARN  picture {im['file']} is missing from the Front Panel\\{os.path.basename(folder)} folder - add it again"); continue
         try:
             polys, h = image_shapes(path, im['x'], im['y'], float(im['w']), im.get('invert', False))
         except Exception as e:
@@ -2937,7 +2937,8 @@ def make_gerbers(panel_path, log):
         pass
     base = re.sub(r'\.kicad_pcb$', '', os.path.basename(panel_path))
     folder = os.path.dirname(os.path.abspath(panel_path))
-    out = os.path.join(folder, base + '_gerbers')
+    out = side_path(panel_path, '_gerbers')
+    os.makedirs(os.path.dirname(out), exist_ok=True)
     if os.path.isdir(out):
         shutil.rmtree(out)                    # only ever our own output folder: no stale layers left behind
     os.makedirs(out)
@@ -2959,13 +2960,13 @@ def make_gerbers(panel_path, log):
     if not run(['pcb', 'export', 'drill', '-o', out + os.sep, '--excellon-separate-th', panel_path], 'drill files'):
         return None
     files = sorted(f for f in os.listdir(out) if os.path.isfile(os.path.join(out, f)))
-    zpath = os.path.join(folder, base + '_gerbers.zip')
+    zpath = side_path(panel_path, '_gerbers.zip')
     with zipfile.ZipFile(zpath, 'w', zipfile.ZIP_DEFLATED) as z:
         for f in files:
             z.write(os.path.join(out, f), f)
     log.append(f"gerb  {len(files)} files -> {zpath}")
     # KiCad's own design rule check, as a second opinion (the report stays next to the panel)
-    rpt = os.path.join(folder, base + '_drc.json')
+    rpt = side_path(panel_path, '_drc.json')
     if run(['pcb', 'drc', '--format', 'json', '--severity-error', '--severity-warning', '-o', rpt, panel_path], 'DRC check', 'NOTE '):
         try:
             d = json.load(open(rpt, encoding='utf-8'))
@@ -2996,11 +2997,109 @@ def design_slug(name):
     s = re.sub(r'[^A-Za-z0-9]+', '_', (name or '').strip()).strip('_').lower()
     return '' if s in ('', 'front') else s
 
-def default_panel_path(pcb, design=''):
-    """<board folder>/Front Panel/<board>_panel.kicad_pcb, or <board>_<design>_panel.kicad_pcb for another design"""
-    d, f = os.path.split(os.path.abspath(pcb))
+# Front Panel/<design>/ holds one design: its panel and KiCad files, with Inkscape/, Gerbers/ and Backups/ inside.
+# Pictures/ (shared by the designs) and Deleted designs/ sit next to the design folders.
+SUBFOLDERS = {'_artwork.svg': 'Inkscape', '_template.svg': 'Inkscape', '_gerbers.zip': 'Gerbers', '_gerbers': 'Gerbers',
+              '_drc.json': 'Gerbers', '.before-reset.kicad_pcb': 'Backups'}
+RESERVED_FOLDERS = ('pictures', 'images', 'deleted designs', 'inkscape', 'gerbers', 'backups')
+
+def design_folder_name(design):
+    """The folder of a design: 'Front' for the first one, else its name (without characters Windows can't have)."""
+    if not design_slug(design):
+        return 'Front'
+    return re.sub(r'[\\/:*?"<>|]+', ' ', design).strip(' .') or design_slug(design)
+
+def panel_root(pcb):
+    return os.path.join(os.path.dirname(os.path.abspath(pcb)), PANEL_DIR)
+
+def panel_file_name(pcb, design=''):
     slug = design_slug(design)
-    return os.path.join(d, PANEL_DIR, re.sub(r'\.kicad_pcb$', '', f) + ('_' + slug if slug else '') + '_panel.kicad_pcb')
+    return re.sub(r'\.kicad_pcb$', '', os.path.basename(pcb)) + ('_' + slug if slug else '') + '_panel.kicad_pcb'
+
+def default_panel_path(pcb, design=''):
+    """<board folder>/Front Panel/<design folder>/<board>_panel.kicad_pcb (<board>_<design>_panel... for other designs)"""
+    return os.path.join(panel_root(pcb), design_folder_name(design), panel_file_name(pcb, design))
+
+def flat_panel_path(pcb, design=''):
+    """Where a design's panel was from v0.8 to v0.31: straight in the Front Panel folder."""
+    return os.path.join(panel_root(pcb), panel_file_name(pcb, design))
+
+def in_design_folder(panel_path):
+    return os.path.basename(os.path.dirname(os.path.dirname(os.path.abspath(panel_path)))) == PANEL_DIR
+
+def side_path(panel_path, end):
+    """A file that goes with a panel, by its ending ('_artwork.svg', '_gerbers.zip', ...): in its subfolder in the new
+    layout, next to the panel in the old one (or for a panel written somewhere else with -o)."""
+    stem = re.sub(r'\.kicad_pcb$', '', os.path.abspath(panel_path))
+    d, base = os.path.split(stem)
+    sub = SUBFOLDERS.get(end) if in_design_folder(panel_path) else None
+    return os.path.join(d, sub, base + end) if sub else stem + end
+
+def pictures_dir(panel_path):
+    """Pictures you add: Front Panel/Pictures (shared by all designs; 'images' in older versions)."""
+    d = os.path.dirname(os.path.abspath(panel_path))
+    root = os.path.dirname(d) if in_design_folder(panel_path) else d
+    new, old = os.path.join(root, 'Pictures'), os.path.join(root, 'images')
+    return old if (os.path.isdir(old) and not os.path.isdir(new)) else new
+
+def tidy_panel_folder(pcb, force=False):
+    """Move a PCB's panels from the flat Front Panel folder (v0.8 to v0.31) into one folder per design.
+    Returns (moved: list of 'file -> folder', blocked: designs left alone because a KiCad lock file says they're open).
+    force: the lock files are left over (KiCad is closed): delete them and move."""
+    import glob, shutil
+    root = panel_root(pcb)
+    moved, blocked = [], []
+    if not os.path.isdir(root):
+        return moved, blocked
+    board = re.sub(r'\.kicad_pcb$', '', os.path.basename(pcb))
+    designs = [('', board + '_panel')]
+    for mp in glob.glob(os.path.join(glob.escape(root), glob.escape(board) + '_*_panel.panelgen.json')):
+        nm = load_memory(mp).get('design')
+        stem = os.path.basename(mp)[:-len('.panelgen.json')]
+        if nm and design_slug(nm) and stem == board + '_' + design_slug(nm) + '_panel':
+            designs.append((nm, stem))
+    for nm, stem in designs:
+        mine = [f for f in os.listdir(root) if f.startswith(stem) and f[len(stem):len(stem) + 1] in ('.', '_', '-')]
+        if not any(f in (stem + '.kicad_pcb', stem + '.panelgen.json') for f in mine):
+            continue
+        locks = glob.glob(os.path.join(glob.escape(root), '~' + glob.escape(stem) + '*'))
+        if locks and not force:
+            blocked.append(nm or 'Front'); continue
+        for l in locks:
+            try:
+                os.remove(l)
+            except OSError:
+                pass
+        dest = os.path.join(root, design_folder_name(nm))
+        for f in mine:
+            sub = SUBFOLDERS.get(f[len(stem):], '')
+            to = os.path.join(dest, sub, f)
+            if os.path.exists(to):
+                continue
+            os.makedirs(os.path.dirname(to), exist_ok=True)
+            shutil.move(os.path.join(root, f), to)
+            moved.append(f"{f} -> {design_folder_name(nm)}{('/' + sub) if sub else ''}")
+    if os.path.isdir(os.path.join(root, 'images')) and not os.path.exists(os.path.join(root, 'Pictures')):
+        os.rename(os.path.join(root, 'images'), os.path.join(root, 'Pictures'))
+        moved.append('images -> Pictures')
+    cache = os.path.join(root, '.artwork_cache.json')         # made again where it's needed now
+    if moved and os.path.exists(cache):
+        try:
+            os.remove(cache)
+        except OSError:
+            pass
+    return moved, blocked
+
+def panel_path_now(pcb, design=''):
+    """Where a design's panel is now: its own folder, or (not moved yet) the flat Front Panel folder, or next to the board."""
+    new, flat = default_panel_path(pcb, design), flat_panel_path(pcb, design)
+    if os.path.exists(new):
+        return new
+    if os.path.exists(flat) or os.path.exists(flat[:-len('.kicad_pcb')] + '.panelgen.json'):
+        return flat
+    if not design_slug(design) and os.path.exists(old_panel_path(pcb)):
+        return old_panel_path(pcb)
+    return new
 
 def old_panel_path(pcb):
     """Where panels went before v0.8: next to the board."""
@@ -3114,14 +3213,18 @@ def main(argv=None, preview=None):
     if a.out:
         out_path = a.out
     elif preview is not None:   # read-only: use wherever the panel is now
-        out_path = default_panel_path(a.pcb, a.design)
-        if not design_slug(a.design) and not os.path.exists(out_path) and os.path.exists(old_panel_path(a.pcb)):
-            out_path = old_panel_path(a.pcb)
+        out_path = panel_path_now(a.pcb, a.design)
     else:
-        out_path = default_panel_path(a.pcb, a.design)
-        os.makedirs(os.path.dirname(out_path), exist_ok=True)
         if not design_slug(a.design):
-            move_old_panel(a.pcb, out_path, early)
+            move_old_panel(a.pcb, flat_panel_path(a.pcb), early)
+        moved, blocked = tidy_panel_folder(a.pcb)          # one folder per design (from v0.32)
+        if moved:
+            early.append(f"tidy  moved {len(moved)} files into a folder for each design: " + '; '.join(moved))
+        out_path = panel_path_now(a.pcb, a.design)
+        if blocked:
+            early.append(f"NOTE  {', '.join(blocked)} is open in KiCad, so its files stay where they are for now - close it "
+                         f"in KiCad, and they move into their own folder next time")
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
     mem_path = re.sub(r'\.kicad_pcb$', '', out_path) + '.panelgen.json'
     saved = load_memory(mem_path).get('settings', {}) if a.again else {}
     defaults = dict(margin=0.0, corner_radius=0.0, screw_dia=2.2, screw_inset=3.5, screw_slot=0.0, rail_slot=0.0, screws='none', screw_head='auto',
@@ -3396,7 +3499,7 @@ def main(argv=None, preview=None):
     # the template and the artwork file's guides first, so the artwork is rendered on the panel's current page
     if preview is None and (a.svg or a.make_artwork_file or os.path.exists(artwork_path_for(out_path))):
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
-        svg_path = re.sub(r'\.kicad_pcb$', '', out_path) + '_template.svg'
+        svg_path = side_path(out_path, '_template.svg'); os.makedirs(os.path.dirname(svg_path), exist_ok=True)
         write_svg(svg_path, x1, y1, x2, y2, groups, placed, a)
         log.append(f"svg   {svg_path}")
         art_svg = artwork_path_for(out_path)
@@ -3407,6 +3510,7 @@ def main(argv=None, preview=None):
                 log.append(f"NOTE  {os.path.basename(art_svg)} already exists - left as it is, so your artwork is safe")
             else:
                 import shutil
+                os.makedirs(os.path.dirname(art_svg), exist_ok=True)
                 shutil.copyfile(svg_path, art_svg)
                 log.append(f"art   started {art_svg} - open it in Inkscape and draw on the 'Artwork' layer")
     if preview is not None and not a.artwork_file and os.path.exists(artwork_path_for(out_path)):
@@ -3424,15 +3528,15 @@ def main(argv=None, preview=None):
             log.append(f"ERROR no artwork file yet ({os.path.basename(art_svg)}). Click 'Create artwork file' in the window "
                        f"(or use --make-artwork-file), draw on its Artwork layer in Inkscape, save, then generate")
         else:
-            art = import_artwork(art_svg, outline, log, os.path.dirname(out_path) if os.path.isdir(os.path.dirname(out_path)) else None)
+            art = import_artwork(art_svg, outline, log, os.path.dirname(art_svg) if os.path.isdir(os.path.dirname(art_svg)) else None)
     art = art + a._auto
     if shown_images:
-        art = art + image_items(shown_images, os.path.dirname(out_path), outline, groups, log)
+        art = art + image_items(shown_images, pictures_dir(out_path), outline, groups, log)
     keep_res = check_keepouts(screw_keepouts(groups, a), placed, art, log)
     problems += sum(1 for _, bad in keep_res if bad)
     if preview is not None and a.make_artwork_file:      # the window's 'Create artwork file' button: no panel written
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
-        svg_path = re.sub(r'\.kicad_pcb$', '', out_path) + '_template.svg'
+        svg_path = side_path(out_path, '_template.svg'); os.makedirs(os.path.dirname(svg_path), exist_ok=True)
         write_svg(svg_path, x1, y1, x2, y2, groups, placed, a)
         if not os.path.exists(artwork_path_for(out_path)):
             import shutil
@@ -3499,7 +3603,8 @@ def main(argv=None, preview=None):
         text = header_from(pcb_text, pcb) + '\n'.join(items) + '\n' + group + '\n)\n'
         log.append(f"new   {out_path}")
     if fresh and os.path.exists(out_path):
-        backup = re.sub(r'\.kicad_pcb$', '', out_path) + '.before-reset.kicad_pcb'
+        backup = side_path(out_path, '.before-reset.kicad_pcb')
+        os.makedirs(os.path.dirname(backup), exist_ok=True)
         import shutil
         shutil.copyfile(out_path, backup)
         log.append(f"saved your old panel file as {os.path.basename(backup)} (it had the parts placed by hand in KiCad)")

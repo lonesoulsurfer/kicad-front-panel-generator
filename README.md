@@ -290,7 +290,7 @@ Use Inkscape for artwork that Panel Generator does not make, for example a compl
 1. Turn on **Artwork from Inkscape**.
 2. Click **Create artwork file**.
 
-Panel Generator saves an Inkscape file in the `Front Panel` folder and opens it. The Inkscape page is an exact 1:1 copy of your panel. Each hole shows in red, so you can see where to put the artwork. To align your artwork with the red holes, use **Align and Distribute** in Inkscape.
+Panel Generator saves an Inkscape file in the design's `Inkscape` folder (for example `Front Panel\Front\Inkscape`) and opens it. The Inkscape page is an exact 1:1 copy of your panel. Each hole shows in red, so you can see where to put the artwork. To align your artwork with the red holes, use **Align and Distribute** in Inkscape.
 
 ![The artwork file when it first opens in Inkscape](docs/images/step4_inkscape.png)
 
@@ -307,7 +307,7 @@ Panel Generator does not print the red holes. It draws them again from the PCB e
 
 ### 7. Generate the panel
 
-When the preview is correct, click **Generate panel**. Panel Generator makes the panel file (`<your board>_panel.kicad_pcb`) in a `Front Panel` folder next to your PCB. Then it opens the file in KiCad, so you can check it, also in the 3D viewer.
+When the preview is correct, click **Generate panel**. Panel Generator makes the panel file (`<your board>_panel.kicad_pcb`) in the `Front Panel\Front` folder next to your PCB (see [The Front Panel folder](#the-front-panel-folder)). Then it opens the file in KiCad, so you can check it, also in the 3D viewer.
 
 Panel Generator saves your settings and all your work in the preview while you work. You can close the window at any time. Later, you can change the PCB, the settings or the artwork. The status line next to the buttons then tells you that the panel is out of date. Click **Generate panel** again to update it.
 
@@ -319,7 +319,7 @@ Close the panel file in KiCad before you generate again. If the file is open, Pa
 
 ### 8. Make gerbers
 
-Click **Make gerbers**. Panel Generator uses KiCad to make the gerber and drill files. It checks the panel and puts all the files in one zip file in the `Front Panel` folder. Upload that zip file to JLCPCB, PCBWay or a different PCB manufacturer.
+Click **Make gerbers**. Panel Generator uses KiCad to make the gerber and drill files. It checks the panel and puts all the files in one zip file in the design's `Gerbers` folder (for example `Front Panel\Front\Gerbers`). Upload that zip file to JLCPCB, PCBWay or a different PCB manufacturer.
 
 Order it as a usual 1.6 mm PCB. Black solder mask with white silkscreen gives the classic synth panel appearance.
 
@@ -335,7 +335,7 @@ Under **Your PCB**, the **Design** list shows the panels that you made for this 
 2. Type a name (for example *Dark* or *Version 2*), select **A copy of "Front"**, and click **Make it**.
 3. Change the copy. The first design stays as it was.
 
-To change to a different design, select it in the **Design** list. Each design has its own panel file and gerbers in the `Front Panel` folder, for example `MySynth_dark_panel.kicad_pcb`. **Rename…** and **Delete…** work on the open design (not on Front). **Delete…** moves its files into the `Front Panel\Deleted designs` folder, so you can get them back.
+To change to a different design, select it in the **Design** list. Each design has its own folder in `Front Panel`, with its own panel file and gerbers, for example `Front Panel\Dark\MySynth_dark_panel.kicad_pcb`. **Rename…** and **Delete…** work on the open design (not on Front). **Delete…** moves its files into the `Front Panel\Deleted designs` folder, so you can get them back.
 
 ### A back panel
 
@@ -348,6 +348,25 @@ A back panel covers the back of the PCB, so that nobody can touch the solder joi
 5. Click **Generate panel** and **Make gerbers** as usual.
 
 **The preview shows the back panel as you see it from behind**, so left and right are the other way round from the front. The panel file is made the same way. Order it as a usual PCB, and **fit it with the printed side facing out**. When you turn it over, every hole lines up with the PCB.
+
+### The Front Panel folder
+
+Panel Generator keeps all its files in a `Front Panel` folder next to your PCB, with one folder for each design:
+
+```
+Front Panel/
+  Front/                  the first design
+    MySynth_panel.kicad_pcb       the panel: open this one in KiCad
+    MySynth_panel.panelgen.json   its settings (keep it with the panel)
+    Inkscape/             the template and your artwork file
+    Gerbers/              the gerbers zip for the board house, and KiCad's check report
+    Backups/              the old panel, kept when you start again
+  Dark/                   another design, the same inside
+  Pictures/               pictures you added (all designs use them)
+  Deleted designs/        designs you deleted
+```
+
+Panels made with versions before 0.32 were all in the `Front Panel` folder itself. The first time you open the PCB, Panel Generator moves their files into this layout. If the panel is open in KiCad, it asks you to close it first. Files that Panel Generator did not make stay where they are.
 
 ## Eurorack
 
