@@ -1124,8 +1124,11 @@ class App(tk.Tk):
     def show(self, w, on, **pack):
         if on and not w.winfo_manager():
             w.pack(**pack)
-        elif not on:
+        elif not on and w.winfo_manager():
             w.pack_forget()
+            # Tk keeps a frame at its last size when its last child goes, so the space stayed empty: shrink it
+            if not w.master.pack_slaves() and not w.master.grid_slaves():
+                w.master.configure(height=1)
 
     def show_edge(self):
         """Live readout of how much panel is left between a case hole and the edge."""

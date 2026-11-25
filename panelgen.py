@@ -38,7 +38,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.31.0"
+VERSION = "0.31.1"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):

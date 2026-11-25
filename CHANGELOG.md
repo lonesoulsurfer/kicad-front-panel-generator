@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.31.1
+
+- **No more empty space in the left column:** when you unticked *Set each side separately*, or set *Case mounting holes* to None (and the same for labels and artwork), the extra fields went, but their space stayed empty. It now closes up.
+
 ## 0.31.0
 
 - **Designs: several panels for one PCB.** A new **Design** list under *Your PCB*. **New…** makes a copy of the open design under a new name (its panel file too, so what you changed in KiCad comes along), so you can try another look and keep the first one. **Rename…** and **Delete…** (to a *Deleted designs* folder). Each design has its own panel file, artwork and gerbers. Your existing panel is the design **Front**, with the same file names as before: nothing changes for it.
