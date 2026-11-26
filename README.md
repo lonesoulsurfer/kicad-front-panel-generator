@@ -349,6 +349,10 @@ A back panel covers the back of the PCB, so that nobody can touch the solder joi
 
 **The preview shows the back panel as you see it from behind**, so left and right are the other way round from the front. The panel file is made the same way. Order it as a usual PCB, and **fit it with the printed side facing out**. When you turn it over, every hole lines up with the PCB.
 
+### Text and drawings that you add in KiCad
+
+You can also add text, lines, shapes or a logo to a panel in KiCad, on **F.Silkscreen** (the printed side). Panel Generator keeps them when you generate again. The preview shows them in **blue**, and Result checks them: a warning (and **orange** in the preview) means one runs into a hole, sits under a screw head, or is too near the edge. To change or move them, use KiCad. In the preview the text uses your font if it is installed; its size and position are correct, but the letters can look a little different from KiCad's.
+
 ### The Front Panel folder
 
 Panel Generator keeps all its files in a `Front Panel` folder next to your PCB, with one folder for each design:

@@ -38,7 +38,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.32.1"
+VERSION = "0.33.0"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -591,6 +591,130 @@ def edge_shapes(items, prefix, to_world=lambda x, y: (x, y), layer='Edge.Cuts', 
     return shapes if detail else [g for g, _, _ in shapes]
 
 # ---------------------------------------------------------------- hand-placed panel items
+PRINT_LAYER = 'F.SilkS'
+
+def _stroke_w(g):
+    st = kid(g, 'stroke')
+    w = kid(st, 'width') if st else kid(g, 'width')
+    try:
+        return max(0.0, float(w[1])) if w else 0.1
+    except (TypeError, ValueError):
+        return 0.1
+
+def _filled(g):
+    f = kid(g, 'fill')
+    return bool(f) and str(f[1]) in ('yes', 'solid', 'hatch')
+
+def kicad_print_items(tree):
+    """What you added yourself in KiCad on the panel's printed side (F.SilkS): texts, lines, arcs, circles, boxes,
+    shapes, and the drawings of footprints such as a logo. Panel Generator keeps them but didn't make them, so the
+    preview shows them and Result checks them. Each: dict(kind='text'|'shape', geom=the area it prints, ...)."""
+    from shapely.geometry import LineString
+    from shapely import affinity
+    out = []
+    def shape(g, prefix, to_world):
+        kind = str(g[0])[len(prefix):]
+        w = _stroke_w(g)
+        try:
+            if kind == 'line':
+                return LineString([to_world(*kid(g, 'start')[1:3]), to_world(*kid(g, 'end')[1:3])]).buffer(max(w, 0.05) / 2)
+            if kind == 'arc':
+                pts = arc_points(tuple(kid(g, 'start')[1:3]), tuple(kid(g, 'mid')[1:3]), tuple(kid(g, 'end')[1:3]))
+                return LineString([to_world(x, y) for x, y in pts]).buffer(max(w, 0.05) / 2)
+            if kind == 'circle':
+                cx, cy = kid(g, 'center')[1:3]; ex, ey = kid(g, 'end')[1:3]
+                disk = Point(*to_world(cx, cy)).buffer(math.hypot(ex - cx, ey - cy), quad_segs=32)
+            elif kind == 'rect':
+                (x1, y1), (x2, y2) = kid(g, 'start')[1:3], kid(g, 'end')[1:3]
+                disk = Polygon([to_world(x, y) for x, y in ((x1, y1), (x2, y1), (x2, y2), (x1, y2))])
+            elif kind == 'poly':
+                pts = [to_world(q[1], q[2]) for q in kid(g, 'pts')[1:] if isinstance(q, list) and q[0] == 'xy']
+                if len(pts) < 3:
+                    return None
+                disk = Polygon(pts).buffer(0)
+            else:
+                return None
+            if _filled(g):
+                return disk.buffer(w / 2) if w > 0 else disk
+            return disk.boundary.buffer(max(w, 0.05) / 2)
+        except (TypeError, ValueError, IndexError):
+            return None
+    for g in tree[1:] if tree else []:
+        if not (isinstance(g, list) and g):
+            continue
+        head = str(g[0])
+        lay = kid(g, 'layer')
+        if head == 'footprint':                         # a logo or a symbol placed from a library
+            fp = footprint(g)
+            for it in g[1:]:
+                if isinstance(it, list) and it and str(it[0]).startswith('fp_') and str(it[0]) != 'fp_text':
+                    ly = kid(it, 'layer')
+                    if ly and ly[1] == PRINT_LAYER:
+                        geo = shape(it, 'fp_', fp.world)
+                        if geo is not None and not geo.is_empty:
+                            out.append(dict(kind='shape', geom=geo, what=f"{fp.ref or 'a footprint'}'s drawing"))
+            continue
+        if not lay or lay[1] != PRINT_LAYER:
+            continue
+        if head == 'gr_text':
+            eff = kid(g, 'effects') or []
+            if kid(g, 'hide') or kid(eff, 'hide') or (len(g) > 3 and 'hide' in g):
+                continue
+            fnt = kid(eff, 'font') or []
+            sz = kid(fnt, 'size'); face = kid(fnt, 'face'); bold = kid(fnt, 'bold')
+            just = kid(eff, 'justify') or []
+            try:
+                h = float(sz[2] if sz and len(sz) > 2 else (sz[1] if sz else 1.0))
+                at = kid(g, 'at'); x, y = float(at[1]), float(at[2]); ang = float(at[3]) if len(at) > 3 else 0.0
+            except (TypeError, ValueError, IndexError):
+                continue
+            txt = str(g[1]).replace('\\n', '\n'); lines = txt.split('\n') or ['']   # KiCad writes a new line as \n
+            face = face[1] if face else ''
+            isbold = bool(bold) and str(bold[1]) != 'no'
+            w = max((text_width(ln, h, isbold, face) for ln in lines), default=0.0)
+            tall = h + (len(lines) - 1) * h * 1.62
+            hj = 'left' if 'left' in just else 'right' if 'right' in just else 'center'
+            vj = 'top' if 'top' in just else 'bottom' if 'bottom' in just else 'center'
+            x0 = {'left': x, 'right': x - w}.get(hj, x - w / 2)
+            y0 = {'top': y, 'bottom': y - tall}.get(vj, y - tall / 2)
+            geo = affinity.rotate(box(x0, y0, x0 + w, y0 + tall), -ang, origin=(x, y))
+            out.append(dict(kind='text', geom=geo, text=txt, x=x, y=y, h=h, angle=ang, hj=hj, vj=vj, face=face,
+                            bold=isbold, what=f"'{txt.splitlines()[0] if txt else ''}'"))
+        elif head.startswith('gr_'):
+            geo = shape(g, 'gr_', lambda x, y: (x, y))
+            if geo is not None and not geo.is_empty:
+                out.append(dict(kind='shape', geom=geo, what='a ' + {'line': 'line', 'arc': 'line', 'circle': 'circle',
+                                'rect': 'box', 'poly': 'shape'}.get(head[3:], 'drawing')))
+    return out
+
+def check_print_items(items, groups, outline, keeps, log):
+    """WARN for what you added in KiCad that runs into a hole, under a screw head or over the panel's edge."""
+    holes = unary_union([g['geom'] for g in groups]) if groups else None
+    rings = [(k.difference(g['geom']), g) for g, k, _ in keeps]
+    inside = outline.buffer(-0.5)
+    bad = []
+    for it in items:
+        why = []
+        geo = it['geom']
+        if holes is not None and geo.intersection(holes).area > 0.01:
+            why.append('runs into a hole')
+        hit = [g for ring, g in rings if geo.intersection(ring).area > 0.01]
+        if hit:
+            why.append(f'is under the screw head at {fmt_refs_plain(hit[0])}')
+        if not inside.contains(geo):
+            why.append('is too near the edge, or over it')
+        it['status'] = 'warn' if why else 'ok'
+        if why:
+            bad.append(f"{it['what']} {' and '.join(why)}")
+    for b in bad[:8]:
+        log.append(f"WARN  added in KiCad: {b} - move it in KiCad")
+    if len(bad) > 8:
+        log.append(f"WARN  added in KiCad: {len(bad) - 8} more like that (shown in orange in the preview)")
+    if items:
+        log.append(f"yours {len(items)} item{'s' if len(items) != 1 else ''} you added in KiCad on the printed side - "
+                   f"shown in the preview in blue, checked, and kept")
+    return len(bad)
+
 def manual_cutouts(tree, names=None):
     """Cutouts you added in the panel file: PanelParts footprints and anything drawn on Edge.Cuts."""
     out = []
@@ -3417,6 +3541,7 @@ def main(argv=None, preview=None):
                        + (f" (yours: {', '.join(names)})" if names else ""))
 
     existing_text, removed, manual = None, 0, []
+    a._print_items = []
     if fresh and os.path.exists(out_path):
         log.append("NOTE  started again from the PCB: parts and cutouts placed in the panel file in KiCad are left out"
                    + (" - the old panel file is kept as a backup when you generate" if preview is not None else ""))
@@ -3456,7 +3581,9 @@ def main(argv=None, preview=None):
         last_ids = [u for v in memory.get('generated', {}).values() for u in v['uuids']] + memory.get('outline', []) + restored_ids
         existing_text, removed = strip_generated(t, tree, last_ids, keep_ids)
         names = {u: v['ref'] for v in kept.values() for u in v['uuids']}
-        manual = manual_cutouts(parse(existing_text + ')'), names)
+        kept_tree = parse(existing_text + ')')
+        manual = manual_cutouts(kept_tree, names)
+        a._print_items = kicad_print_items(kept_tree)
 
     # a hole you added here and then deleted in KiCad is simply gone (nothing to bring back)
     for k in [k for k, v in suppressed.items() if all(str(m).startswith('add:') for m in v['member_keys'])]:
@@ -3546,6 +3673,7 @@ def main(argv=None, preview=None):
         art = art + image_items(shown_images, pictures_dir(out_path), outline, groups, log)
     keep_res = check_keepouts(screw_keepouts(groups, a), placed, art, log)
     problems += sum(1 for _, bad in keep_res if bad)
+    problems += check_print_items(a._print_items, groups, outline, screw_keepouts(groups, a), log)
     if preview is not None and a.make_artwork_file:      # the window's 'Create artwork file' button: no panel written
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         svg_path = side_path(out_path, '_template.svg'); os.makedirs(os.path.dirname(svg_path), exist_ok=True)
@@ -3570,6 +3698,7 @@ def main(argv=None, preview=None):
     if preview is not None:
         preview['settings'] = settings_now()
         preview['side'] = 'back' if a._back else 'front'
+        preview['kicad_items'] = a._print_items
         preview['back_hidden'] = [dict(key=c['key'], ref=c['ref'], rule=c['rule'], geom=c['geom'], circle=c.get('circle'))
                                   for c in a._back_hidden]
         fill_preview(preview, groups, outline, (x1, y1, x2, y2), a, log, problems, cutouts=cutouts + manual, fps=part_fps,

@@ -1943,6 +1943,31 @@ class App(tk.Tk):
                 text=f"{L['ref']}  ·  label '{L['text']}'" + ('  ·  runs into something (see Result)' if L['status'] != 'ok' else '')
                      + ('  ·  drag to move, right-click to change or delete' if L.get('own') else '  ·  drag to move, click to edit')))
             c.tag_bind(i, '<Leave>', lambda e: self.hover.config(text='Hover over a cutout to see what it is.'))
+        # what you added yourself in KiCad on the printed side: shown (in blue, orange if Result warns about it), not movable
+        fams = set(tkfont.families())
+        for it in pv.get('kicad_items', []):
+            col = '#9ccfff' if it.get('status', 'ok') == 'ok' else '#ffb347'
+            tip = (f"{it['what']}  ·  added in KiCad - change or move it in KiCad"
+                   + ('  ·  runs into something (see Result)' if it.get('status') == 'warn' else ''))
+            ids = []
+            if it['kind'] == 'text':
+                fnt = (it['face'] if it.get('face') in fams else fam, -max(4, round(it['h'] * self.pg.KICAD_EM * sc)),
+                       'bold' if it.get('bold') else 'normal')
+                anc = ({'top': 'n', 'bottom': 's'}.get(it['vj'], '') + {'left': 'w', 'right': 'e'}.get(it['hj'], '')) or 'center'
+                ids.append(c.create_text(X(it['x']), Y(it['y']), text=it['text'], anchor=anc, angle=it.get('angle', 0),
+                                         justify={'left': 'left', 'right': 'right'}.get(it['hj'], 'center'),
+                                         fill=col, font=fnt))
+            else:
+                for p in (it['geom'].geoms if hasattr(it['geom'], 'geoms') else [it['geom']]):
+                    if p.is_empty or not hasattr(p, 'exterior'):
+                        continue
+                    for ring, fill in [(p.exterior, col)] + [(r_, C_PANEL) for r_ in p.interiors]:
+                        pts = [v for x, y in ring.coords for v in (X(x), Y(y))]
+                        if len(pts) >= 6:
+                            ids.append(c.create_polygon(pts, fill=fill, outline=''))
+            for i in ids:
+                c.tag_bind(i, '<Enter>', lambda e, t=tip: self.hover.config(text=t))
+                c.tag_bind(i, '<Leave>', lambda e: self.hover.config(text='Hover over a cutout to see what it is.'))
         for g in self.group_targets():             # several picked at once
             if g[1] != 'shape':
                 b = g[0]
