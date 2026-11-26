@@ -62,6 +62,9 @@ jobs:
       - name: Check the window works (mouse, extra holes, ruler, undo, generate)
         run: python tools/ci_smoke.py
 
+      - name: Check a KiCad 10 PCB gives a KiCad 10 panel
+        run: python tools/ci_kicad10.py
+
       - name: Build PanelGenerator.exe
         run: pyinstaller --noconfirm --clean --windowed --name PanelGenerator --collect-data sv_ttk --hidden-import panelgen panelgen_gui.pyw
 
@@ -113,6 +116,9 @@ jobs:
 
       - name: Check the window works (mouse, extra holes, ruler, undo, generate)
         run: python tools/ci_smoke.py
+
+      - name: Check a KiCad 10 PCB gives a KiCad 10 panel
+        run: python tools/ci_kicad10.py
 
       - name: Build PanelGenerator.app
         run: |

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.32.1
+
+- **New panels open in KiCad 10:** a panel made from a PCB saved by KiCad 10 said "KiCad 9" in its first lines, but its setup (copied from the PCB) was written in KiCad 10's new way, so neither KiCad 9 nor 10 could open it ("Expecting 'front, back, or none'"). This hit every new panel, new design and Reset from a KiCad 10 PCB. A new panel now takes its version from the PCB. Panels that already open are not changed. If you have one that doesn't open, delete it (or click Reset) and generate again.
+- The build now also checks a KiCad 10 PCB, so this can't come back unnoticed.
+
 ## 0.32.0
 
 - **A tidier Front Panel folder: one folder for each design.** `Front Panel\Front` has the first design (the panel, its settings and KiCad's files), with **Inkscape** (template and artwork), **Gerbers** (the zip, the gerber files and the DRC report) and **Backups** folders inside. Every other design gets a folder of the same kind, named after it. Pictures are in `Front Panel\Pictures`, used by all designs. Deleted designs go to `Front Panel\Deleted designs`.

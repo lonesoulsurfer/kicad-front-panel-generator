@@ -38,7 +38,7 @@ from shapely.ops import unary_union
 from shapely import affinity
 
 GROUP_NAME = "panelgen"
-VERSION = "0.32.0"
+VERSION = "0.32.1"
 
 # ---------------------------------------------------------------- s-expressions
 class Sym(str):
@@ -837,7 +837,19 @@ def header_from(pcb_text, pcb_tree):
         head = pcb_text[s + 1:s + 20].split()[0]
         if head in ('layers', 'setup'):
             keep.append('\t' + pcb_text[s:e])
-    return ('(kicad_pcb\n\t(version 20241229)\n\t(generator "panelgen")\n\t(generator_version "9.0")\n'
+    # The file version must match the setup block copied from the PCB: KiCad 10 writes that block in a new way, and a
+    # file that says KiCad 9 but has KiCad 10's setup can't be opened by either. So use the PCB's version (never older
+    # than KiCad 9's).
+    ver, gen = 20241229, '9.0'
+    v_ = kid(pcb_tree, 'version')
+    try:
+        if v_ and int(v_[1]) > ver:
+            ver = int(v_[1])
+            g_ = kid(pcb_tree, 'generator_version')
+            gen = g_[1] if g_ else gen
+    except (TypeError, ValueError):
+        pass
+    return (f'(kicad_pcb\n\t(version {ver})\n\t(generator "panelgen")\n\t(generator_version "{gen}")\n'
             '\t(general\n\t\t(thickness 1.6)\n\t\t(legacy_teardrops no)\n\t)\n\t(paper "A4")\n'
             + '\n'.join(keep) + '\n\t(net 0 "")\n')
 
